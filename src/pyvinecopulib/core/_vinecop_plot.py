@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -120,13 +120,14 @@ def get_graph(
   # Build adjacency matrix by matching vertices and edges
   edge_labels = {}
   for i in range(edges.shape[0]):
-    ind_i = []
-    for j in range(vertices.shape[0]):
-      if np.all(np.isin(vertices[j, :], edges[i, :])):
-        ind_i.append(j)
+    ind_i = [
+      j
+      for j in range(vertices.shape[0])
+      if np.all(np.isin(vertices[j, :], edges[i, :]))
+    ]
     adj_mat[ind_i[0], ind_i[1]] = 1
     adj_mat[ind_i[1], ind_i[0]] = 1
-    edge_labels[(ind_i[0], ind_i[1])] = get_name(vc, tree, i, vars_names)
+    edge_labels[ind_i[0], ind_i[1]] = get_name(vc, tree, i, vars_names)
 
   # Node labels
   if tree > 0:
@@ -141,20 +142,18 @@ def get_graph(
 
 def vinecop_plot(
   cop: _PlottableVine,
-  tree: Optional[list[int]] = None,
+  tree: list[int] | None = None,
   add_edge_labels: bool = True,
   layout: str = "graphviz",
-  vars_names: Optional[list[str]] = None,
+  vars_names: list[str] | None = None,
 ) -> None:
-  """{}""".format(VINECOP_PLOT_DOC)
 
   if not tree:
     if cop.trunc_lvl > 8:
       raise ValueError(
         "The dimension and truncation level are too high to visualize all trees, please specify a list of trees to visualize."
       )
-    else:
-      tree = list(range(cop.trunc_lvl))
+    tree = list(range(cop.trunc_lvl))
 
   if "spring_layout" in layout:  # change to spring_layout if needed
     layout = "spring_layout"
@@ -168,10 +167,7 @@ def vinecop_plot(
     vars_names = [str(i) for i in range(cop.dim)]
 
   mat = cop.matrix
-  if len(tree) > 3:
-    n_col = 2
-  else:
-    n_col = 1
+  n_col = 2 if len(tree) > 3 else 1
   n_row = math.ceil(len(tree) / n_col)
 
   _, ax = plt.subplots(
@@ -185,13 +181,11 @@ def vinecop_plot(
     ax = np.array(
       [[ax[i]] for i in range(n_row)]
     )  # Convert the 1D column into a 2D array
-  else:
-    pass
 
   col = 0  # initialization
   row = 0  # initialization
   for t in tree:
-    ax[row, col].set_title("Tree {}".format(t))
+    ax[row, col].set_title(f"Tree {t}")
     ax[row, col].margins(0.2)
     adj_mat, node_labels, edge_labels = get_graph(t, cop, vars_names)
     g = nx.from_numpy_array(adj_mat)
@@ -235,3 +229,9 @@ def vinecop_plot(
 
   plt.tight_layout()  # fit the graph within the figsize nicely
   plt.show()
+
+
+# Assigned rather than written inline: an `f"""{VINECOP_PLOT_DOC}"""` in the
+# function body is a joined string, not a docstring, so `vinecop_plot.__doc__` was
+# `None` -- and this is the callable the binding resolves for `.plot()`.
+vinecop_plot.__doc__ = VINECOP_PLOT_DOC

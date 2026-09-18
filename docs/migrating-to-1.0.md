@@ -93,22 +93,88 @@ which every example in this repository did -- nothing changes. The same order
 holds on `BicopBase`, `VinecopBase`, `VinedistBase` and their PyTorch
 subclasses; `MarginBase` and the margin classes already read this way.
 
-The one exception is `Kde1d` itself, whose second positional
-argument is `weights`. It takes no controls object at all, so there is nothing
-to confuse it with, and `kde.fit(x, w)` keeps working. That is specific to that
-class: every `MarginBase` margin, `TorchKde1d` included, reads
-`fit(y, controls, *, weights=...)` like the rest, so spell `weights=` there.
+There is no exception, and `Kde1d` used to be one. Its second positional
+argument was `weights`, on the grounds that it took no controls object at all;
+it takes one now, so `kde.fit(x, w)` raises rather than fitting unweighted
+behind a weighted-looking call. The weights moved into that controls object
+too -- see the weights section below.
 
-## Some arguments are keyword-only
+```python
+# before
+kde.fit(x, w)
+kde.fit(x)  # kernel knobs only at construction
 
-`parameters` on `Bicop.sample`, and `conditioning_set` on
-`Vinecop.rosenblatt` / `inverse_rosenblatt` / `sample_conditional`, are
-keyword-only. This is what keeps the long-standing positional forms meaning
-what they always meant: `rosenblatt(u, 4)` is still `num_threads=4`, and
-`sample(1000, True)` is still `n=1000, qrng=True`.
+# now
+kde.fit(y, FitControlsKde1d(weights=w))
+kde.fit(y, FitControlsKde1d(bandwidth=0.4))
+```
 
-You only need to change code that was already passing these by keyword, which
-is to say: none.
+The observations are `y`, not `x`, on `fit` / `select` / `from_data`, because
+`x` means exogenous covariates everywhere else in the Python API. The
+evaluation methods (`pdf`, `cdf`, `icdf`, ...) still name theirs `x`; that
+rename belongs upstream in `lib/kde1d` and has not happened yet.
+
+## Observation weights ride in the controls
+
+`FitControlsBicop` and `FitControlsVinecop` already carried a `weights` field;
+`FitControlsKde1d` and `FitControlsMargin` carry one too, and no `fit` /
+`select` / `from_data` in the package takes a `weights=` argument any more.
+That is one transport for one quantity, and `supports_weights` on a class says
+whether it honors what the controls carry -- a class that does not refuses
+weighted controls rather than fitting them away.
+
+Nothing copies weights from one controls object to another. A vine
+distribution's margins and its copula take separate controls, so weighting
+both means saying so twice -- which is also what lets you weight them
+differently, or weight one and leave the other alone.
+
+```python
+# margins and copula weighted the same way
+pv.Vinedist.from_data(
+  y,
+  pv.FitControlsVinecop(weights=w),
+  margin_controls=pv.core.FitControlsKde1d(weights=w),
+)
+
+# the copula weighted, the margins fitted on every observation
+pv.Vinedist.from_data(y, pv.FitControlsVinecop(weights=w))
+```
+
+## The settings are keyword-only
+
+On `Bicop` and `Vinecop`, every method takes its data positionally and its
+settings by keyword: `parameters`, `num_threads`, `seeds`,
+`randomize_discrete` and `conditioning_set`.
+
+Each class was already consistent with itself, and the two disagreed with each
+other:
+
+| | `Bicop` | `Vinecop` |
+|---|---|---|
+| `pdf` / `cdf` / `loglik` / `scores` / … | `(u, parameters, num_threads)` | `(u, num_threads, parameters)` |
+| `sample` | `(n, qrng, seeds, …)` | `(n, qrng, num_threads, seeds)` |
+
+So `vine.pdf(u, pars)`, carried over from `cop.pdf(u, pars)`, bound a
+parameter matrix as a thread count. Making them keyword-only is what settles
+that without picking one class's order and breaking the other's callers.
+
+What stays positional is the data and the arguments only one of the two
+classes has: `N` on `Vinecop.cdf`, `psi0` on `mbicv`, `step_wise` on the score
+methods, `qrng` on `sample`, and `deriv` on the `Bicop` derivative methods. So
+`rosenblatt(u)` and `sample(1000, True)` still mean what they always meant.
+
+`parameters` also stays positional wherever it specifies the model rather than
+the call: `Bicop(family, rotation, parameters)` and `Bicop.from_family` build a
+copula out of it, and `parameters_to_tau(pars)` takes it as the data. Only the
+evaluation methods moved.
+
+```python
+cop.pdf(u, pars)  # -> cop.pdf(u, parameters=pars)
+cop.sample(n, False, [1, 2])  # -> cop.sample(n, False, seeds=[1, 2])
+vine.pdf(u, 4)  # -> vine.pdf(u, num_threads=4)
+```
+
+Code that already passed these by keyword needs no change.
 
 ## `Vinecop.fit` no longer takes `num_threads`
 
@@ -117,10 +183,10 @@ argument is gone rather than kept as a second way to say the same thing. Both
 the positional and the keyword form now raise `TypeError`:
 
 ```python
-vine.fit(u, controls, 4)              # 0.7.6
-vine.fit(u, num_threads=4)            # 0.7.6
+vine.fit(u, controls, 4)  # 0.7.6
+vine.fit(u, num_threads=4)  # 0.7.6
 
-vine.fit(u, FitControlsBicop(num_threads=4))          # 1.0.0
+vine.fit(u, FitControlsBicop(num_threads=4))  # 1.0.0
 ```
 
 This is the one exception to the section above: `fit`'s third positional
@@ -177,12 +243,18 @@ still resolves and warns; `utils.Kde1d` never shipped in a release and is gone.
 | 0.7.6 | 1.0.0 |
 | --- | --- |
 | `kde.quantile(p)` | `kde.icdf(p)` — no alias |
+| `kde.edf` | `kde.npars` — no alias; it was the same number as `n_parameters` |
 | `kde.loglik` (property) | `kde.loglik()` — a method taking optional data |
+| `kde.fit(x, w)` | `kde.fit(y, FitControlsKde1d(weights=w))` |
+| `kde.type` | `kde.var_type` — `"c"` / `"d"` / `"zi"`, not `"continuous"` |
+| `Kde1d(type="discrete")` | `Kde1d(var_type="d")` — the long names still parse |
 | `pyvinecopulib.Kde1d` | `pyvinecopulib.core.Kde1d` |
 
 `icdf` is the name modern SciPy and `torch.distributions` use for the inverse
 distribution function, and `loglik()` now matches `Bicop.loglik` /
-`Vinecop.loglik`.
+`Vinecop.loglik`. The kernel knobs `Kde1d`'s constructor takes are also a
+`FitControlsKde1d`, so a margin the library builds for you can be configured
+per variable; see the argument-order section above.
 
 ## Python 3.10 is no longer supported
 
@@ -209,12 +281,36 @@ indefinitely.
 ## sklearn and Torch changes
 
 The optional subpackages ship in the same distribution and have important 1.0
-changes. sklearn estimators now take a single `backend=` object instead of
-loose controls/structure/seed arguments; `seed` became `random_state`; and
+changes. sklearn estimators take `distribution=` -- the `VinedistBase` subclass
+they fit, `Vinedist` by default and `TorchVinedist` for the PyTorch lane --
+beside `controls=` and `structure=`; `seed` became `random_state`; and
 `VineRegressor` keeps a sample axis for one-row predictions. Torch fitting now
 uses `FitControlsTorchBicop` / `FitControlsTorchVinecop`, and `TorchTllBicop.sample`
 uses the core-style `(n, qrng=False, seeds=[])` signature. See the complete
 breaking-change inventory in `CHANGELOG.md` before upgrading either surface.
+
+Three things to know if you were tracking `main` rather than 0.7.x, since each
+is a silent change rather than an error:
+
+- `VinecopBase.structure` is a property now, so a subclass that assigned
+  `self.structure = ...` shadows it. Assign `self._structure` instead.
+- A `BicopBase` subclass defines `_pdf_raw` / `_hfunc1_raw` / `_hfunc2_raw`
+  rather than `pdf` / `hfunc1` / `hfunc2`: the base dispatches the public
+  members over those leaves so it can apply a pair's `var_types`. A subclass
+  that still defines the public members overrides the dispatcher, and its
+  leaves are then never called.
+- `ArrayT` is bounded by the `Array` protocol. It is an exported name, so a
+  signature written in it now has to be satisfied by something array-shaped.
+- The four contracts declare more than the evaluation cascade: what hosting a
+  part needs (`cdf`, `flip`, `with_var_types`, the `supports_*` flags) and the
+  `fit` / `select` / `controls_class` a consumer calls. Every one of those has
+  a default, so **inherit the protocol** and override what you implement; a
+  duck-typed class defining only the evaluating members no longer satisfies
+  `isinstance`.
+- `device` and `dtype` are no longer fields on `FitControlsTorchVinecop`.
+  Where a fitted module lives is read from the data it was fitted on, and
+  `TorchVinecop.from_data(u, controls, device=..., dtype=...)` is where a
+  caller overrides that.
 
 ## What 1.0 does and does not promise
 
@@ -233,7 +329,5 @@ version if you build on the rest.
   do pickles (through the deprecated aliases). `Kde1d`, `Vinedist` and
   `SciPyMargin` gain a `to_json` surface in 1.0 -- `Kde1d` and `Vinedist` read
   themselves back with `from_json`, a margin through
-  `core.margin_from_json`. `OpenTURNSMargin` does not serialize, so a
-  `Vinedist` holding one cannot be written to JSON. The `torch` modules use
   `state_dict` instead.
 - Every evaluation signature other than the keyword-only arguments above.

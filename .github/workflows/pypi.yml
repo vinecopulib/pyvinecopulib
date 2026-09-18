@@ -140,7 +140,7 @@ jobs:
         # Tracks the lib/vinecopulib pin, except while that pin is a pull-request
         # branch: a SHA only reachable from a branch stops resolving once the
         # branch is deleted, and this one is fetched at run time.
-        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@de90c65d86f401484272ce5940359512ea7e8db3
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@64b8e3864d513c22e72da6ac85a829f678b9e5d0
         with:
           os: ${{ matrix.cfg.os }}
           platform: ${{ matrix.cfg.platform }}
@@ -342,22 +342,11 @@ jobs:
         uses: ./.github/actions/install-graphviz
       - name: Create uv venv and install test/notebooks deps
         # --no-install-project: we test the cibw wheel, not a source build.
-        #
-        # `openturns` is skipped on macOS: its single `cp39-abi3` wheel brings its
-        # own OpenMP runtime, and co-resident with torch's the process dies with
-        # SIGSEGV inside `int_on_grid_batched` on every arm64 Python (cp311,
-        # cp313 and cp314 measured; the same legs pass without the extra, and
-        # ubuntu and windows pass with it). The adapter is exercised on those eight
-        # legs; keeping torch on macOS matters more, since torch-vs-C++ parity is
-        # a hard guarantee and macOS arm64 is a first-class torch platform.
         shell: bash
         run: |
           uv venv --python ${{ steps.pyver.outputs.version }}
-          extras="--extra examples --extra sklearn --extra torch"
-          if [ "$RUNNER_OS" != "macOS" ]; then
-            extras="$extras --extra openturns"
-          fi
-          uv sync --no-install-project --group test --group notebooks $extras
+          uv sync --no-install-project --group test --group notebooks \
+            --extra examples --extra sklearn --extra torch
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
         uses: actions/download-artifact@v8
@@ -491,7 +480,7 @@ jobs:
         # Tracks the lib/vinecopulib pin, except while that pin is a pull-request
         # branch: a SHA only reachable from a branch stops resolving once the
         # branch is deleted, and this one is fetched at run time.
-        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@de90c65d86f401484272ce5940359512ea7e8db3
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@64b8e3864d513c22e72da6ac85a829f678b9e5d0
         with:
           os: "ubuntu-latest"
           boost_install_dir: "/home/runner/work"

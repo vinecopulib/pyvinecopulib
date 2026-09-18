@@ -53,10 +53,10 @@ rng = np.random.default_rng(0)
 cov = [[1.0, 0.7, 0.3], [0.7, 1.0, 0.5], [0.3, 0.5, 1.0]]
 x = rng.multivariate_normal([0, 0, 0], cov, size=500)
 
-u = pv.to_pseudo_obs(x)              # ranks, on the copula scale
-vine = pv.Vinecop.from_data(u)       # selects structure and families
-print(vine)                          # the fitted trees, pair by pair
-vine.loglik(u), vine.bic()           # fit diagnostics
+u = pv.to_pseudo_obs(x)  # ranks, on the copula scale
+vine = pv.Vinecop.from_data(u)  # selects structure and families
+print(vine)  # the fitted trees, pair by pair
+vine.loglik(u), vine.bic()  # fit diagnostics
 draws = vine.sample(100, seeds=[1])  # new copula-scale observations
 ```
 
@@ -66,21 +66,22 @@ For a distribution on the original **data** scale — no rank transform, no
 kernel density.
 
 ```python
-dist = pv.Vinedist.from_data(y)          # y is data, not pseudo-observations
-dist.logpdf(y)                           # joint log-density
-dist.sample(1000, seeds=[1])             # draws on the original scale
+dist = pv.Vinedist.from_data(y)  # y is data, not pseudo-observations
+dist.logpdf(y)  # joint log-density
+dist.sample(1000, seeds=[1])  # draws on the original scale
 ```
 
 Bound a variable whose range you know, and the kernel density stops padding
 past it:
 
 ```python
-from pyvinecopulib import FitControlsMargin
-dist = pv.Vinedist.from_data(
-  y, names=["income", "score"],
-  margin_controls={"income": FitControlsMargin(support=(0.0, None))},
-)
+dist = pv.Vinedist.from_data(y, supports=[(0.0, None), None])
 ```
+
+What a variable *is* — its bounds, its type — is a declaration about the data,
+so it travels beside the fit configuration rather than inside it:
+`margin_controls=` says how to estimate a margin, `supports=` and `var_types=`
+say what it is estimating.
 
 Notebooks 01, 02 and 03 build out these core workflows, and 07 covers the
 kernel-density margin they default to.
@@ -90,23 +91,27 @@ kernel-density margin they default to.
 Three opt-in subpackages extend the core library:
 
 * `pyvinecopulib.margins` — parametric margins and family selection
-  (`SciPyMargin`, `OpenTURNSMargin`) to pair with `Vinedist` when a
+  (`SciPyMargin`) to pair with `Vinedist` when a
   kernel-density margin is not what you want:
 
   ```python
   from pyvinecopulib.core import Vinedist
-  from pyvinecopulib.margins import FitControlsMargin
-  dist = Vinedist.from_data(
-    x,
-    margins="parametric",  # a family per column, chosen from the data
-    margin_controls=FitControlsMargin(selection_criterion="bic"),
+  from pyvinecopulib.margins import FitControlsMargin, SciPyMargin
+
+
+  class ParametricVinedist(Vinedist):
+    margin_class = SciPyMargin  # a family per column, chosen from the data
+
+
+  dist = ParametricVinedist.from_data(
+    x, margin_controls=FitControlsMargin(selection_criterion="bic")
   )
   print(dist.margins[0].family_name)
   ```
 
-  `margins="parametric"` means `SciPyMargin`; install with
-  `pip install pyvinecopulib[scipy]`. For OpenTURNS' families pass
-  `margins=OpenTURNSMargin()` and install `pyvinecopulib[openturns]`.
+  `SciPyMargin` needs `pip install pyvinecopulib[scipy]`. Another
+  ecosystem's distributions reach a vine through
+  `pyvinecopulib.margins.register_margin_adapter`.
 
 * `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
   (`VineDensity`, `VineRegressor`). Drop a vine
@@ -114,8 +119,10 @@ Three opt-in subpackages extend the core library:
 
   ```python
   from pyvinecopulib.sklearn import VineDensity
-  density = VineDensity().fit(X)             # default backend (C++)
-  density.score_samples(X[:3]); density.cdf(X[:3])
+
+  density = VineDensity().fit(X)  # fits a `Vinedist`
+  density.score_samples(X[:3])
+  density.cdf(X[:3])
   ```
 
   Install with `pip install pyvinecopulib[sklearn]`.
@@ -126,17 +133,18 @@ Three opt-in subpackages extend the core library:
 
   ```python
   import torch
-  from pyvinecopulib.torch import TorchVinedist, FitControlsTorchVinecop
-  dist = TorchVinedist.from_data(
-    torch.as_tensor(x), controls=FitControlsTorchVinecop(device="cuda")
-  )
+  from pyvinecopulib.torch import TorchVinedist
+
+  # Where the model lives is read from the data, so placing the data places
+  # the whole distribution -- margins and copula together.
+  dist = TorchVinedist.from_data(torch.as_tensor(x, device="cuda"))
   y = torch.as_tensor(x[:5], device="cuda").requires_grad_(True)
-  dist.log_prob(y).sum().backward()   # autograd through the whole vine
-  print(y.grad)                       # d log f / dy, on the GPU
+  dist.log_prob(y).sum().backward()  # autograd through the whole vine
+  print(y.grad)  # d log f / dy, on the GPU
   ```
 
-  The same evaluator backs the sklearn estimators through
-  `pyvinecopulib.sklearn.backends.TorchVinecopBackend`.
+  The same evaluator backs the sklearn estimators: pass
+  `distribution=TorchVinedist` to `VineDensity` or `VineRegressor`.
 
   Install with `pip install pyvinecopulib[torch]`.
 
@@ -153,21 +161,28 @@ on them with the same confidence as on `Vinecop`.
 
 What is **provisional in 1.x** are the *implementations* in
 `pyvinecopulib.margins`, `pyvinecopulib.sklearn` and `pyvinecopulib.torch` --
-the curated family registry, the selection criteria, the backend and controls
-surfaces -- which may change in a minor version as they meet real data. The
+the curated family registry, the selection criteria, and the estimator and
+controls surfaces -- which may change in a minor version as they meet real
+data. The
 torch-to-core evaluation parity is treated as required regardless. Pin an
 exact version if you depend on those implementation surfaces.
 
 ### Custom and conditional models
 
 The core evaluators (`Bicop` / `Vinecop` / `Kde1d` / `Vinedist`, and their torch
-counterparts) implement four backend-neutral contracts: `BicopLike`,
+counterparts) implement four array-agnostic contracts: `BicopLike`,
 `VinecopLike`, `MarginLike` and `VinedistLike`. Subclass the matching
 canonical, pure-Python base -- `BicopBase`, `VinecopBase`, `MarginBase` or
 `VinedistBase` (NumPy or PyTorch) -- to plug your **own** pair copula, margin
 or whole distribution into the library. Fitting has one shape on all four:
 `fit` returns `self`, `from_data` constructs, and configuration travels as a
 `ControlsLike` (anything with `to_dict()`).
+
+A contract names everything the library may ask of that part, and everything
+past its evaluation surface has a default -- so inheriting the protocol
+directly is the other route: define what you implement, and a member you
+decline raises naming your class instead of failing somewhere inside a
+cascade.
 
 A pair may depend on its vine conditioning-set values (a **non-simplified**
 vine), on row-aligned external covariates, or on both. `Vinedist` can compose covariate-dependent
@@ -252,7 +267,7 @@ The main build time prerequisites are:
 
 When installing via `pip install .` (the default), all of these are pulled into an isolated build environment automatically via `[build-system] requires` in `pyproject.toml`; you don't need to install them yourself.
 
-To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically. Both are found in config mode only -- `FindBoost` was removed in CMake 3.30 -- so if the configure step cannot find one, either put its prefix on `CMAKE_PREFIX_PATH` or point the environment variables below at the headers directly.
+To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically. Both are looked for in config mode -- `FindBoost` was removed in CMake 3.30 -- so if the configure step cannot find one, either put its prefix on `CMAKE_PREFIX_PATH` or point the environment variables below at the headers directly. Boost has one extra fallback, because all this package needs of it is headers: where no `BoostConfig.cmake` is found, a plain search for `boost/version.hpp` is tried before giving up, so a headers-only package such as conda-forge's `libboost-headers` works.
 
 The recommended way to install `pyvinecopulib` from source is to use `conda`/`mamba` for the native build prerequisites and [`uv`](https://docs.astral.sh/uv/) for the Python side:
 

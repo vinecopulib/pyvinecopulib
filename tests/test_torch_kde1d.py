@@ -22,8 +22,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.core import Kde1d, MarginLike  # noqa: E402
-from pyvinecopulib.torch import TorchKde1d  # noqa: E402
+from pyvinecopulib.core import FitControlsKde1d, Kde1d
+from pyvinecopulib.torch import TorchKde1d
 
 _PROBS = np.array([1e-6, 0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 1 - 1e-6])
 
@@ -61,9 +61,9 @@ def _t(values: np.ndarray) -> Any:
     ("continuous", {}),
     ("continuous", {"xmin": 0.0}),
     ("unit", {"xmin": 0.0, "xmax": 1.0}),
-    ("discrete", {"type": "discrete", "xmin": 0.0}),
-    ("discrete", {"type": "discrete"}),
-    ("zi", {"type": "zero-inflated", "xmin": 0.0}),
+    ("discrete", {"var_type": "d", "xmin": 0.0}),
+    ("discrete", {"var_type": "d"}),
+    ("zi", {"var_type": "zi", "xmin": 0.0}),
   ],
 )
 def test_pdf_and_cdf_match_the_compiled_estimator(
@@ -121,8 +121,8 @@ def _assert_quantiles_agree(
   ("kind", "kwargs"),
   [
     ("continuous", {}),
-    ("discrete", {"type": "discrete", "xmin": 0.0}),
-    ("zi", {"type": "zero-inflated", "xmin": 0.0}),
+    ("discrete", {"var_type": "d", "xmin": 0.0}),
+    ("zi", {"var_type": "zi", "xmin": 0.0}),
   ],
 )
 def test_icdf_matches_the_compiled_estimator(
@@ -195,7 +195,7 @@ def test_nan_in_gives_nan_out() -> None:
 
 def test_discrete_masses_sum_to_one_over_the_lattice() -> None:
   """The normalization is what the discrete branch exists for."""
-  _, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
+  _, lifted, _ = _fitted("discrete", var_type="d", xmin=0.0)
   levels = _t(np.arange(-2.0, 40.0))
   assert float(lifted.pdf(levels).sum()) == pytest.approx(1.0, abs=1e-10)
   # Off-lattice points carry no mass at all.
@@ -204,7 +204,7 @@ def test_discrete_masses_sum_to_one_over_the_lattice() -> None:
 
 def test_cdf_left_is_derived_for_a_discrete_margin() -> None:
   """Inherited from `MarginBase`, which is what lets the copula difference it."""
-  kde, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
+  kde, lifted, _ = _fitted("discrete", var_type="d", xmin=0.0)
   y = _t(np.arange(0.0, 8.0))
   np.testing.assert_allclose(
     lifted.cdf_left(y).numpy(),
@@ -218,34 +218,25 @@ def test_cdf_left_is_derived_for_a_discrete_margin() -> None:
 # --- the contract ----------------------------------------------------------- #
 
 
-def test_it_satisfies_the_margin_contract() -> None:
-  """Structurally, so it drops into a `Vinedist` with no adapter."""
-  _, lifted, _ = _fitted("continuous")
-  assert isinstance(lifted, MarginLike)
-  assert isinstance(lifted, torch.nn.Module)
-  assert lifted.supports_weights is True
-  assert lifted.supports_controls is False
-
-
 @pytest.mark.parametrize(
   ("kwargs", "expected"),
   [
     ({}, "c"),
-    ({"type": "discrete"}, "d"),
-    ({"type": "zero-inflated"}, "zi"),
+    ({"var_type": "d"}, "d"),
+    ({"var_type": "zi"}, "zi"),
   ],
 )
-def test_var_type_maps_the_compiled_spelling(
+def test_var_type_reports_the_declaration(
   kwargs: dict[str, Any], expected: str
 ) -> None:
-  """`kde_type` keeps the hyphenated compiled name; `var_type` is the contract's."""
+  """The declaration comes back in the one spelling the package uses."""
   margin = TorchKde1d(**kwargs)
   assert margin.var_type == expected
-  assert margin.kde_type == kwargs.get("type", "continuous")
+  assert margin.var_type == kwargs.get("var_type", "c")
 
 
-def test_type_does_not_shadow_the_module_dtype_cast() -> None:
-  """`nn.Module.type` has to keep working, which is why `kde_type` exists."""
+def test_var_type_does_not_shadow_the_module_dtype_cast() -> None:
+  """`nn.Module.type` keeps working: the declaration is `var_type`, not `type`."""
   _, lifted, _ = _fitted("continuous")
   assert lifted.type(torch.float32).grid_points.dtype is torch.float32
 
@@ -265,8 +256,8 @@ def test_an_unfitted_margin_refuses_to_evaluate() -> None:
 
 
 def test_an_unknown_type_is_refused_at_construction() -> None:
-  with pytest.raises(ValueError, match="unknown type"):
-    TorchKde1d(type="zero_inflated")  # the underscore spelling never existed
+  with pytest.raises(ValueError, match="var_type="):
+    TorchKde1d(var_type="ordinal")
 
 
 def test_covariates_are_refused_at_fit_time() -> None:
@@ -279,13 +270,13 @@ def test_weights_change_the_fit() -> None:
   y = _sample("continuous")
   w = np.linspace(0.1, 2.0, y.size)
   plain = TorchKde1d().fit(_t(y))
-  weighted = TorchKde1d().fit(_t(y), weights=_t(w))
+  weighted = TorchKde1d().fit(_t(y), FitControlsKde1d(weights=_t(w)))
   assert not np.allclose(
     plain.values.numpy(), weighted.values.numpy(), atol=1e-8
   )
   # And they agree with the compiled fit on the same weights.
   reference = Kde1d()
-  reference.fit(y, w)
+  reference.fit(y, FitControlsKde1d(weights=w))
   np.testing.assert_allclose(
     weighted.values.numpy(),
     np.asarray(reference.values),
@@ -300,10 +291,10 @@ def test_probabilities_outside_the_unit_interval_are_refused() -> None:
     lifted.icdf(_t(np.array([-0.1])))
 
 
-def test_loglik_and_n_parameters_come_from_the_fit() -> None:
+def test_loglik_and_npars_come_from_the_fit() -> None:
   kde, lifted, y = _fitted("continuous")
   assert lifted.loglik() == pytest.approx(float(kde.loglik()), abs=1e-12)
-  assert lifted.n_parameters == pytest.approx(float(kde.edf), abs=1e-12)
+  assert lifted.npars == pytest.approx(float(kde.npars), abs=1e-12)
   # With data it evaluates instead, as `MarginBase.loglik` promises.
   assert float(lifted.loglik(_t(y))) == pytest.approx(
     float(kde.loglik(y)), rel=1e-10
@@ -317,7 +308,7 @@ def test_a_grid_supplied_directly_reports_no_fitted_loglik() -> None:
     _t(np.asarray(kde.values, dtype=float)),
   )
   assert built.is_fitted
-  assert np.isnan(built.n_parameters)
+  assert np.isnan(built.npars)
   with pytest.raises(RuntimeError, match="supplied directly"):
     built.loglik()
 
@@ -402,8 +393,8 @@ def test_the_quantile_is_differentiable_in_the_probability() -> None:
 
 
 def test_state_dict_round_trip() -> None:
-  kde, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
-  restored = TorchKde1d(type="discrete", xmin=0.0)
+  _kde, lifted, _ = _fitted("discrete", var_type="d", xmin=0.0)
+  restored = TorchKde1d(var_type="d", xmin=0.0)
   restored.load_state_dict(lifted.state_dict())
   q = _t(np.arange(0.0, 10.0))
   np.testing.assert_array_equal(restored.pdf(q).numpy(), lifted.pdf(q).numpy())
@@ -414,22 +405,25 @@ def test_state_dict_round_trip() -> None:
     "prob0",
   }
   assert restored.loglik() == lifted.loglik()
-  assert restored.edf == lifted.edf
+  assert restored.npars == lifted.npars
 
 
 def test_fit_rejects_non_vector_data_and_weights() -> None:
   """Fitting accepts one observation vector and aligned vector weights.
 
-  The messages are the shared validators', so they read the same here as on
-  every other margin.
+  A length is checked against the data, so that one is the shared validator's
+  and reads the same here as on every other margin; a *shape* needs no data
+  and `FitControlsKde1d` refuses it as it is built.
   """
   y = _t(np.arange(5.0))
   with pytest.raises(ValueError, match=r"y must have shape \(n,\)"):
     TorchKde1d().fit(y[:, None])
+  # `TypeError` alone: the message here is the binding's own overload dump,
+  # not this package's text, so matching it pins something nothing here owns.
+  with pytest.raises(TypeError):
+    FitControlsKde1d(weights=y[:, None])
   with pytest.raises(ValueError, match="one weight per observation"):
-    TorchKde1d().fit(y, weights=y[:, None])
-  with pytest.raises(ValueError, match="one weight per observation"):
-    TorchKde1d().fit(y, weights=y[:-1])
+    TorchKde1d().fit(y, FitControlsKde1d(weights=y[:-1]))
 
 
 @pytest.mark.parametrize(
@@ -465,7 +459,7 @@ def test_fit_refuses_weights_that_leave_nothing_to_fit(
     ),
   }[bad]
   with pytest.raises(ValueError, match=match):
-    TorchKde1d().fit(y, weights=weights)
+    TorchKde1d().fit(y, FitControlsKde1d(weights=weights))
 
 
 def test_fit_accepts_the_drop_markers_kde1d_documents() -> None:
@@ -483,17 +477,17 @@ def test_fit_accepts_the_drop_markers_kde1d_documents() -> None:
     torch.zeros(64, dtype=torch.float64),
   )
   for weights in (every_other, half_zero):
-    fitted = TorchKde1d().fit(y, weights=weights)
+    fitted = TorchKde1d().fit(y, FitControlsKde1d(weights=weights))
     assert bool(torch.isfinite(fitted.pdf(q)).all())
 
 
 def test_pickle_round_trip() -> None:
-  kde, lifted, _ = _fitted("zi", type="zero-inflated", xmin=0.0)
+  _kde, lifted, _ = _fitted("zi", var_type="zi", xmin=0.0)
   restored = pickle.loads(pickle.dumps(lifted))
   q = _t(np.array([0.0, 0.5, 1.0, 4.0]))
   np.testing.assert_array_equal(restored.pdf(q).numpy(), lifted.pdf(q).numpy())
   np.testing.assert_array_equal(restored.cdf(q).numpy(), lifted.cdf(q).numpy())
-  assert restored.kde_type == "zero-inflated"
+  assert restored.var_type == "zi"
   assert restored.support == lifted.support == (0.0, float("inf"))
 
 
@@ -513,7 +507,7 @@ def test_sample_lands_in_the_support() -> None:
 
 
 def test_a_discrete_sample_lands_on_the_lattice() -> None:
-  _, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
+  _, lifted, _ = _fitted("discrete", var_type="d", xmin=0.0)
   draws = lifted.sample(256, seeds=[2])
   np.testing.assert_array_equal(draws.numpy(), np.round(draws.numpy()))
 
@@ -551,7 +545,7 @@ def test_the_discrete_support_matches_the_compiled_estimator(
   question as reading it off the bounds.
   """
   y = np.random.default_rng(42).integers(0, 5, 500).astype(float)
-  kde = Kde1d(type="discrete", xmin=xmin, xmax=xmax)
+  kde = Kde1d(var_type="d", xmin=xmin, xmax=xmax)
   kde.fit(y)
   lifted = TorchKde1d.from_kde1d(kde)
   lattice = np.arange(-4.0, 12.0)
@@ -583,7 +577,7 @@ def test_the_discrete_quantile_inverts_its_own_distribution_function() -> None:
   level it came from and the answer is legitimately the next one up.
   """
   y = np.random.default_rng(51).poisson(3.0, 600).astype(float)
-  kde = Kde1d(type="discrete", xmin=0.0)
+  kde = Kde1d(var_type="d", xmin=0.0)
   kde.fit(y)
   lifted = TorchKde1d.from_kde1d(kde)
   levels = np.arange(0.0, 9.0)
@@ -666,7 +660,10 @@ def test_nobs_counts_the_retained_rows_not_the_input() -> None:
   # A zero or NaN weight drops its row just as a NaN observation does.
   weights = np.where(np.arange(100) % 2 == 0, 1.0, 0.0)
   assert (
-    TorchKde1d().fit(_t(rng.normal(size=100)), weights=_t(weights)).nobs == 50
+    TorchKde1d()
+    .fit(_t(rng.normal(size=100)), FitControlsKde1d(weights=_t(weights)))
+    .nobs
+    == 50
   )
 
 
@@ -677,3 +674,76 @@ def test_nobs_survives_a_state_dict_round_trip() -> None:
   restored.load_state_dict(fitted.state_dict())
   assert restored.nobs == fitted.nobs == 180
   assert restored.bic() == fitted.bic()
+
+
+def test_var_type_takes_every_spelling_kde1d_takes() -> None:
+  """`TorchKde1d(var_type=...)` accepts what `Kde1d(var_type=...)` accepts.
+
+  A variable type is `"c"` / `"d"` / `"zi"` everywhere in this package, and
+  both classes answer in that spelling. The long names are upstream's and
+  still arrive -- from a stored payload, or from a caller who knows `kde1d`
+  -- so both normalize rather than refusing one side of the boundary.
+  """
+  import pytest
+
+  import pyvinecopulib as pv
+  from pyvinecopulib.torch import TorchKde1d
+
+  for spellings, answer in (
+    (("c", "cont", "continuous"), "c"),
+    (("d", "disc", "discrete"), "d"),
+    (("zi", "zinfl", "zero-inflated", "zero_inflated"), "zi"),
+  ):
+    for spelling in spellings:
+      assert TorchKde1d(var_type=spelling).var_type == answer
+      assert pv.core.Kde1d(var_type=spelling).var_type == answer
+  with pytest.raises(ValueError, match="var_type="):
+    TorchKde1d(var_type="nope")
+  with pytest.raises(ValueError, match="variable type"):
+    pv.core.Kde1d(var_type="nope")
+
+
+def test_the_kernel_knobs_arrive_through_the_controls() -> None:
+  """`FitControlsKde1d` configures this fit exactly as it configures `Kde1d`.
+
+  The knobs used to be construction-only here: `fit` took a controls object
+  and discarded it, so a core caller configured the kernel one way and a
+  torch caller another, for the same estimator. Passing controls replaces
+  every knob, as `kde1d_configured` does on the compiled side -- a controls
+  object carries a value for each field, so there is no "unset" to merge.
+  """
+  y = np.random.default_rng(0).gamma(2.0, 1.5, 600)
+  q = np.array([0.5, 1.0, 2.0, 4.0])
+  for controls in (
+    None,
+    FitControlsKde1d(multiplier=2.5),
+    FitControlsKde1d(degree=0, grid_size=64),
+  ):
+    compiled = Kde1d().fit(y, controls)
+    lifted = TorchKde1d().fit(_t(y), controls)
+    np.testing.assert_allclose(
+      lifted.grid_points.numpy(),
+      np.asarray(compiled.grid_points),
+      rtol=1e-12,
+      atol=1e-12,
+    )
+    np.testing.assert_allclose(
+      lifted.pdf(_t(q)).numpy(), np.asarray(compiled.pdf(q)), rtol=1e-12
+    )
+
+  # Not vacuous: the multiplier really does move the density.
+  plain = TorchKde1d().fit(_t(y)).pdf(_t(q)).numpy()
+  widened = (
+    TorchKde1d().fit(_t(y), FitControlsKde1d(multiplier=2.5)).pdf(_t(q)).numpy()
+  )
+  assert not np.allclose(plain, widened)
+
+  # Controls replace the construction values wholesale, on both lanes.
+  built = TorchKde1d(grid_size=64).fit(_t(y), FitControlsKde1d(multiplier=2.5))
+  assert built.grid_points.numel() == 401
+  assert (
+    Kde1d(grid_size=64).fit(y, FitControlsKde1d(multiplier=2.5)).grid_size
+    == 400
+  )
+  # And with no controls the construction values stand.
+  assert TorchKde1d(grid_size=64).fit(_t(y)).grid_points.numel() == 65

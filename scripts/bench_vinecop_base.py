@@ -32,7 +32,8 @@ from __future__ import annotations
 import copy
 import itertools
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 
@@ -75,14 +76,14 @@ class _CppBicopLike:
     *,
     x: Any = None,
     qrng: bool = False,
-    seeds: Optional[list[int]] = None,
+    seeds: list[int] | None = None,
   ) -> Any:
     return self._b.sample(n, qrng=qrng, seeds=seeds or [])
 
-  def flip(self) -> "_CppBicopLike":
+  def flip(self) -> _CppBicopLike:
     return _CppBicopLike(self._b.flip())
 
-  def as_continuous(self) -> "_CppBicopLike":
+  def as_continuous(self) -> _CppBicopLike:
     # The inverse cascade asks for this; forward what the wrapped copula has.
     return _CppBicopLike(self._b.as_continuous())
 

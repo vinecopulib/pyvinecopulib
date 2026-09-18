@@ -13,9 +13,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from array_api_compat import array_namespace
-
-from .protocols import ArrayT
+from .protocols import ArrayT, array_namespace
 
 __all__ = ["safe_log", "sum_loglik"]
 

@@ -1,6 +1,7 @@
 import math
 import pickle
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -15,7 +16,7 @@ def test_kde1d_initialization() -> None:
   kde = pv.core.Kde1d()
   assert kde.xmin != kde.xmin  # NaN check
   assert kde.xmax != kde.xmax  # NaN check
-  assert kde.type == "continuous"
+  assert kde.var_type == "c"
   assert kde.multiplier == 1.0
   assert kde.bandwidth != kde.bandwidth  # NaN check (not fitted yet)
   assert kde.degree == 2
@@ -25,7 +26,7 @@ def test_kde1d_initialization() -> None:
   kde = pv.core.Kde1d(
     xmin=0.0,
     xmax=1.0,
-    type="discrete",
+    var_type="d",
     multiplier=25,
     bandwidth=0.1,
     degree=1,
@@ -33,15 +34,15 @@ def test_kde1d_initialization() -> None:
   )
   assert kde.xmin == 0.0
   assert kde.xmax == 1.0
-  assert kde.type == "discrete"
+  assert kde.var_type == "d"
   assert kde.multiplier == 25
   assert kde.bandwidth == 0.1
   assert kde.degree == 1
   assert kde.grid_size == 200
 
   # Test zero-inflated type
-  kde = pv.core.Kde1d(type="zero_inflated")
-  assert kde.type == "zero-inflated"
+  kde = pv.core.Kde1d(var_type="zi")
+  assert kde.var_type == "zi"
 
 
 def test_kde1d_answers_the_three_fitting_verbs() -> None:
@@ -54,7 +55,7 @@ def test_kde1d_answers_the_three_fitting_verbs() -> None:
   """
   y = np.random.default_rng(0).gamma(2.0, 1.0, size=300)
 
-  fitted = pv.core.Kde1d.from_data(y, xmin=0.0)
+  fitted = pv.core.Kde1d.from_data(y, support=(0.0, None))
   assert isinstance(fitted, pv.core.Kde1d)
   assert fitted.xmin == 0.0
   assert np.isfinite(fitted.loglik())
@@ -73,11 +74,11 @@ def test_kde1d_factory_methods() -> None:
 
   # Test from_params
   kde = pv.core.Kde1d.from_params(
-    xmin=0.0, xmax=1.0, type="continuous", multiplier=1.2
+    xmin=0.0, xmax=1.0, var_type="c", multiplier=1.2
   )
   assert kde.xmin == 0.0
   assert kde.xmax == 1.0
-  assert kde.type == "continuous"
+  assert kde.var_type == "c"
   assert kde.multiplier == 1.2
 
   # Test from_grid
@@ -91,12 +92,12 @@ def test_kde1d_factory_methods() -> None:
     values=values,
     xmin=-2.0,
     xmax=2.0,
-    type="continuous",
+    var_type="c",
   )
 
   assert kde_from_grid.xmin == -2.0
   assert kde_from_grid.xmax == 2.0
-  assert kde_from_grid.type == "continuous"
+  assert kde_from_grid.var_type == "c"
 
   # Should be able to evaluate (it's already "fitted" from grid)
   pdf_vals = kde_from_grid.pdf(np.array([0.0]))
@@ -122,7 +123,7 @@ def test_kde1d_properties() -> None:
   kde = pv.core.Kde1d(
     xmin=-1.0,
     xmax=1.0,
-    type="continuous",
+    var_type="c",
     multiplier=2.0,
     bandwidth=0.5,
     degree=1,
@@ -132,7 +133,7 @@ def test_kde1d_properties() -> None:
   # Test read-only properties
   assert kde.xmin == -1.0
   assert kde.xmax == 1.0
-  assert kde.type == "continuous"
+  assert kde.var_type == "c"
   assert kde.multiplier == 2.0
   assert kde.bandwidth == 0.5
   assert kde.degree == 1
@@ -141,17 +142,18 @@ def test_kde1d_properties() -> None:
 
   # Test that properties are read-only
   with pytest.raises(AttributeError):
-    setattr(kde, "xmin", 0.0)
+    # As above: the assignment has to reach the property to be refused.
+    setattr(kde, "xmin", 0.0)  # noqa: B010
   with pytest.raises(AttributeError):
-    setattr(kde, "multiplier", 1.0)
+    setattr(kde, "multiplier", 1.0)  # noqa: B010
 
 
 def test_kde1d_fit_and_methods() -> None:
   """Test fitting and evaluation methods."""
 
   # Generate test data
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 100)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 100)
 
   # Test fitting
   kde = pv.core.Kde1d()
@@ -159,9 +161,9 @@ def test_kde1d_fit_and_methods() -> None:
 
   # After fitting, should have valid loglik and edf
   assert isinstance(kde.loglik(), float)
-  assert not (kde.loglik() != kde.loglik())  # Should not be NaN
-  assert isinstance(kde.edf, float)
-  assert kde.edf > 0
+  assert kde.loglik() == kde.loglik()  # Should not be NaN
+  assert isinstance(kde.npars, float)
+  assert kde.npars > 0
 
   # Test grid points and values are available
   grid_points = kde.grid_points
@@ -214,7 +216,7 @@ def test_kde1d_fit_and_methods() -> None:
 def test_kde1d_discrete_cdf_left_between_atoms() -> None:
   """The left limit between lattice atoms equals the ordinary CDF there."""
   x = np.repeat(np.arange(4, dtype=float), [10, 20, 30, 40])
-  kde = pv.core.Kde1d(type="discrete").fit(x)
+  kde = pv.core.Kde1d(var_type="d").fit(x)
   points = np.array([1.0, 1.5, 2.0, 2.5])
   expected = kde.cdf(np.ceil(points) - 1.0)
   np.testing.assert_allclose(kde.cdf_left(points), expected, rtol=0.0, atol=0.0)
@@ -223,16 +225,16 @@ def test_kde1d_discrete_cdf_left_between_atoms() -> None:
 def test_kde1d_weighted_fit() -> None:
   """Test fitting with weights."""
 
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 50)
-  weights = np.random.exponential(1, 50)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 50)
+  weights = rng.exponential(1, 50)
 
   kde = pv.core.Kde1d()
-  kde.fit(x, weights)
+  kde.fit(x, pv.core.FitControlsKde1d(weights=weights))
 
   # Should still work and produce valid results
   assert isinstance(kde.loglik(), float)
-  assert not (kde.loglik() != kde.loglik())  # Should not be NaN
+  assert kde.loglik() == kde.loglik()  # Should not be NaN
 
   pdf_vals = kde.pdf(np.array([0.0]))
   assert len(pdf_vals) == 1
@@ -242,10 +244,10 @@ def test_kde1d_weighted_fit() -> None:
 def test_kde1d_discrete_data() -> None:
   """Test with discrete data."""
 
-  np.random.seed(1234)
-  x = np.random.binomial(10, 0.3, 100).astype(float)
+  rng = np.random.RandomState(1234)
+  x = rng.binomial(10, 0.3, 100).astype(float)
 
-  kde = pv.core.Kde1d(xmin=0, xmax=10, type="discrete")
+  kde = pv.core.Kde1d(xmin=0, xmax=10, var_type="d")
   kde.fit(x)
 
   # Test evaluation at integer points
@@ -259,8 +261,8 @@ def test_kde1d_discrete_data() -> None:
 def test_kde1d_bounded_data() -> None:
   """Test with bounded support."""
 
-  np.random.seed(1234)
-  x = np.random.beta(2, 5, 100)  # Data in [0,1]
+  rng = np.random.RandomState(1234)
+  x = rng.beta(2, 5, 100)  # Data in [0,1]
 
   kde = pv.core.Kde1d(xmin=0.0, xmax=1.0)
   kde.fit(x)
@@ -308,8 +310,8 @@ def test_kde1d_is_fitted() -> None:
 def test_kde1d_check_fitted_parameter() -> None:
   """Test the check_fitted parameter in evaluation methods."""
 
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 50)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 50)
   eval_points = np.array([0.0])
 
   kde = pv.core.Kde1d()
@@ -339,8 +341,8 @@ def test_kde1d_check_fitted_parameter() -> None:
 def test_kde1d_single_point_evaluation() -> None:
   """Test evaluation with single point (similar to bicop test)."""
 
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 100)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 100)
 
   kde = pv.core.Kde1d()
   kde.fit(x)
@@ -383,8 +385,8 @@ def test_kde1d_error_conditions() -> None:
 def test_kde1d_different_degrees() -> None:
   """Test different polynomial degrees."""
 
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 100)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 100)
 
   for degree in [0, 1, 2]:
     kde = pv.core.Kde1d(degree=degree)
@@ -399,14 +401,14 @@ def test_kde1d_different_degrees() -> None:
 def test_kde1d_zero_inflated() -> None:
   """Test zero-inflated data."""
 
-  np.random.seed(1234)
+  rng = np.random.RandomState(1234)
   # Create zero-inflated data
-  x = np.random.exponential(1, 80)
+  x = rng.exponential(1, 80)
   zeros = np.zeros(20)
   x = np.concatenate([x, zeros])
-  np.random.shuffle(x)
+  rng.shuffle(x)
 
-  kde = pv.core.Kde1d(xmin=0.0, type="zero_inflated")
+  kde = pv.core.Kde1d(xmin=0.0, var_type="zi")
   kde.fit(x)
 
   # Check that prob0 is estimated
@@ -428,15 +430,15 @@ def test_kde1d_zero_inflated() -> None:
 def test_kde1d_large_data() -> None:
   """Test with larger dataset to ensure stability."""
 
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 1000)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 1000)
 
   kde = pv.core.Kde1d()
   kde.fit(x)
 
   # Should handle large datasets
   assert isinstance(kde.loglik(), float)
-  assert kde.edf > 0
+  assert kde.npars > 0
 
   # Test evaluation on many points
   eval_points = np.linspace(-3, 3, 100)
@@ -476,7 +478,7 @@ def test_the_grid_covers_a_discrete_variable_s_boundary_cells() -> None:
   for every ordered categorical, so it was the common case rather than a corner.
   """
   y = np.random.default_rng(13).integers(0, 4, 500).astype(float)
-  kde = pv.core.Kde1d(xmin=0.0, xmax=3.0, type="discrete").fit(y)
+  kde = pv.core.Kde1d(xmin=0.0, xmax=3.0, var_type="d").fit(y)
   grid = np.asarray(kde.grid_points)
   assert grid[0] == pytest.approx(-0.5)
   assert grid[-1] == pytest.approx(3.5)
@@ -489,11 +491,11 @@ def test_the_grid_covers_a_discrete_variable_s_boundary_cells() -> None:
 def test_discrete_bounds_and_data_must_be_integers() -> None:
   """A discrete variable lives on the integer lattice; a fractional bound is a mistake."""
   with pytest.raises(ValueError, match="discrete bounds must be integers"):
-    pv.core.Kde1d(xmin=0.5, type="discrete")
+    pv.core.Kde1d(xmin=0.5, var_type="d")
   with pytest.raises(ValueError, match="discrete bounds must be integers"):
-    pv.core.Kde1d(type="discrete").set_xmin_xmax(xmin=0.5)
+    pv.core.Kde1d(var_type="d").set_xmin_xmax(xmin=0.5)
   with pytest.raises(ValueError, match="discrete data must be integers"):
-    pv.core.Kde1d(type="discrete").fit(np.array([0.0, 1.5, 2.0]))
+    pv.core.Kde1d(var_type="d").fit(np.array([0.0, 1.5, 2.0]))
 
 
 def test_actual_grid_size_is_reported_separately() -> None:
@@ -533,12 +535,12 @@ def test_json_and_file_round_trips_are_exact() -> None:
     ("continuous", pv.core.Kde1d(), rng.normal(size=400)),
     (
       "discrete",
-      pv.core.Kde1d(type="discrete", xmin=0.0),
+      pv.core.Kde1d(var_type="d", xmin=0.0),
       rng.poisson(4, 400) * 1.0,
     ),
     (
       "zi",
-      pv.core.Kde1d(type="zi"),
+      pv.core.Kde1d(var_type="zi"),
       np.where(rng.random(400) < 0.3, 0.0, rng.gamma(2, size=400)),
     ),
   ]
@@ -555,9 +557,9 @@ def test_json_and_file_round_trips_are_exact() -> None:
       np.testing.assert_array_equal(restored.icdf(probs), kde.icdf(probs))
       # The fitted diagnostics travel too, not only the grid.
       assert restored.loglik() == kde.loglik()
-      assert restored.edf == kde.edf
+      assert restored.npars == kde.npars
       assert restored.bandwidth == kde.bandwidth
-      assert restored.type == kde.type
+      assert restored.var_type == kde.var_type
       assert restored.grid_size == kde.grid_size
 
 
@@ -571,13 +573,13 @@ def test_json_round_trip_preserves_unset_bounds() -> None:
 
 def test_json_round_trip_of_an_unfitted_estimator() -> None:
   """The configuration alone must survive, so a spec can be stored."""
-  kde = pv.core.Kde1d(type="discrete", xmin=0.0, bandwidth=0.7, grid_size=64)
+  kde = pv.core.Kde1d(var_type="d", xmin=0.0, bandwidth=0.7, grid_size=64)
   restored = pv.core.Kde1d.from_json(kde.to_json())
   assert not restored.is_fitted
   assert restored.bandwidth_spec == kde.bandwidth_spec
   assert restored.xmin == kde.xmin
   assert restored.grid_size == kde.grid_size
-  assert restored.type == kde.type
+  assert restored.var_type == kde.var_type
 
 
 def test_to_file_selects_cbor_by_extension(tmp_path: Path) -> None:
@@ -623,10 +625,11 @@ def test_kde1d_refuses_inputs_that_leave_nothing_to_fit(
     "negative": (y, np.where(np.arange(100) == 3, -1.0, 1.0)),
     "wrong_length": (y, np.ones(99)),
   }[bad]
+  controls = pv.core.FitControlsKde1d(weights=weights)
   for call in (
-    lambda: pv.core.Kde1d().fit(data, weights),
-    lambda: pv.core.Kde1d().select(data, weights),
-    lambda: pv.core.Kde1d.from_data(data, weights),
+    lambda: pv.core.Kde1d().fit(data, controls),
+    lambda: pv.core.Kde1d().select(data, controls),
+    lambda: pv.core.Kde1d.from_data(data, controls),
   ):
     with pytest.raises(ValueError, match=match):
       call()
@@ -649,7 +652,7 @@ def test_kde1d_survives_the_inputs_that_used_to_crash_it() -> None:
     "         (np.full(100, np.nan), np.ones(100)))\n"
     "for data, w in cases:\n"
     "    try:\n"
-    "        pv.core.Kde1d().fit(data, w)\n"
+    "        pv.core.Kde1d().fit(data, pv.core.FitControlsKde1d(weights=w))\n"
     "    except ValueError:\n"
     "        pass\n"
     "try:\n"
@@ -659,7 +662,7 @@ def test_kde1d_survives_the_inputs_that_used_to_crash_it() -> None:
     "print('survived')\n"
   )
   done = subprocess.run(
-    [sys.executable, "-c", program], capture_output=True, text=True
+    [sys.executable, "-c", program], capture_output=True, text=True, check=False
   )
   assert done.returncode == 0, f"interpreter died: {done.returncode}"
   assert "survived" in done.stdout
@@ -683,6 +686,148 @@ def test_kde1d_still_accepts_the_drop_markers_it_documents() -> None:
     (y, half_zero),
     (partial_nan_data, np.ones(200)),
   ):
-    assert np.all(np.isfinite(pv.core.Kde1d().fit(data, weights).pdf(q)))
+    assert np.all(
+      np.isfinite(
+        pv.core.Kde1d()
+        .fit(data, pv.core.FitControlsKde1d(weights=weights))
+        .pdf(q)
+      )
+    )
   # An omitted vector is the documented "no weights" default, not all-zero.
   assert np.all(np.isfinite(pv.core.Kde1d().fit(y).pdf(q)))
+
+
+# --------------------------------------------------------------------------- #
+# The uniform estimator signature: `(y, controls, *, var_type, support)` on    #
+# all three verbs, the same shape every other margin reads and the same shape  #
+# `Bicop` reads for its own declaration.                                       #
+# --------------------------------------------------------------------------- #
+
+
+def test_fit_controls_kde1d_round_trips() -> None:
+  """Every setting survives `to_dict` and a pickle, as `Bicop`'s do."""
+  weights = np.linspace(0.5, 1.5, 7)
+  controls = pv.core.FitControlsKde1d(
+    multiplier=2.0,
+    bandwidth=0.25,
+    degree=1,
+    grid_size=128,
+    boundary_repair=False,
+    weights=weights,
+  )
+  settings = controls.to_dict()
+  np.testing.assert_array_equal(settings.pop("weights"), weights)
+  assert settings == {
+    "multiplier": 2.0,
+    "bandwidth": 0.25,
+    "degree": 1,
+    "grid_size": 128,
+    "boundary_repair": False,
+  }
+  back = pickle.loads(pickle.dumps(controls))
+  np.testing.assert_array_equal(back.weights, weights)
+  assert pv.core.FitControlsKde1d().to_dict()["bandwidth"] is None
+  # The weights are what a round-trip used to drop: `__setstate__` rebuilt the
+  # struct field by field, so a field added to it has to be added there too.
+  assert pv.core.FitControlsKde1d().to_dict()["weights"] is None
+
+
+@pytest.mark.parametrize(
+  ("field", "bad"),
+  [("grid_size", 2), ("degree", 3), ("multiplier", -1.0), ("bandwidth", 0.0)],
+)
+def test_fit_controls_kde1d_checks_an_assignment(
+  field: str, bad: float
+) -> None:
+  """A setter refuses what the constructor refuses, as `FitControlsBicop` does.
+
+  Otherwise the same value is an error in one spelling and a failure from
+  inside the fit in the other.
+  """
+  kwargs: dict[str, Any] = {field: bad}
+  with pytest.raises(ValueError):
+    pv.core.FitControlsKde1d(**kwargs)
+  controls = pv.core.FitControlsKde1d()
+  with pytest.raises(ValueError):
+    setattr(controls, field, bad)
+  assert controls.to_dict() == pv.core.FitControlsKde1d().to_dict()
+
+
+@pytest.mark.parametrize("verb", ["fit", "select", "from_data"])
+def test_controls_reach_the_fitted_grid(verb: str) -> None:
+  """The second positional is the controls object, and it is read.
+
+  `bandwidth` is the knob with no path at all before this: a caller could only
+  reach it by constructing the margin themselves, which is exactly what naming
+  a `margin_class` is supposed to spare them.
+  """
+  y = np.random.default_rng(0).normal(size=300)
+  controls = pv.core.FitControlsKde1d(bandwidth=0.4, grid_size=64)
+  if verb == "from_data":
+    fitted = pv.core.Kde1d.from_data(y, controls)
+  else:
+    fitted = getattr(pv.core.Kde1d(), verb)(y, controls)
+  assert fitted.bandwidth == pytest.approx(0.4)
+  assert fitted.grid_size == 64
+  assert fitted.loglik() < 0.0
+
+
+def test_the_declaration_is_keyword_only_on_every_verb() -> None:
+  """`var_type` / `support` are the caller's, exactly as `Bicop`'s `var_types`.
+
+  A declaration is not fit configuration: it says what the variable *is*, which
+  is why it travels beside `controls` rather than inside it.
+  """
+  counts = np.repeat(np.arange(5, dtype=float), [10, 20, 30, 25, 15])
+  discrete = pv.core.Kde1d.from_data(counts, var_type="d", support=(0.0, 4.0))
+  assert discrete.var_type == "d"
+  assert (discrete.xmin, discrete.xmax) == (0.0, 4.0)
+  # And the same declaration through the other two verbs.
+  assert pv.core.Kde1d().fit(counts, var_type="d").var_type == "d"
+  assert pv.core.Kde1d().select(counts, var_type="d").var_type == "d"
+
+
+def test_weights_in_the_controls_slot_are_refused() -> None:
+  """`kde.fit(y, w)` was the old spelling, and it now names the wrong thing.
+
+  It used to bind the weights to the second positional and fit them; the
+  positional is `controls` on every margin now, so carrying the old call over
+  has to fail rather than quietly fitting unweighted.
+  """
+  y = np.random.default_rng(0).normal(size=100)
+  w = np.linspace(0.1, 3.0, 100)
+  # `cast` because the wrongness is the subject: `controls` is annotated, so
+  # `ty` refuses this call outright and the guard is for the caller who runs
+  # no checker at all.
+  with pytest.raises(TypeError):
+    pv.core.Kde1d().fit(y, cast("Any", w))
+  assert (
+    pv.core.Kde1d().fit(y, pv.core.FitControlsKde1d(weights=w)).loglik() < 0.0
+  )
+
+
+def test_a_declaration_states_what_it_states_and_no_more() -> None:
+  """Declaring one thing must not discard what the object was built with.
+
+  A kernel density reads its bounds, its type and its kernel knobs when the
+  grid is built, so a fit that carries a declaration has to rebuild --- from
+  the object it was called on, not from the defaults.
+  """
+  y = np.abs(np.random.default_rng(0).normal(size=300))
+  built = pv.core.Kde1d(xmin=0.0, bandwidth=0.3, grid_size=64, degree=1)
+  built.fit(y, var_type="c")
+  assert built.xmin == 0.0
+  assert built.bandwidth == pytest.approx(0.3)
+  assert (built.grid_size, built.degree) == (64, 1)
+
+  # An automatic bandwidth stays automatic: carrying the *selected* value
+  # forward would pin a refit to the first sample the object ever saw.
+  auto = pv.core.Kde1d(xmin=0.0)
+  first = auto.fit(y).bandwidth
+  assert auto.fit(y[:80], var_type="c").bandwidth != pytest.approx(first)
+
+  # And a controls object replaces the knobs wholesale, since it names them
+  # all: that is what passing one means.
+  built.fit(y, pv.core.FitControlsKde1d(grid_size=128))
+  assert built.grid_size == 128
+  assert built.xmin == 0.0

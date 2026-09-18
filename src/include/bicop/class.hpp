@@ -35,15 +35,14 @@ inline Bicop bc_from_family(const BicopFamily& family, int rotation,
 }
 
 // Factory function to create a Bicop from data, controls, and variable types
-// `data` is dynamically sized, not statically two-column: a discrete variable
+// `u` is dynamically sized, not statically two-column: a discrete variable
 // needs a left-limit column, so the accepted shapes are `n x 2`, `n x (2 + k)`
 // and `n x 4` (vinecopulib#729).
-inline Bicop bc_from_data(const Eigen::MatrixXd& data,
+inline Bicop bc_from_data(const Eigen::MatrixXd& u,
                           const FitControlsBicop* controls,
                           const std::vector<std::string>& var_types = {"c",
                                                                        "c"}) {
-  return Bicop(data, controls ? *controls : default_bicop_controls(),
-               var_types);
+  return Bicop(u, controls ? *controls : default_bicop_controls(), var_types);
 }
 
 // Factory function to create a Bicop from a filename
@@ -90,6 +89,22 @@ Alternatives to instantiate bivariate copulas are:
 - ``Bicop.from_file()``: Instantiate from a JSON file, or a CBOR file when the filename ends in ``.cbor``.
 - ``Bicop.from_json()``: Instantiate from a JSON string.
 )""";
+
+  const char* from_json_doc = R"""(
+  Instantiates a ``Bicop`` from a JSON string.
+
+  Takes the JSON text ``Bicop.to_json()`` writes, not a decoded object.
+
+  Parameters
+  ----------
+  json : str
+      The JSON text to read, as ``Bicop.to_json()`` writes it.
+
+  Returns
+  -------
+  Bicop
+      The bivariate copula the text describes.
+  )""";
 
   // `simulate` takes either a sample size or one parameter set per drawn
   // observation (vinecopulib#719), which fixes the sample size by its row
@@ -238,29 +253,28 @@ Bicop
                     const nb::DRef<Eigen::MatrixXd>&,
                     const std::vector<std::string>&>(),
            "family"_a = BicopFamily::indep, "rotation"_a = 0,
-           "parameters"_a = Eigen::MatrixXd(),
+           "parameters"_a = Eigen::MatrixXd(), nb::kw_only(),
            "var_types"_a = std::vector<std::string>(2, "c"),
            default_constructor_doc, nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_family", &bc_from_family,
                   "family"_a = BicopFamily::indep, "rotation"_a = 0,
-                  "parameters"_a = Eigen::MatrixXd(),
+                  "parameters"_a = Eigen::MatrixXd(), nb::kw_only(),
                   "var_types"_a = std::vector<std::string>(2, "c"),
                   bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types,
                   nb::call_guard<nb::gil_scoped_release>())
       // One argument order across every estimator in the package: the
       // observations, then `controls`, then keyword-only whatever the object
       // cannot infer. `var_types` is a declaration, so it is keyword-only.
-      .def_static("from_data", &bc_from_data, "data"_a,
+      .def_static("from_data", &bc_from_data, "u"_a,
                   "controls"_a.sig("FitControlsBicop()") = nb::none(),
                   nb::kw_only(),
                   "var_types"_a = std::vector<std::string>(2, "c"),
-                  bicop_doc.ctor.doc_3args_data_controls_var_types,
+                  bicop_doc.ctor.doc_3args_u_controls_var_types,
                   nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &bc_from_file, "filename"_a,
                   bicop_doc.ctor.doc_1args_filename,
                   nb::call_guard<nb::gil_scoped_release>())
-      .def_static("from_json", &bc_from_json, "json"_a,
-                  bicop_doc.ctor.doc_1args_input,
+      .def_static("from_json", &bc_from_json, "json"_a, from_json_doc,
                   nb::call_guard<nb::gil_scoped_release>())
       .def("to_file", &Bicop::to_file, "filename"_a, bicop_doc.to_file.doc,
            nb::call_guard<nb::gil_scoped_release>())
@@ -296,7 +310,7 @@ Bicop
             if (parameters) return self.loglik(u, *parameters, num_threads);
             return self.loglik(u);
           },
-          "u"_a = Eigen::MatrixXd(), "parameters"_a = nb::none(),
+          "u"_a = Eigen::MatrixXd(), nb::kw_only(), "parameters"_a = nb::none(),
           "num_threads"_a = static_cast<size_t>(1), loglik_doc.c_str(),
           nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("nobs", &Bicop::get_nobs, bicop_doc.get_nobs.doc)
@@ -339,90 +353,90 @@ Bicop
                    bicop_doc.get_parameters_upper_bounds.doc,
                    nb::call_guard<nb::gil_scoped_release>())
       .def("pdf", make_opt_dispatch(&Bicop::pdf, &Bicop::pdf), "u"_a,
-           "parameters"_a = nb::none(),
+           nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), pdf_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("cdf", make_opt_dispatch(&Bicop::cdf, &Bicop::cdf), "u"_a,
-           "parameters"_a = nb::none(),
+           nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), cdf_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("hfunc1", make_opt_dispatch(&Bicop::hfunc1, &Bicop::hfunc1), "u"_a,
-           "parameters"_a = nb::none(),
+           nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hfunc1_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("hfunc2", make_opt_dispatch(&Bicop::hfunc2, &Bicop::hfunc2), "u"_a,
-           "parameters"_a = nb::none(),
+           nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hfunc2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("hinv1", make_opt_dispatch(&Bicop::hinv1, &Bicop::hinv1), "u"_a,
-           "parameters"_a = nb::none(),
+           nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hinv1_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("hinv2", make_opt_dispatch(&Bicop::hinv2, &Bicop::hinv2), "u"_a,
-           "parameters"_a = nb::none(),
+           nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hinv2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("pdf_deriv",
            deriv_with_optional_params(&Bicop::pdf_deriv, &Bicop::pdf_deriv),
-           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "u"_a, "deriv"_a, nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), pdf_deriv_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("pdf_deriv2",
            deriv_with_optional_params(&Bicop::pdf_deriv2, &Bicop::pdf_deriv2),
-           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "u"_a, "deriv"_a, nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), pdf_deriv2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("hfunc1_deriv",
            deriv_with_optional_params(&Bicop::hfunc1_deriv,
                                       &Bicop::hfunc1_deriv),
-           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "u"_a, "deriv"_a, nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hfunc1_deriv_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("hfunc1_deriv2",
            deriv_with_optional_params(&Bicop::hfunc1_deriv2,
                                       &Bicop::hfunc1_deriv2),
-           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "u"_a, "deriv"_a, nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hfunc1_deriv2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("hfunc2_deriv",
            deriv_with_optional_params(&Bicop::hfunc2_deriv,
                                       &Bicop::hfunc2_deriv),
-           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "u"_a, "deriv"_a, nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hfunc2_deriv_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("hfunc2_deriv2",
            deriv_with_optional_params(&Bicop::hfunc2_deriv2,
                                       &Bicop::hfunc2_deriv2),
-           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "u"_a, "deriv"_a, nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hfunc2_deriv2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("logpdf_deriv",
            deriv_with_optional_params(&Bicop::logpdf_deriv,
                                       &Bicop::logpdf_deriv),
-           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "u"_a, "deriv"_a, nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), logpdf_deriv_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("logpdf_deriv2",
            deriv_with_optional_params(&Bicop::logpdf_deriv2,
                                       &Bicop::logpdf_deriv2),
-           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "u"_a, "deriv"_a, nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), logpdf_deriv2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("scores", make_opt_dispatch(&Bicop::scores, &Bicop::scores), "u"_a,
-           "parameters"_a = nb::none(),
+           nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), scores_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("gradient", make_opt_dispatch(&Bicop::gradient, &Bicop::gradient),
-           "u"_a, "parameters"_a = nb::none(),
+           "u"_a, nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), gradient_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("hessian", make_opt_dispatch(&Bicop::hessian, &Bicop::hessian),
-           "u"_a, "parameters"_a = nb::none(),
+           "u"_a, nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hessian_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("scores_cov",
            make_opt_dispatch(&Bicop::scores_cov, &Bicop::scores_cov), "u"_a,
-           "parameters"_a = nb::none(),
+           nb::kw_only(), "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), scores_cov_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def(
@@ -442,7 +456,7 @@ Bicop
             for (const auto& h : hess) out.append(nb::cast(h));
             return out;
           },
-          "u"_a, "parameters"_a = nb::none(),
+          "u"_a, nb::kw_only(), "parameters"_a = nb::none(),
           "num_threads"_a = static_cast<size_t>(1), hessian_full_doc.c_str())
       .def(
           "scores_full",
@@ -461,12 +475,12 @@ Bicop
             out["scores"] = nb::cast(res.scores);
             return out;
           },
-          "u"_a, "parameters"_a = nb::none(),
+          "u"_a, nb::kw_only(), "parameters"_a = nb::none(),
           "num_threads"_a = static_cast<size_t>(1), scores_full_doc.c_str())
       .def(
           "sample",
           [](const Bicop& self, std::optional<size_t> n, bool qrng,
-             const std::vector<int>& seeds,
+             const std::optional<std::vector<int>>& seeds,
              const std::optional<Eigen::MatrixXd>& parameters,
              size_t num_threads) -> Eigen::MatrixXd {
             if (n.has_value() == parameters.has_value()) {
@@ -475,14 +489,16 @@ Bicop
                   "already fixes the number of observations by its row "
                   "count");
             }
+            const std::vector<int> draw_seeds =
+                seeds.value_or(std::vector<int>{});
             nb::gil_scoped_release release;
             if (parameters) {
-              return self.simulate(*parameters, qrng, seeds, num_threads);
+              return self.simulate(*parameters, qrng, draw_seeds, num_threads);
             }
-            return self.simulate(*n, qrng, seeds);
+            return self.simulate(*n, qrng, draw_seeds);
           },
-          "n"_a = nb::none(), "qrng"_a = false, "seeds"_a = std::vector<int>(),
-          nb::kw_only(), "parameters"_a = nb::none(),
+          "n"_a = nb::none(), "qrng"_a = false, nb::kw_only(),
+          "seeds"_a = nb::none(), "parameters"_a = nb::none(),
           "num_threads"_a = static_cast<size_t>(1), sample_doc.c_str())
       .def(
           "flip",
@@ -502,28 +518,27 @@ Bicop
       // needs it.
       .def(
           "fit",
-          [](Bicop& self, const Eigen::MatrixXd& data,
+          [](Bicop& self, const Eigen::MatrixXd& u,
              const FitControlsBicop* controls) -> Bicop& {
             {
               nb::gil_scoped_release release;
-              self.fit(data, controls ? *controls : default_bicop_controls());
+              self.fit(u, controls ? *controls : default_bicop_controls());
             }
             return self;
           },
-          "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
+          "u"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
           bicop_doc.fit.doc, nb::rv_policy::reference_internal)
       .def(
           "select",
-          [](Bicop& self, const Eigen::MatrixXd& data,
+          [](Bicop& self, const Eigen::MatrixXd& u,
              const FitControlsBicop* controls) -> Bicop& {
             {
               nb::gil_scoped_release release;
-              self.select(data,
-                          controls ? *controls : default_bicop_controls());
+              self.select(u, controls ? *controls : default_bicop_controls());
             }
             return self;
           },
-          "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
+          "u"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
           bicop_doc.select.doc, nb::rv_policy::reference_internal)
       .def("plot", &bicop_plot_wrapper, "plot_type"_a = "surface",
            "margin_type"_a = "unif", "xylim"_a = nb::none(),
@@ -555,4 +570,14 @@ Bicop
                   nb::cast<Eigen::MatrixXd>(state["parameters"]),
                   nb::cast<std::vector<std::string>>(state["var_types"]));
       });
+  // The controls class this estimator reads, declared where `bicop_class` /
+  // `vinecop_class` / `margin_class` declare the parts: it is the one place
+  // that answers "what does `controls=None` mean here", so the Python layers
+  // read it instead of each naming FitControlsBicop again.
+  module.attr("Bicop").attr("controls_class") = module.attr("FitControlsBicop");
+  // Declared, not inferred: nanobind reports every bound signature as
+  // `(*args, **kwargs)`, so nothing can read off this class whether it takes
+  // covariates or honors weights. A consumer asks the declaration.
+  module.attr("Bicop").attr("supports_covariates") = false;
+  module.attr("Bicop").attr("supports_weights") = true;
 }

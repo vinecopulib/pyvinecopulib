@@ -26,7 +26,7 @@ def _requires_x86_64_v3() -> bool:
 def _linux_has_v3() -> bool | None:
   """Report AVX2+FMA from ``/proc/cpuinfo``, or ``None`` if unreadable."""
   try:
-    text = Path("/proc/cpuinfo").read_text()
+    text = Path("/proc/cpuinfo").read_text(encoding="utf-8")
   except OSError:
     return None
   for line in text.splitlines():

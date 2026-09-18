@@ -1,50 +1,59 @@
-from typing import Any, Optional
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
+import pandas as pd
 from sklearn.base import DensityMixin
 from sklearn.utils.validation import check_is_fitted
 
+import pyvinecopulib as pv
+
+from ..core import ControlsLike, VinedistLike
+from ..core.extend import to_numpy
 from ._base import (
   _DOC_DISCRETE,
   _DOC_FACTORIZATION,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
   VineBase,
-  _as_ndarray,
-  _RandomStateLike,
-  _XLike,
 )
-from .backends import _VinecopBackendBase
 
 
 class VineDensity(DensityMixin, VineBase):
-  # `score_samples` reports a log-density on the original scale, so a margin
-  # without one is refused at fit time rather than at the first score.
-  _needs_marginal_density: bool = True
-
   def __init__(
     self,
-    backend: Optional[_VinecopBackendBase[Any]] = None,
-    margins: object = None,
+    distribution: type[VinedistLike[Any]] | None = None,
+    controls: ControlsLike | None = None,
+    structure: pv.RVineStructure | None = None,
+    margin_controls: object = None,
     batch_size: int = 100,
-    random_state: _RandomStateLike = None,
-    n_jobs: Optional[int] = None,
+    random_state: int | np.random.RandomState | None = None,
+    n_jobs: int | None = None,
   ) -> None:
     """Vine-copula based density estimator.
 
     Parameters
     ----------
-    backend : VinecopBackend or compatible, or None, optional
-        Backend instance bundling fit-time controls and an optional
-        pre-specified structure. `None` resolves to a default
-        ``VinecopBackend`` at fit time, which calls ``Vinecop.from_data()``
-        with the nonparametric ``tll`` pair family. Pass
-        ``TorchVinecopBackend`` for the PyTorch backend.
-    margins : object, or None, optional
-        The marginal half of the model, in any form
-        :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
-        fits a ``Kde1d`` per column with the variable type
-        inferred from the input.
+    distribution : type, or None, optional
+        The ``VinedistBase`` subclass to fit --- ``Vinedist`` (the default,
+        pairing ``Vinecop`` with ``Kde1d``) or
+        :class:`pyvinecopulib.torch.TorchVinedist` for the PyTorch lane.
+        Naming it is the whole lane choice, and importing ``TorchVinedist``
+        to name it is the explicit opt-in to PyTorch.
+    controls : ControlsLike, or None, optional
+        Fit-time controls for the copula half. `None` fits the nonparametric
+        ``tll`` pair family truncated at depth 20.
+    structure : RVineStructure, or None, optional
+        A pre-specified vine structure; `None` selects one.
+    margin_controls : object, or None, optional
+        How to fit each margin, in any form
+        :func:`pyvinecopulib.margins.resolve_margin_controls` accepts: one
+        :class:`pyvinecopulib.core.FitControlsMargin` broadcast to every
+        column, a sequence, or a mapping keyed by feature name or position.
+        The variable type and bounds inferred from the input are filled in
+        underneath, so a mapping addressing one column does not retype the
+        others. Which *class* each margin is comes from ``distribution``'s
+        ``margin_class``.
     batch_size : int, default=100
         Number of test points processed per batch when evaluating
         the density. Higher values trade memory for throughput.
@@ -65,14 +74,20 @@ class VineDensity(DensityMixin, VineBase):
         it when a single vine is the whole job.
     """
     super().__init__(
-      backend=backend,
-      margins=margins,
+      distribution=distribution,
+      controls=controls,
+      structure=structure,
+      margin_controls=margin_controls,
       batch_size=batch_size,
       random_state=random_state,
       n_jobs=n_jobs,
     )
 
-  def fit(self, X: _XLike, y: object = None) -> "VineDensity":
+  def fit(
+    self,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
+    y: object = None,
+  ) -> "VineDensity":
     """Fits the joint density to the training data.
 
     Parameters
@@ -93,12 +108,12 @@ class VineDensity(DensityMixin, VineBase):
     self._validate_params()
     X = self._validate_input(X, reset=True)
     self._resolve_runtime_state()
-    self._fit_marginals(X)
-    self._fit_vine(self._to_u_scale(X))
-    self._bind_distribution(self._x_margins)
+    self._fit_distribution(X)
     return self
 
-  def score_samples(self, X: _XLike) -> np.ndarray:
+  def score_samples(
+    self, X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]]
+  ) -> np.ndarray:
     """Evaluates the per-sample log-likelihood under the fitted density.
 
     Equivalent to ``np.log(self.pdf(X, copula_only=False))`` but
@@ -118,7 +133,7 @@ class VineDensity(DensityMixin, VineBase):
 
   def score(
     self,
-    X: _XLike,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
     y: object = None,
   ) -> float:
     """Mean log-likelihood over a sample (sklearn ``score`` convention).
@@ -144,9 +159,11 @@ class VineDensity(DensityMixin, VineBase):
     return float(self.score_samples(X).mean())
 
   def sample(
-    self, n_samples: int = 1, random_state: _RandomStateLike = None
+    self,
+    n_samples: int = 1,
+    random_state: int | np.random.RandomState | None = None,
   ) -> np.ndarray:
-    """Draws samples from the fitted joint density.
+    r"""Draws samples from the fitted joint density.
 
     Samples :math:`U \\sim C` from the fitted copula and pushes each
     component back through the inverse marginal CDF :math:`F_j^{-1}`
@@ -178,10 +195,19 @@ class VineDensity(DensityMixin, VineBase):
 
       rng = check_random_state(random_state)
     seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
-    return _as_ndarray(self.distribution_.sample(n_samples, seeds=seeds))
+    return to_numpy(
+      self.distribution_.sample(
+        n_samples, seeds=seeds, num_threads=self._num_threads
+      ),
+      dtype=float,
+    )
 
-  def pdf(self, X: _XLike, copula_only: bool = False) -> np.ndarray:
-    """Evaluates the joint density at the given samples.
+  def pdf(
+    self,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
+    copula_only: bool = False,
+  ) -> np.ndarray:
+    r"""Evaluates the joint density at the given samples.
 
     Returns the full joint density
     :math:`\\hat f(\\mathbf{x}) = \\hat c(\\hat F_1(x_1), \\ldots,
@@ -206,17 +232,17 @@ class VineDensity(DensityMixin, VineBase):
 
   def cdf(
     self,
-    X: _XLike,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
     N: int = 10000,
-    random_state: _RandomStateLike = None,
+    random_state: int | np.random.RandomState | None = None,
   ) -> np.ndarray:
-    """Evaluates the joint CDF at the given samples.
+    r"""Evaluates the joint CDF at the given samples.
 
     Returns
     :math:`\\hat F(\\mathbf{x}) = \\hat C(\\hat F_1(x_1), \\ldots,
     \\hat F_d(x_d))` by applying the marginal CDFs to obtain
     pseudo-observations and evaluating the fitted copula CDF via
-    the backend's quasi-Monte-Carlo routine.
+    the vine's quasi-Monte-Carlo routine.
 
     Parameters
     ----------
@@ -247,8 +273,14 @@ class VineDensity(DensityMixin, VineBase):
 
       rng = check_random_state(random_state)
     seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
-    return _as_ndarray(
-      self.distribution_.cdf(np.asarray(X, dtype=float), N=N, seeds=seeds)
+    return to_numpy(
+      self.distribution_.cdf(
+        np.asarray(X, dtype=float),
+        N=N,
+        seeds=seeds,
+        num_threads=self._num_threads,
+      ),
+      dtype=float,
     )
 
 

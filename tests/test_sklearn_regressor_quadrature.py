@@ -16,6 +16,7 @@ code with the quadrature.
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import numpy as np
 import pytest
@@ -23,12 +24,22 @@ import pytest
 pytest.importorskip("sklearn")
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import Kde1d
+from pyvinecopulib.core import Kde1d, Vinedist
 from pyvinecopulib.sklearn import VineRegressor
 
 from .helpers import AtomicMargin
 
 BETA = np.array([1.0, -0.7])
+
+
+def _parametric_vinedist() -> type[Vinedist]:
+  """A distribution whose margins are SciPy families rather than densities."""
+  from pyvinecopulib.margins import SciPyMargin
+
+  class _Parametric(Vinedist):
+    margin_class = SciPyMargin
+
+  return _Parametric
 
 
 def _data(
@@ -41,10 +52,30 @@ def _data(
   return X, X @ BETA + 0.5 * noise
 
 
-def _bounded_kde(column: np.ndarray) -> Kde1d:
-  """A margin bounded by the observed range, so its own grid is non-uniform."""
-  column = np.asarray(column, dtype=float)
-  return Kde1d(xmin=float(column.min()), xmax=float(column.max())).fit(column)
+def _bounded_response(y: np.ndarray) -> type[Vinedist]:
+  """A distribution whose *response* margin is bounded by the observed range.
+
+  A bounded ``Kde1d`` grids its own support non-uniformly, and the response
+  leads the variable order, so this is where that grid meets the quadrature.
+  Which margin a variable gets is the distribution's to say, so a bound the
+  schema cannot infer is declared by overriding the hook that builds them.
+  """
+  lo, hi = float(np.min(y)), float(np.max(y))
+
+  class _Bounded(Vinedist):
+    @classmethod
+    def _default_margins(
+      cls,
+      d: int,
+      controls: Any = None,
+      margin_controls: Any = None,
+      *,
+      reference: Any = None,
+    ) -> list[Any]:
+      del reference
+      return [Kde1d(xmin=lo, xmax=hi), *(Kde1d() for _ in range(d - 1))]
+
+  return _Bounded
 
 
 def _relative_rmse(a: np.ndarray, b: np.ndarray, scale: float) -> float:
@@ -83,7 +114,7 @@ def test_the_node_count_is_n_nodes() -> None:
   """``n_nodes`` sets the width of the weight matrix, whatever the sample."""
   X, y = _data(300)
   est = VineRegressor(n_nodes=17).fit(X, y)
-  assert est._weights_for_batch(X[:4]).shape == (4, 17)
+  assert est.conditional_weights(X[:4]).shape == (4, 17)
 
 
 @pytest.mark.parametrize("heavy", [False, True])
@@ -103,7 +134,7 @@ def test_the_quadrature_converges(heavy: bool) -> None:
 
 
 def test_it_integrates_the_inverse_cdf_against_the_copula() -> None:
-  """The rule computes the integral it claims to, on an independent grid.
+  r"""The rule computes the integral it claims to, on an independent grid.
 
   The expectation here is a midpoint rule uniform in ``p`` -- a different node
   set and no probit substitution -- written out from the fitted distribution
@@ -169,19 +200,20 @@ def test_a_bounded_response_margin_is_as_accurate_as_an_unbounded_one() -> None:
   """
   X, y = _data(1500)
   scale = float(np.std(y))
+  dist = _bounded_response(y)
   exact = (
-    VineRegressor(margins=_bounded_kde, use_grid=False)
-    .fit(X, y)
-    .predict(X[:25])
+    VineRegressor(distribution=dist, use_grid=False).fit(X, y).predict(X[:25])
   )
-  bounded = VineRegressor(margins=_bounded_kde).fit(X, y).predict(X[:25])
+  bounded = VineRegressor(distribution=dist).fit(X, y).predict(X[:25])
   assert _relative_rmse(bounded, exact, scale) < 0.05
 
 
 def test_the_nodes_stay_inside_the_response_support() -> None:
   """Predictions are convex combinations of points the margin can produce."""
   X, y = _data(400)
-  est = VineRegressor(quantiles=[0.05, 0.95], margins=_bounded_kde).fit(X, y)
+  est = VineRegressor(
+    quantiles=[0.05, 0.95], distribution=_bounded_response(y)
+  ).fit(X, y)
   pred = est.predict(X[:50])
   assert pred.min() >= y.min()
   assert pred.max() <= y.max()
@@ -194,8 +226,11 @@ def test_any_continuous_response_margin_works_on_the_grid(spec: str) -> None:
     pytest.importorskip("scipy")
   X, y = _data(1200)
   scale = float(np.std(y))
-  grid = VineRegressor(margins=spec).fit(X, y).predict(X[:25])
-  exact = VineRegressor(margins=spec, use_grid=False).fit(X, y).predict(X[:25])
+  dist = Vinedist if spec == "kde" else _parametric_vinedist()
+  grid = VineRegressor(distribution=dist).fit(X, y).predict(X[:25])
+  exact = (
+    VineRegressor(distribution=dist, use_grid=False).fit(X, y).predict(X[:25])
+  )
   assert np.all(np.isfinite(grid))
   # Correlation rather than a distance: a margin that extrapolates past the
   # data legitimately moves the conditional mean away from the weighted sum
@@ -208,7 +243,52 @@ def test_a_step_response_margin_degenerates_to_its_atoms() -> None:
   """A step inverse CDF returns order statistics, so the quadrature becomes a
   weighted sum over the observed responses."""
   X, y = _data(300)
-  est = VineRegressor(margins=AtomicMargin(), n_nodes=201).fit(X, y)
+
+  class _Atomic(Vinedist):
+    margin_class = AtomicMargin
+
+  est = VineRegressor(distribution=_Atomic, n_nodes=201).fit(X, y)
   nodes = np.asarray(est.distribution_.margins[0].icdf(np.linspace(0.01, 0.99)))
   assert np.all(np.isin(np.round(nodes, 12), np.round(y, 12)))
   assert np.all(np.isfinite(est.predict(X[:10])))
+
+
+def test_the_marginal_copula_quadrature_is_not_floored() -> None:
+  """A row far outside the model reports its density, not a clip.
+
+  The quadrature runs in log space, so a copula density that underflows at
+  every node comes back as the small number it is. Flooring it instead --
+  which a linear-space sum plus ``log(clip(out, 1e-10, None))`` does -- makes
+  an excluded row score a finite, wrong value, and `#336` put the other half
+  of the same comparison (`_pdf_samples`) in log space already.
+  """
+  rng = np.random.default_rng(0)
+  X = rng.standard_normal((400, 6))
+  y = X.sum(axis=1) + 0.3 * rng.standard_normal(400)
+  est = VineRegressor(random_state=0).fit(X, y)
+
+  far = np.vstack([X[:1], np.full((1, 6), 60.0)])
+  log_d = est.copula_marginal_density(far, log=True)
+
+  assert log_d[0] > np.log(1e-10)
+  assert log_d[1] < np.log(1e-10)
+  # The two spellings are the same quantity wherever both can hold it.
+  linear = est.copula_marginal_density(X[:5], log=False)
+  np.testing.assert_allclose(
+    np.log(linear), est.copula_marginal_density(X[:5], log=True)
+  )
+
+  # And where they cannot: at six variables the excluded row is 1.8e-132,
+  # under the old floor but still a float64. Twelve is what makes the claim
+  # the docstring above makes -- the density actually underflows, so the
+  # linear spelling holds exactly zero while the log one still carries the
+  # value. Anything reading the linear one would see `-inf`, or the floor.
+  wide = rng.standard_normal((400, 12))
+  est_wide = VineRegressor(random_state=0).fit(
+    wide, wide.sum(axis=1) + 0.3 * rng.standard_normal(400)
+  )
+  excluded = np.full((1, 12), 60.0)
+  log_excluded = float(est_wide.copula_marginal_density(excluded, log=True)[0])
+  assert np.isfinite(log_excluded)
+  assert log_excluded < -700.0
+  assert float(est_wide.copula_marginal_density(excluded, log=False)[0]) == 0.0

@@ -11,22 +11,17 @@ the values, and the generic array type is unbounded, so it names no operators.
 from __future__ import annotations
 
 import math
-from types import ModuleType
-from typing import Any, Callable, Union, cast
+from collections.abc import Callable
+from typing import Any, cast
 
-from array_api_compat import array_namespace
-
-from .protocols import ArrayT
+from .protocols import ArrayT, Namespace, array_namespace
 
 __all__ = ["solve_increasing"]
 
 
-# The bisection computes on its bracket -- doubles it, compares it, blends
-# it -- and a bound may be a scalar or an array, neither of which an unbounded
-# `ArrayT` types (see `protocols.py`).
 def _is_finite_bound(
-  xp: ModuleType,
-  bound: Any,  # noqa: ANN401
+  xp: Namespace[ArrayT],
+  bound: float | ArrayT,
   broadcast: ArrayT,
 ) -> bool:
   """Whether ``bound`` is finite everywhere.
@@ -49,18 +44,20 @@ def _is_finite_bound(
   bool
       ``True`` if no entry is infinite or NaN.
   """
-  try:
+  # Narrowed rather than caught: a scalar answers without touching the array
+  # namespace, and which of the two it is is a fact about the argument, not
+  # something to learn from a `TypeError`.
+  if isinstance(bound, (int, float)):
     return math.isfinite(bound)
-  except TypeError:
-    return bool(xp.all(xp.isfinite(broadcast)))
+  return bool(xp.all(xp.isfinite(broadcast)))
 
 
 def _bracket(
-  xp: ModuleType,
+  xp: Namespace[ArrayT],
   f: Callable[[Any], Any],
   p: ArrayT,
-  a: Any,  # noqa: ANN401 - as `_is_finite_bound`
-  b: Any,  # noqa: ANN401
+  a: ArrayT,
+  b: ArrayT,
   finite_lo: bool,
   finite_hi: bool,
   max_expand: int,
@@ -95,7 +92,7 @@ def _bracket(
   # Seed the open side one unit past the closed one, so the first doubling has
   # a finite width to work with.
   if not finite_lo:
-    a = xp.where(xp.isfinite(a), a, (b - one) if finite_hi else -one)
+    a = xp.where(xp.isfinite(a), a, (b - one) if finite_hi else one * -1.0)
   if not finite_hi:
     b = xp.where(xp.isfinite(b), b, (a + one) if finite_lo else one)
 
@@ -121,8 +118,8 @@ def solve_increasing(
   f: Callable[[Any], Any],
   p: ArrayT,
   *,
-  lo: Union[float, ArrayT] = 0.0,
-  hi: Union[float, ArrayT] = 1.0,
+  lo: float | ArrayT = 0.0,
+  hi: float | ArrayT = 1.0,
   n_iter: int = 50,
   max_expand: int = 64,
 ) -> ArrayT:

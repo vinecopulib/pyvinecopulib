@@ -1,20 +1,21 @@
-"""Tests for the ``margins=`` half of the sklearn estimators.
+"""Tests for the marginal half of the sklearn estimators.
 
 What this file pins is the delegation. That an estimator *is* a `Vinedist` --
 the same layout, the same log-density, the same draws -- rather than a second
-implementation of Sklar's theorem that can drift from the first. That
-`margins=None` still means what it meant before margins were configurable: a
-`Kde1d` per column, to the last bit. That a specification the caller gives is
-honored per column and never mutated, so `clone` reproduces the estimator. That
-a family search runs per column and reads what `schema_` declared about that
-column rather than re-inferring it from the sample. And that the ``{0, 1}``
-dummies of an expanded unordered categorical are fitted on the support they
-actually have, rather than on a padded grid that puts mass on values that
-cannot occur.
+implementation of Sklar's theorem that can drift from the first. That the
+default `distribution=` still means what it meant before margins were
+configurable: a `Kde1d` per column, to the last bit. That a `margin_controls=`
+the caller gives is honored per column and never mutated, so `clone`
+reproduces the estimator. That a family search runs per column and reads what
+`schema_` declared about that column rather than re-inferring it from the
+sample. And that the ``{0, 1}`` dummies of an expanded unordered categorical
+are fitted on the support they actually have, rather than on a padded grid that
+puts mass on values that cannot occur.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -24,15 +25,34 @@ pytest.importorskip("sklearn")
 pytest.importorskip("pandas")
 
 import pandas as pd
-
 from sklearn.base import clone
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import Kde1d
+from pyvinecopulib.core import FitControlsMargin, Kde1d, Vinedist
 from pyvinecopulib.margins import SciPyMargin
 from pyvinecopulib.sklearn import VineDensity, VineRegressor
 
-from .helpers import AtomicMargin
+from .helpers import AtomicMargin, FlatMargin
+
+
+class ParametricVineDensity(Vinedist):
+  """A `Vinedist` whose margins are SciPy families: the `margin_class` route."""
+
+  margin_class = SciPyMargin
+
+
+class AtomicVinedist(Vinedist):
+  """A `Vinedist` whose margins report mass rather than a density."""
+
+  margin_class = AtomicMargin
+
+
+class _DiscreteMargin(FlatMargin):
+  """A margin declaring atoms before it is fitted, which no shipped one does."""
+
+  @property
+  def var_type(self) -> str:
+    return "d"
 
 
 @pytest.fixture
@@ -72,7 +92,7 @@ def test_default_margins_reproduce_the_kde1d_pipeline(
     )
 
   vine = pv.Vinecop.from_data(
-    data=transform(X),
+    u=transform(X),
     var_types=["c"] * X.shape[1],
     controls=pv.FitControlsVinecop(
       family_set=[pv.families.tll], trunc_lvl=20, num_threads=1
@@ -106,10 +126,10 @@ def test_fit_publishes_the_distribution(
 def test_the_held_copula_still_answers_as_the_vine(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-  """Wrapping the vine for the backend does not hide the vine's own surface."""
+  """``distribution_`` holds the fitted vine itself, surface and all."""
   X, _, _ = sample_array_data
   est = VineDensity().fit(X)
-  copula = est.distribution_.vinecop
+  copula: Any = est.distribution_.vinecop
   assert copula.dim == est.n_features_in_
   assert copula.var_types == ["c", "c"]
   np.testing.assert_array_equal(
@@ -168,7 +188,7 @@ def test_ordered_categorical_is_fitted_on_its_declared_levels() -> None:
     }
   )
   est = VineDensity(random_state=0).fit(X_df)
-  assert est.schema_["bounds"][0] == (
+  assert est.schema_["supports"][0] == (
     float(np.min(counts)),
     float(np.max(counts)),
   )
@@ -182,12 +202,13 @@ def test_ordered_categorical_is_fitted_on_its_declared_levels() -> None:
 
 
 def test_the_schema_reaches_a_column_the_specification_addresses() -> None:
-  """A `margins=` argument does not cost the margin what the input declared.
+  """`margin_controls` does not cost a margin what the input declared.
 
-  The per-variable default only covers the columns a specification leaves
-  unaddressed, so a broadcast alias would otherwise hand every margin
-  `var_type=None, support=None` and have it re-infer both from the sample --
-  strictly less than `schema_` already knew. What the declaration buys is
+  The declaration and the controls are separate arguments for this reason: a
+  broadcast controls object addressing every column would otherwise have to
+  carry `var_type=None, support=None` for the ones it says nothing about, and
+  every margin would re-infer both from the sample -- strictly less than
+  `schema_` already knew. What the declaration buys is
   visible in the family that wins: a float column whose observations happen to
   be whole numbers reads as counts on its own, and is selected among the
   continuous families only because the input said the column was continuous.
@@ -203,7 +224,9 @@ def test_the_schema_reaches_a_column_the_specification_addresses() -> None:
       "whole": whole,
     }
   )
-  est = VineDensity(margins="parametric", random_state=0).fit(X_df)
+  est = VineDensity(distribution=ParametricVineDensity, random_state=0).fit(
+    X_df
+  )
   ordered: Any = est.distribution_.margins[0]
   assert ordered.var_type == "d"
   assert ordered.family_name in ("poisson", "nbinom", "geom")
@@ -223,10 +246,10 @@ def test_a_declared_support_reaches_a_selected_family() -> None:
   pytest.importorskip("scipy")
   rng = np.random.default_rng(0)
   X = np.column_stack([rng.uniform(0.0, 1.0, 300), rng.normal(size=300)])
-  est = VineDensity(margins="parametric", random_state=0)
+  est = VineDensity(distribution=ParametricVineDensity, random_state=0)
   est.schema_ = {
-    "kde1d_types": ["continuous", "continuous"],
-    "bounds": [(0.0, 1.0), None],
+    "var_types": ["c", "c"],
+    "supports": [(0.0, 1.0), None],
   }
   est.fit(X)
   bounded: Any = est.distribution_.margins[0]
@@ -275,54 +298,35 @@ def test_sample_returns_the_expanded_feature_space(
 # --- specifications --------------------------------------------------------- #
 
 
-def test_fit_does_not_mutate_the_margins_argument(
-  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
-) -> None:
-  """Specifications are fitted on copies, so the parameters survive `fit`."""
-  X, _, _ = sample_array_data
-  spec = Kde1d()
-  est = VineDensity(margins=spec).fit(X)
-  assert est.get_params()["margins"] is spec
-  assert not spec.is_fitted
-  fitted: tuple[Any, ...] = est.distribution_.margins
-  assert all(margin.is_fitted for margin in fitted)
-  # Refitting therefore re-estimates rather than reusing the first fit.
-  est.fit(X[:100])
-  assert not spec.is_fitted
-
-
-def test_clone_round_trips_the_margins_parameter(
+def test_clone_round_trips_the_distribution_parameter(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
   """`clone` reproduces an estimator that fits the same margins."""
   X, _, _ = sample_array_data
-  est = VineDensity(margins="parametric").fit(X)
+  est = VineDensity(distribution=ParametricVineDensity).fit(X)
   cloned = clone(est)
-  assert cloned.margins == "parametric"
+  assert cloned.distribution is ParametricVineDensity
   np.testing.assert_allclose(
     cloned.fit(X).score_samples(X[:10]), est.score_samples(X[:10])
   )
 
 
-def test_a_density_less_margin_is_refused_at_fit_time(
+def test_a_density_less_margin_reports_itself(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-  """A margin that reports no density cannot serve an estimator that does.
+  """A margin with no density says so, from the margin, when one is asked for.
 
-  Caught at `fit`, not at the first `score_samples`, so the estimator never
-  reaches a state where its own contract cannot be met. Every shipped margin
-  has a density, so the guard is exercised through a double -- a third-party
-  margin may well be atomic, and this is what turns that into an error here
-  instead of a wrong number later.
+  `MarginLike` requires `pdf`, so a margin that declines it is outside the
+  contract rather than a case the estimators screen for: the refusal is the
+  margin's own and reaches whoever asked. `VineRegressor` never asks -- it
+  reads the copula density and the response's `icdf` only -- so the same
+  margin serves it.
   """
   X, _, _ = sample_array_data
-  with pytest.raises(ValueError, match="needs a density"):
-    VineDensity(margins=AtomicMargin()).fit(X)
-  with pytest.raises(ValueError, match='margins="kde"'):
-    VineDensity(margins=AtomicMargin()).fit(X)
-  # `VineRegressor` reads the copula density and the response `icdf` only, so
-  # the same margin is fine there.
-  VineRegressor(margins=AtomicMargin(), use_grid=False).fit(X, X[:, 0])
+  est = VineDensity(distribution=AtomicVinedist).fit(X)
+  with pytest.raises(NotImplementedError, match="no density"):
+    est.score_samples(X[:10])
+  VineRegressor(distribution=AtomicVinedist, use_grid=False).fit(X, X[:, 0])
 
 
 def test_a_wrong_length_sequence_is_refused(
@@ -331,21 +335,32 @@ def test_a_wrong_length_sequence_is_refused(
   """A per-column sequence must carry one entry per column."""
   X, _, _ = sample_array_data
   with pytest.raises(ValueError, match="length 1, but there are 2"):
-    VineDensity(margins=[Kde1d()]).fit(X)
+    VineDensity(margin_controls=[FitControlsMargin()]).fit(X)
 
 
-def test_a_mapping_leaves_the_other_columns_on_the_inferred_default(
+def test_a_mapping_leaves_the_other_columns_unconfigured(
   sample_dataframe_data: tuple[pd.DataFrame, list[str]],
 ) -> None:
-  """Addressing one column must not silently retype the rest."""
+  """Addressing one column must not configure the rest.
+
+  The keys are the *expanded* feature names, so an unordered categorical's
+  dummies are addressable one at a time -- and a column the mapping does not
+  name searches the curated set, not the one entry the mapping carries.
+  """
+  pytest.importorskip("scipy")
   X_df, expanded = sample_dataframe_data
-  est = VineDensity(margins={"cont1": SciPyMargin("norm")}).fit(X_df)
+  est = VineDensity(
+    distribution=ParametricVineDensity,
+    margin_controls={"cont1": FitControlsMargin(family_set=["laplace"])},
+    random_state=0,
+  ).fit(X_df)
   margins = est.distribution_.margins
-  assert isinstance(margins[0], SciPyMargin)
+  addressed: Any = margins[0]
+  assert addressed.family_name == "laplace"
+  # The dummy searched the discrete candidates its own declaration admits.
   dummy: Any = margins[expanded.index("cat1_B")]
-  assert isinstance(dummy, Kde1d)
   assert dummy.var_type == "d"
-  assert dummy.support == (0.0, 1.0)
+  assert dummy.family_name != "laplace"
 
 
 def test_a_preset_schema_supplies_what_an_array_cannot_carry() -> None:
@@ -354,8 +369,8 @@ def test_a_preset_schema_supplies_what_an_array_cannot_carry() -> None:
   X = np.column_stack([rng.poisson(3.0, size=200) * 1.0, rng.normal(size=200)])
   est = VineDensity()
   est.schema_ = {
-    "kde1d_types": ["discrete", "continuous"],
-    "bounds": [(0.0, 20.0), None],
+    "var_types": ["d", "c"],
+    "supports": [(0.0, 20.0), None],
   }
   est.fit(X)
   counts: Any = est.distribution_.margins[0]
@@ -364,33 +379,21 @@ def test_a_preset_schema_supplies_what_an_array_cannot_carry() -> None:
   assert est.distribution_.var_types == ["d", "c"]
 
 
-def test_a_fixed_foreign_margin_is_used_as_given(
-  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
-) -> None:
-  """An already-fitted margin is not re-estimated."""
-  stats = pytest.importorskip("scipy.stats")
-  X, _, _ = sample_array_data
-  est = VineDensity(margins=[stats.norm(0.0, 1.0), stats.norm(0.0, 1.0)]).fit(X)
-  np.testing.assert_allclose(
-    np.asarray(est.distribution_.margins[0].cdf(np.array([0.0]))), 0.5
-  )
-
-
 # --- family selection ------------------------------------------------------- #
 
 
 def test_parametric_margins_select_a_family_per_column(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-  """`margins="parametric"` chooses a family per column, and publishes it.
+  """`distribution=ParametricVineDensity` chooses a family per column, and publishes it.
 
   The margin *is* the winner, so what it selected is read off the margin and
   reported by `margin_summary_` alongside every other column's.
   """
   pytest.importorskip("scipy")
   X, _, _ = sample_array_data
-  est = VineDensity(margins="parametric").fit(X)
-  margins: tuple[Any, ...] = est.distribution_.margins
+  est = VineDensity(distribution=ParametricVineDensity).fit(X)
+  margins: Sequence[Any] = est.distribution_.margins
   assert all(isinstance(margin, SciPyMargin) for margin in margins)
   assert all(margin.is_fitted for margin in margins)
   rows = est.margin_summary_
@@ -412,14 +415,22 @@ def test_the_estimator_honors_a_named_family_and_chooses_an_unnamed_one() -> (
   rs = np.random.RandomState(3)
   X = np.column_stack([rs.gamma(2.0, 1.0, 200), rs.gamma(3.0, 1.0, 200)])
 
-  named = VineDensity(margins=SciPyMargin("norm"), random_state=0).fit(X)
-  assert [m.family_name for m in named.distribution_.margins] == [
+  named = VineDensity(
+    distribution=ParametricVineDensity,
+    margin_controls=FitControlsMargin(family_set=["norm"]),
+    random_state=0,
+  ).fit(X)
+  named_margins: Sequence[Any] = named.distribution_.margins
+  assert [m.family_name for m in named_margins] == [
     "norm",
     "norm",
   ]
 
-  chosen = VineDensity(margins="parametric", random_state=0).fit(X)
-  assert "norm" not in [m.family_name for m in chosen.distribution_.margins]
+  chosen = VineDensity(distribution=ParametricVineDensity, random_state=0).fit(
+    X
+  )
+  chosen_margins: Sequence[Any] = chosen.distribution_.margins
+  assert "norm" not in [m.family_name for m in chosen_margins]
 
 
 def test_selection_runs_per_expanded_column(
@@ -433,10 +444,12 @@ def test_selection_runs_per_expanded_column(
   """
   pytest.importorskip("scipy")
   X_df, expanded = sample_dataframe_data
-  est = VineDensity(margins="parametric", random_state=0).fit(X_df)
+  est = VineDensity(distribution=ParametricVineDensity, random_state=0).fit(
+    X_df
+  )
   rows = est.margin_summary_
   assert len(rows) == len(expanded)
-  by_name = dict(zip(expanded, rows))
+  by_name = dict(zip(expanded, rows, strict=False))
   counts = ("poisson", "nbinom", "geom")
   assert by_name["cat1_B"]["var_type"] == "d"
   assert by_name["cat1_B"]["family"] in counts
@@ -453,35 +466,52 @@ def test_a_failed_family_search_names_its_column(cat_df: pd.DataFrame) -> None:
   """
   pytest.importorskip("scipy")
   with pytest.raises(ValueError, match=r"margin for 'grade': no parametric"):
-    VineDensity(margins="parametric").fit(cat_df)
+    VineDensity(distribution=ParametricVineDensity).fit(cat_df)
 
 
 # --- the response margin ---------------------------------------------------- #
 
 
-def test_the_response_margin_follows_a_broadcast_specification(
+def test_the_response_margin_comes_from_the_margin_class(
   regression_data: tuple[np.ndarray, np.ndarray, np.ndarray, float],
 ) -> None:
-  """An alias covers the response too; a per-column sequence does not."""
+  """The response is variable zero, so it gets the same `margin_class`."""
   pytest.importorskip("scipy")
   X, y, _, _ = regression_data
-  broadcast = VineRegressor(margins="parametric").fit(X, y)
-  assert isinstance(broadcast.distribution_.margins[0], SciPyMargin)
+  est = VineRegressor(distribution=ParametricVineDensity).fit(X, y)
+  assert all(isinstance(m, SciPyMargin) for m in est.distribution_.margins)
 
-  per_column = VineRegressor(margins=[SciPyMargin(), SciPyMargin()]).fit(X, y)
-  assert isinstance(per_column.distribution_.margins[0], Kde1d)
-  assert isinstance(per_column.distribution_.margins[1], SciPyMargin)
+  # And the default lane gives every variable, response included, a `Kde1d`.
+  default = VineRegressor().fit(X, y)
+  assert all(isinstance(m, Kde1d) for m in default.distribution_.margins)
 
 
 def test_a_discrete_response_margin_is_refused(
   regression_data: tuple[np.ndarray, np.ndarray, np.ndarray, float],
 ) -> None:
-  """The joint layout leads with the response and gives it no left limit."""
+  """The joint layout leads with the response and gives it no left limit.
+
+  Checked twice, because a margin that chooses its own family has no variable
+  type to declare until it has chosen one: the refusal on the specification
+  cannot see a count family coming, and the one on the fitted margin can.
+  """
+  pytest.importorskip("scipy")
   X, y, _, _ = regression_data
+  counts = np.round(np.abs(y) * 8.0)
   with pytest.raises(ValueError, match="response margin must be continuous"):
-    VineRegressor(margins=Kde1d(type="discrete"), use_grid=False).fit(
-      X, np.round(y)
-    )
+    VineRegressor(
+      distribution=ParametricVineDensity,
+      margin_controls={0: FitControlsMargin(family_set=["poisson"])},
+      use_grid=False,
+    ).fit(X, counts)
+
+  class _Discrete(Vinedist):
+    """A distribution whose margins declare atoms before anything is fitted."""
+
+    margin_class = _DiscreteMargin
+
+  with pytest.raises(ValueError, match="response margin must be continuous"):
+    VineRegressor(distribution=_Discrete, use_grid=False).fit(X, counts)
 
 
 def test_a_failing_margin_names_its_column(cat_df: pd.DataFrame) -> None:
@@ -490,16 +520,25 @@ def test_a_failing_margin_names_its_column(cat_df: pd.DataFrame) -> None:
   `Kde1d` models a discrete variable on the integer lattice, so an ordered
   categorical whose levels are not integers cannot be one. Both the bound and
   the data are checked, and they fail at different points -- one while the
-  specification is built, one while it is fitted -- so both have to name the
-  column.
+  declaration is validated, one while the margin is fitted -- so both have to
+  name the column.
   """
   with pytest.raises(ValueError, match=r"margin for 'grade': discrete bounds"):
     VineDensity().fit(cat_df)
 
+  # The second is reachable only from a declaration the input did not make,
+  # which for an array is a pre-set `schema_`; the position is then the name.
   rs = np.random.RandomState(1)
-  plain = pd.DataFrame({"a": rs.normal(size=200), "b": rs.normal(size=200)})
-  with pytest.raises(ValueError, match=r"margin for 'a': discrete data"):
-    VineDensity(margins=Kde1d(type="discrete")).fit(plain)
+  plain = np.column_stack([rs.normal(size=200), rs.normal(size=200)])
+  est = VineDensity()
+  est.schema_ = {
+    "var_types": ["d", "c"],
+    "supports": [None, None],
+  }
+  with pytest.raises(
+    ValueError, match=r"margin for 'variable 0': discrete data"
+  ):
+    est.fit(plain)
 
 
 def test_an_integer_categorical_is_fitted_on_its_declared_support() -> None:
@@ -519,25 +558,11 @@ def test_an_integer_categorical_is_fitted_on_its_declared_support() -> None:
     }
   )
   est = VineDensity().fit(df)
-  margin = est.distribution_.margins[1]
-  assert est.schema_["bounds"][1] == (0.0, 3.0)
+  margin: Any = est.distribution_.margins[1]
+  assert est.schema_["supports"][1] == (0.0, 3.0)
   grid = np.asarray(margin.grid_points)
   assert grid[0] == pytest.approx(-0.5)
   assert grid[-1] == pytest.approx(3.5)
   # The masses still live on the levels, and nowhere else.
   assert margin.pdf(np.arange(4.0)).sum() == pytest.approx(1.0)
   assert margin.pdf(np.array([-1.0, 4.0])).tolist() == [0.0, 0.0]
-
-
-def test_a_named_margin_survives_a_default_that_would_refuse_the_column(
-  cat_df: pd.DataFrame,
-) -> None:
-  """The default is only built where it is needed.
-
-  A column can be one the default margin refuses -- an ordered categorical with
-  non-integer levels cannot be a discrete `Kde1d`. A caller who names a margin
-  for every column has answered that already, and should not be stopped by a
-  default their specification never uses.
-  """
-  est = VineDensity(margins=Kde1d()).fit(cat_df)
-  assert len(est.distribution_.margins) == 2

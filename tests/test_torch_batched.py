@@ -14,10 +14,12 @@ import pytest
 
 import pyvinecopulib as pv
 
+from .conftest import eval_grid, fit_tll_bicop
+
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.torch import TorchTllBicop  # noqa: E402
-from pyvinecopulib.torch._vinecop_batched import (  # noqa: E402
+from pyvinecopulib.torch import TorchTllBicop
+from pyvinecopulib.torch._vinecop_batched import (
   int_on_grid_batched,
   integrate_1d_batched,
   integrate_2d_batched,
@@ -26,17 +28,9 @@ from pyvinecopulib.torch._vinecop_batched import (  # noqa: E402
 
 
 def _fit_tll_bicop(seed: int) -> pv.Bicop:
+  """A TLL pair fitted to a Gaussian sample, seeded so each grid differs."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.sample(2000, seeds=[seed, seed + 1, seed + 2])
-  return pv.Bicop.from_data(
-    u_fit,
-    controls=pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1),
-  )
-
-
-def _eval_grid(n: int, seed: int) -> np.ndarray:
-  rng = np.random.default_rng(seed)
-  return rng.uniform(0.02, 0.98, size=(n, 2))
+  return fit_tll_bicop(cop.sample(2000, seeds=[seed, seed + 1, seed + 2]))
 
 
 def test_interpolate_batched_matches_unbatched() -> None:
@@ -46,7 +40,7 @@ def test_interpolate_batched_matches_unbatched() -> None:
   grid_points = bcs[0].interp_grid.grid_points
   values = torch.stack([bc.interp_grid.values for bc in bcs], dim=0)
 
-  u_np = _eval_grid(500, seed=11)
+  u_np = eval_grid(500, seed=11)
   u_t = torch.from_numpy(u_np)
   u_batch = u_t.unsqueeze(0).expand(3, -1, -1).contiguous()
 
@@ -84,7 +78,7 @@ def test_integrate_1d_batched_matches_unbatched() -> None:
   grid_points = bcs[0].interp_grid.grid_points
   values = torch.stack([bc.interp_grid.values for bc in bcs], dim=0)
 
-  u_np = _eval_grid(300, seed=15)
+  u_np = eval_grid(300, seed=15)
   u_t = torch.from_numpy(u_np)
   u_batch = u_t.unsqueeze(0).expand(3, -1, -1).contiguous()
 
@@ -105,7 +99,7 @@ def test_integrate_2d_batched_matches_unbatched() -> None:
   grid_points = bcs[0].interp_grid.grid_points
   values = torch.stack([bc.interp_grid.values for bc in bcs], dim=0)
 
-  u_np = _eval_grid(300, seed=16)
+  u_np = eval_grid(300, seed=16)
   u_t = torch.from_numpy(u_np)
   u_batch = u_t.unsqueeze(0).expand(3, -1, -1).contiguous()
 

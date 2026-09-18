@@ -2,6 +2,8 @@
 Tests for VineBase functionality.
 """
 
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -9,7 +11,6 @@ pytest.importorskip("sklearn")
 pytest.importorskip("pandas")
 
 import pandas as pd
-
 from sklearn.exceptions import DataConversionWarning
 
 from pyvinecopulib.sklearn import VineDensity, VineRegressor
@@ -86,8 +87,8 @@ def test_vinebase_array_input_validation(
   assert X_processed.shape == X.shape
   assert density.n_features_in_ == 2
   assert density.schema_ is not None
-  assert len(density.schema_["kde1d_types"]) == 2
-  assert all(t == "continuous" for t in density.schema_["kde1d_types"])
+  assert len(density.schema_["var_types"]) == 2
+  assert all(t == "c" for t in density.schema_["var_types"])
 
 
 def test_dataframe_prediction_does_not_mutate_caller_categories() -> None:
@@ -122,15 +123,9 @@ def test_vinebase_dataframe_expansion(
   assert density._expanded_columns == expected_expanded_cols
 
   # Check schema creation
-  expected_types = [
-    "continuous",
-    "continuous",
-    "discrete",
-    "discrete",
-    "continuous",
-  ]
+  expected_types = ["c", "c", "d", "d", "c"]
   assert density.schema_ is not None
-  assert density.schema_["kde1d_types"] == expected_types
+  assert density.schema_["var_types"] == expected_types
 
 
 def test_vinebase_dataframe_prediction_validation(
@@ -158,24 +153,24 @@ def test_vinebase_schema_attribute(
 ) -> None:
   """Pre-set ``schema_`` overrides the auto-inferred schema."""
   X, _, _ = sample_array_data
-  schema = {"kde1d_types": ["continuous", "discrete"]}
+  schema = {"var_types": ["c", "d"]}
   density = VineDensity()
   density.schema_ = schema
 
   density._validate_input(X, reset=True)
   assert density.schema_ is not None
-  assert density.schema_["kde1d_types"] == ["continuous", "discrete"]
+  assert density.schema_["var_types"] == ["c", "d"]
 
   # Schema length mismatch raises.
   density_wrong = VineDensity()
-  density_wrong.schema_ = {"kde1d_types": ["continuous"]}  # Too short
+  density_wrong.schema_ = {"var_types": ["c"]}  # Too short
   with pytest.raises(ValueError):
     density_wrong._validate_input(X, reset=True)
 
   # So does a pre-set bounds list of the wrong length.
   density_bounds = VineDensity()
-  density_bounds.schema_ = {"bounds": [(0.0, 1.0)]}  # Too short
-  with pytest.raises(ValueError, match="bounds"):
+  density_bounds.schema_ = {"supports": [(0.0, 1.0)]}  # Too short
+  with pytest.raises(ValueError, match="supports"):
     density_bounds._validate_input(X, reset=True)
 
 
@@ -187,7 +182,8 @@ def test_vinebase_marginal_fitting(
   density = VineDensity()
   X_processed = density._validate_input(X, reset=True)
   assert isinstance(X_processed, np.ndarray)
-  density._fit_marginals(X_processed)
+  density._resolve_runtime_state()
+  density._fit_distribution(X_processed)
 
   # Check that marginals are fitted
   assert len(density._x_margins) == 2
@@ -206,7 +202,8 @@ def test_vinebase_pseudoobservations(
   density = VineDensity()
   X_processed = density._validate_input(X, reset=True)
   assert isinstance(X_processed, np.ndarray)
-  density._fit_marginals(X_processed)
+  density._resolve_runtime_state()
+  density._fit_distribution(X_processed)
 
   U = density._to_u_scale(X_processed)
 
@@ -285,7 +282,7 @@ def test_non_finite_input_raises_rather_than_crashing() -> None:
 
   bad_y = y.copy()
   bad_y[3] = np.inf
-  with pytest.raises(ValueError, match="infinity|inf"):
+  with pytest.raises(ValueError, match=r"infinity|inf"):
     VineRegressor().fit(X, bad_y)
 
 
@@ -317,18 +314,65 @@ def test_fit_resets_the_schema_a_previous_fit_derived(
   assert not hasattr(est, "feature_names_in_")
 
 
+def test_an_array_is_read_as_the_modeled_layout() -> None:
+  """After an expanding fit, an array is the wide layout and only that.
+
+  `sample` emits the modeled width, so the estimator's own output has to be a
+  legal input to its own density. The public width has no reading as an array:
+  which columns are the levels of which factor is what the frame carries.
+  """
+  rng = np.random.RandomState(0)
+  train = pd.DataFrame(
+    {
+      "x": rng.normal(size=60),
+      "c": pd.Categorical(rng.choice(["a", "b", "c"], size=60)),
+    }
+  )
+  est = VineDensity().fit(train)
+  assert (est.n_features_in_, est.n_model_features_) == (2, 3)
+
+  assert est.score_samples(est.sample(5)).shape == (5,)
+  with pytest.raises(ValueError, match="expecting 3 features"):
+    est.score_samples(rng.normal(size=(5, 2)))
+
+
 def test_a_caller_preset_schema_survives_fit() -> None:
   """The pre-settable `schema_` hook still overrides the array default."""
   est = VineDensity()
   est.schema_ = {
-    "kde1d_types": ["discrete", "continuous"],
-    "bounds": [None] * 2,
+    "var_types": ["d", "c"],
+    "supports": [None] * 2,
   }
   rng = np.random.RandomState(0)
   est.fit(
     np.column_stack([rng.poisson(3, 80).astype(float), rng.normal(size=80)])
   )
-  assert est.schema_["kde1d_types"] == ["discrete", "continuous"]
+  assert est.schema_["var_types"] == ["d", "c"]
+
+
+def test_a_preset_schema_and_a_dataframe_is_refused_not_discarded() -> None:
+  """A frame states its own types, so the two declarations are a conflict.
+
+  The frame's won silently, which drops exactly what a caller pre-sets
+  `schema_` to say: a `"zi"` column, or a bound, neither of which a pandas
+  dtype can express. The column was then modeled as continuous.
+  """
+  rng = np.random.RandomState(0)
+  frame = pd.DataFrame(
+    {
+      "zeros": np.where(rng.random(80) < 0.4, 0.0, rng.gamma(2.0, size=80)),
+      "plain": rng.normal(size=80),
+    }
+  )
+  est = VineDensity()
+  est.schema_ = {"var_types": ["zi", "c"], "supports": [None] * 2}
+  with pytest.raises(ValueError, match="states its own variable types"):
+    est.fit(frame)
+  # And the route the message names does honor it.
+  clean = VineDensity()
+  clean.schema_ = {"var_types": ["zi", "c"], "supports": [None] * 2}
+  clean.fit(frame.to_numpy())
+  assert clean.schema_["var_types"] == ["zi", "c"]
 
 
 def test_dataframe_after_an_array_fit_is_not_reported_unfitted() -> None:
@@ -358,7 +402,7 @@ def test_an_unseen_category_is_refused_not_silently_recoded(
     c for c in X_df.columns if isinstance(X_df[c].dtype, pd.CategoricalDtype)
   )
   bad = X_df.head(3).copy()
-  levels = list(X_df[cat_col].cat.categories) + ["!unseen!"]
+  levels = [*list(X_df[cat_col].cat.categories), "!unseen!"]
   bad[cat_col] = pd.Categorical(["!unseen!"] * 3, categories=levels)
   with pytest.raises(ValueError, match="not seen during fit"):
     est.score_samples(bad)
@@ -373,3 +417,48 @@ def test_array_like_input_is_accepted() -> None:
   assert est.score_samples(rows[:3]).shape == (3,)
   with pytest.raises(ValueError, match="array-like of floats"):
     VineDensity().fit([["a", "b"], ["c", "d"]])
+
+
+def test_the_default_controls_are_resolvable_before_fitting() -> None:
+  """Which controls an estimator would fit with depends only on `__init__`.
+
+  It is answered from `distribution`, so it holds on an estimator nothing has
+  fitted; reading the fitted `distribution_class_` made it answerable only
+  *after* a fit, which is the wrong way round for a question about defaults --
+  and raised `AttributeError` for anyone who asked earlier.
+  """
+  from sklearn.utils.validation import check_is_fitted
+
+  import pyvinecopulib as pv
+
+  for est in (VineDensity(), VineRegressor(quantiles=[0.5])):
+    controls: Any = est._default_copula_controls()
+    assert controls is not None
+    assert list(controls.family_set) == [pv.families.tll]
+    assert controls.trunc_lvl == 20
+    # Asking must not leave the estimator looking fitted.
+    with pytest.raises(Exception, match="not fitted"):
+      check_is_fitted(est)
+
+
+def test_the_default_controls_come_from_the_vine_class_declaration() -> None:
+  """The default is built from `vinecop_class.controls_class`, not a name here.
+
+  A lane whose controls have no family to choose gets `None` instead, and the
+  vine resolves its own default -- which is what retired the `is pv.Vinecop`
+  identity check this used to dispatch on.
+  """
+  torch = pytest.importorskip("torch")
+  del torch
+  import pyvinecopulib as pv
+  from pyvinecopulib.core import Vinedist
+  from pyvinecopulib.torch import TorchVinedist
+
+  vinecop_class: Any = Vinedist.vinecop_class
+  assert vinecop_class.controls_class is pv.FitControlsVinecop
+  assert VineDensity()._default_copula_controls() is not None
+  # The torch vine fits TLL grids and nothing else, so there is no family set
+  # to narrow and no density default to express.
+  assert (
+    VineDensity(distribution=TorchVinedist)._default_copula_controls() is None
+  )

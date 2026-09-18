@@ -143,7 +143,9 @@ def test_a_matching_dtype_does_not_excuse_the_wrong_device() -> None:
 
   from pyvinecopulib.core._placement import place
 
-  class Holder:
+  # A plain object, which is what the inference walks; a dataclass would
+  # be testing a shape no caller has.
+  class Holder:  # noqa: B903
     def __init__(self, grid: object) -> None:
       self.grid = grid
 
@@ -232,11 +234,11 @@ def test_the_extension_surface_is_exactly_the_six_names() -> None:
   caller nor a private hook's docstring is that. Listing the six here is what
   makes adding a seventh a decision rather than an import.
   """
-  import pyvinecopulib.core as core
+  from pyvinecopulib import core
 
   # `getattr` because the generated stub declares no `__all__`, as the
   # neighboring surface and stub tests do for the same reason.
-  import pyvinecopulib.core.extend as extend
+  from pyvinecopulib.core import extend
 
   exported = set(getattr(extend, "__all__", ()))
   # `place` / `reference_array` are the fix and the check of the `_prep`
@@ -336,7 +338,7 @@ def test_covariates_are_placed_through_the_hook_not_around_it() -> None:
   placement is *declared* rather than inferable was honored on the argument
   path (``_prep_args`` calls the hook) and skipped on the covariate path -- the
   same object, the same call, two behaviors. Downstream that put a NumPy ``x``
-  inside a pair copula whose backend then failed on ``.to(dtype=...)``.
+  inside a pair copula whose array library then failed on ``.to(dtype=...)``.
   """
 
   class _Declared:

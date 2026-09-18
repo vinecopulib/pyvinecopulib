@@ -19,8 +19,13 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import BicopBase, RVineStructure, Vinecop, VinecopBase
-from pyvinecopulib.core import Kde1d
+from pyvinecopulib.core import (
+  BicopBase,
+  Kde1d,
+  RVineStructure,
+  Vinecop,
+  VinecopBase,
+)
 
 
 @pytest.fixture

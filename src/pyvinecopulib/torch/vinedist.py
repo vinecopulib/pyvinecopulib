@@ -20,20 +20,58 @@ TorchVinecop : The copula this holds.
 
 from __future__ import annotations
 
-import dataclasses
-from typing import Any, ClassVar, Optional, Sequence, cast
+from collections.abc import Sequence
+from typing import Any, ClassVar, cast
 
 import torch
 from torch import Tensor
 
-from ..core import ControlsLike, MarginLike, VinedistBase
-from ..core._margins import declared_kde_kwargs
-from ._placement import TensorPlacementMixin
-from .controls import FitControlsTorchVinecop
+from ..core import (
+  ControlsLike,
+  Kde1d,
+  MarginLike,
+  VinecopLike,
+  VinedistBase,
+)
+from ._placement import TensorPlacementMixin, reference_tensor
 from .kde1d import TorchKde1d
 from .vinecop import TorchVinecop
 
 __all__ = ["TorchVinedist"]
+
+
+def _lift(margin: object, placement: Tensor | None) -> object:
+  """A fitted ``Kde1d`` as a ``TorchKde1d`` on a given placement.
+
+  The one margin class this lane can convert rather than refuse: it is core's
+  own, and ``from_kde1d`` is an exact transfer of the same grid, so accepting
+  it costs no fidelity and detaches no gradient. Anything else is handed on
+  unchanged, for ``_check_margin`` to accept or refuse -- a SciPy family, say,
+  cannot be lifted at all, because it would return plain arrays and break the
+  graph silently.
+
+  Parameters
+  ----------
+  margin : object
+      One margin, of any class.
+  placement : Tensor, or None, optional
+      A tensor whose device and dtype the lift adopts, or ``None`` to leave
+      ``TorchKde1d`` its own defaults. Passed rather than inferred because the
+      two callers hold different things: one a copula, whose placement is
+      ``reference_tensor``'s to find, and one the column itself.
+
+  Returns
+  -------
+  object
+      The lifted margin, or ``margin`` unchanged.
+  """
+  if not isinstance(margin, Kde1d):
+    return margin
+  if placement is None:
+    return TorchKde1d.from_kde1d(margin)
+  return TorchKde1d.from_kde1d(
+    margin, device=placement.device, dtype=placement.dtype
+  )
 
 
 def _check_margin(margin: object, name: str) -> None:
@@ -64,7 +102,7 @@ def _check_margin(margin: object, name: str) -> None:
     getattr(margin, "cdf_left", None) is None
   ):
     raise NotImplementedError(
-      f"{name} declares var_type={getattr(margin, 'var_type')!r} but has no "
+      f"{name} declares var_type={margin.var_type!r} but has no "
       "`cdf_left`, so the copula cannot difference its atoms. Use TorchKde1d, "
       "which supplies one, or subclass MarginBase, which derives it."
     )
@@ -167,20 +205,53 @@ class TorchVinedist(
     torch.nn.Module.__init__(self)
     self._bind_dist(vinecop, margins)
 
+  @classmethod
+  def _adopt_margin(
+    cls, margin: object, reference: Tensor
+  ) -> MarginLike[Tensor]:
+    """Lift a ``Kde1d`` onto this lane, and refuse what cannot be lifted.
+
+    Parameters
+    ----------
+    margin : object
+        The margin to adopt.
+    reference : Tensor, shape (n,), dtype float
+        The column it was fitted on, whose device and dtype it takes.
+
+    Returns
+    -------
+    MarginLike
+        The lifted margin.
+
+    Raises
+    ------
+    TypeError
+        If the margin is no ``nn.Module``, so this lane cannot hold it.
+    """
+    lifted = _lift(margin, reference)
+    _check_margin(lifted, "margin")
+    return cast("MarginLike[Tensor]", lifted)
+
   def _bind_dist(
     self,
     vinecop: object,
     margins: object,
   ) -> None:
-    """Validate the parts, then install them as registered children."""
+    """Lift what can be lifted, validate the rest, then install as children."""
     _check_copula(vinecop)
+    placement = reference_tensor(vinecop)
     if isinstance(margins, (list, tuple)):
+      margins = [_lift(m, placement) for m in margins]
       for j, margin in enumerate(margins):
         _check_margin(margin, f"margins[{j}]")
     else:
+      margins = _lift(margins, placement)
       _check_margin(margins, "margins")
 
-    super()._bind_dist(vinecop, margins)
+    # `object` on the way in so a caller who is not type-checking still gets
+    # the refusals above rather than an attribute error further down;
+    # `_check_copula` has just established what it is.
+    super()._bind_dist(cast("VinecopLike[Tensor]", vinecop), margins)
 
   def _set_margins(self, margins: Sequence[MarginLike[Tensor]]) -> None:
     """Install the margins as registered children.
@@ -199,96 +270,61 @@ class TorchVinedist(
     registered = cast("list[torch.nn.Module]", list(margins))
     self._margins = cast("Any", torch.nn.ModuleList(registered))
 
-  # The vine copula this route fits; the margins need a placement, so
-  # `_default_margins` is overridden rather than declared.
-  vinecop_class: ClassVar[Optional[type]] = TorchVinecop
+  vinecop_class: ClassVar[type[VinecopLike[Any]] | None] = TorchVinecop
 
-  #: The torch TLL fitter and the tree criterion are both unweighted, so a
-  #: weighted request is refused rather than applied to the margins alone.
-  supports_weighted_copula: bool = False
+  #: The margin this route fits. `_default_margins` is still overridden: the
+  #: placement comes from the *copula* controls, which no per-variable margin
+  #: controls object carries.
+  margin_class: ClassVar[type[MarginLike[Any]] | None] = TorchKde1d
 
-  #: No torch margin reads covariates, so a conditional fit is refused outright
-  #: rather than answered with an unconditional one.
-  supports_fit_covariates: bool = False
-
-  # `controls` is a `FitControlsTorchVinecop` in all three hooks below -- each
-  # reads the device and dtype off it -- but typed `Any`, because
-  # `VinedistBase` declares them as taking any `ControlsLike`, and narrowing a
-  # parameter is what an override may not do.
   @classmethod
   def _coerce_fit_data(
     cls,
     # Anything `torch.as_tensor` accepts, which is the hook's whole job: a
     # caller may hand a NumPy array to a torch distribution.
     y: object,
-    weights: Optional[Tensor],
-    controls: Optional[ControlsLike],
-  ) -> tuple[Tensor, Optional[Tensor]]:
-    """Put the fit inputs on one device, in one dtype.
+    controls: ControlsLike | None,
+  ) -> Tensor:
+    """Put the observations on one device, in one dtype: their own.
 
-    The controls decide the placement and the data follow, as documented.
-    Reading it off ``y`` instead left the margins wherever the caller's data
-    happened to be while the copula went to ``controls.device``, so
-    ``state_dict`` spanned two devices and ``logpdf`` raised; an integer ``y``
-    would likewise have given the margins an integer grid.
+    Both halves read this one answer, which is what keeps them together --
+    a ``state_dict`` spanning two devices is the failure to avoid. An integer
+    ``y`` has no dtype a density can use, so that one takes the default float
+    type rather than giving the margins an integer grid.
     """
+    del controls
     ya = torch.as_tensor(y)
-    resolved: Any = controls or FitControlsTorchVinecop()
-    device = resolved.device if resolved.device is not None else ya.device
-    if resolved.dtype is not None:
-      dtype = resolved.dtype
-    elif ya.dtype.is_floating_point:
-      dtype = ya.dtype
-    else:
-      dtype = torch.get_default_dtype()
-    ya = ya.to(device=device, dtype=dtype)
-    if weights is not None:
-      weights = torch.as_tensor(weights).to(device=device, dtype=dtype)
-    return ya, weights
+    if ya.dtype.is_floating_point:
+      return ya
+    return ya.to(dtype=torch.get_default_dtype())
 
   @classmethod
   def _default_margins(
     cls,
     d: int,
-    controls: Optional[ControlsLike] = None,
-    margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
+    controls: ControlsLike | None = None,
+    margin_controls: Sequence[ControlsLike | None] | None = None,
+    *,
+    reference: Tensor | None = None,
   ) -> Sequence[TorchKde1d]:
-    """One :class:`TorchKde1d` per variable, on the resolved placement."""
-    resolved: Any = controls or FitControlsTorchVinecop()
-    # `TorchKde1d` fixes its own default dtype, so name one only when the
-    # controls actually carry it.
-    placement: dict[str, Any] = {"device": resolved.device}
-    if resolved.dtype is not None:
-      placement["dtype"] = resolved.dtype
-    per_variable = margin_controls or [None] * d
-    return [
-      TorchKde1d(**placement, **declared_kde_kwargs(mc)) for mc in per_variable
-    ]
+    """One :class:`TorchKde1d` per variable, where the observations are.
 
-  @classmethod
-  def _copula_controls(
-    cls,
-    controls: Optional[ControlsLike],
-    u: Tensor,
-    weights: Optional[Tensor],
-  ) -> FitControlsTorchVinecop:
-    """``controls`` with the placement the margins resolved pinned in.
-
-    ``weights`` is always ``None``: ``supports_weighted_copula`` is ``False``,
-    so the estimators refuse a weighted request before reaching this hook.
+    This is the hook's whole purpose on this lane: a torch margin is built on
+    a device in a dtype, which no per-variable controls object carries. The
+    reference is the coerced observations, so the margins, the copula and the
+    data are one placement.
     """
-    del weights
-    resolved: Any = controls or FitControlsTorchVinecop()
-    return cast(
-      "FitControlsTorchVinecop",
-      dataclasses.replace(resolved, device=u.device, dtype=u.dtype),
-    )
+    del controls, margin_controls
+    placement: dict[str, Any] = {}
+    if reference is not None:
+      placement = {"device": reference.device, "dtype": reference.dtype}
+    return [TorchKde1d(**placement) for _ in range(d)]
 
   @property
   def margins(self) -> tuple[MarginLike[Tensor], ...]:
     return cast("tuple[MarginLike[Tensor], ...]", tuple(self._margins))
 
-  def log_prob(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def log_prob(self, y: Tensor, *, x: Tensor | None = None) -> Tensor:
     """Alias of ``logpdf``, the ``torch.distributions`` spelling.
 
     Parameters

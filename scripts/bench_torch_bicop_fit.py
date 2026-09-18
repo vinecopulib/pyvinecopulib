@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Bench TorchTllBicop / pv.Bicop bicop fitters on a shared Gaussian sample.
 
 Three modes selected via ``--mode``:
@@ -8,7 +7,7 @@ Three modes selected via ``--mode``:
     - time ``pv.Bicop.from_data`` with TLL family per thread count,
     - time ``TorchTllBicop.from_data`` per device and grid_type (TLL).
   Output columns:
-    mode, n, backend, threads, device, grid_type, grid_size, time_ms
+    mode, n, lane, threads, device, grid_type, grid_size, time_ms
 
 * ``eval`` — fit once, time the eval ops (pdf, cdf, hfunc1, hfunc2,
   hinv1, hinv2) on a separate ``n_eval`` sample:
@@ -16,7 +15,7 @@ Three modes selected via ``--mode``:
       (TLL only has the Phi-spaced grid in C++).
     - Torch sweep: device x grid_type x grid_size x cache_integrals.
   Output columns:
-    mode, op, n_fit, n_eval, backend, threads, device,
+    mode, op, n_fit, n_eval, lane, threads, device,
     cache_integrals, grid_type, grid_size, time_ms
 
 * ``hinv`` — fit a TLL bicop once, then compare the three torch inverse
@@ -36,11 +35,12 @@ empty. For ``torch`` rows, ``threads`` is empty.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import sys
 import time
+from collections.abc import Callable
 from statistics import median
-from typing import Callable
 
 import numpy as np
 import torch
@@ -106,14 +106,14 @@ def _bench_fit(
   devices: list[str],
   grid_types: list[str],
   grid_sizes: list[int],
-  backends: list[str],
+  lanes: list[str],
   repeats: int,
   seed: int,
 ) -> list[dict]:
   u_np = _simulate(n=n, seed=seed)
   rows: list[dict] = []
 
-  if "cpp" in backends:
+  if "cpp" in lanes:
     for t in threads:
       for g in grid_sizes:
         ctl = pv.FitControlsBicop(
@@ -128,7 +128,7 @@ def _bench_fit(
           {
             "mode": "fit",
             "n": n,
-            "backend": "cpp",
+            "lane": "cpp",
             "threads": t,
             "device": "",
             "grid_type": "",
@@ -137,7 +137,7 @@ def _bench_fit(
           }
         )
 
-  if "torch" in backends:
+  if "torch" in lanes:
     for device in devices:
       sync = torch.cuda.synchronize if device.startswith("cuda") else None
       u_t = torch.from_numpy(u_np).to(device)
@@ -153,7 +153,7 @@ def _bench_fit(
             {
               "mode": "fit",
               "n": n,
-              "backend": "torch",
+              "lane": "torch",
               "threads": "",
               "device": device,
               "grid_type": grid_type,
@@ -180,7 +180,7 @@ def _bench_eval(
   grid_types: list[str],
   grid_sizes: list[int],
   caches: list[bool],
-  backends: list[str],
+  lanes: list[str],
   repeats: int,
   seed: int,
 ) -> list[dict]:
@@ -191,7 +191,7 @@ def _bench_eval(
 
   # C++ baseline: fit once per (thread, grid_size); threading affects fit, not
   # eval. TLL only has the Phi-spaced grid in C++.
-  if "cpp" in backends:
+  if "cpp" in lanes:
     for t in threads:
       for g in grid_sizes:
         ctl = pv.FitControlsBicop(
@@ -209,7 +209,7 @@ def _bench_eval(
               "op": op,
               "n_fit": n_fit,
               "n_eval": n_eval,
-              "backend": "cpp",
+              "lane": "cpp",
               "threads": t,
               "device": "",
               "cache_integrals": "",
@@ -219,7 +219,7 @@ def _bench_eval(
             }
           )
 
-  if "torch" in backends:
+  if "torch" in lanes:
     for device in devices:
       sync = torch.cuda.synchronize if device.startswith("cuda") else None
       u_fit_t = torch.from_numpy(u_fit_np).to(device)
@@ -243,7 +243,7 @@ def _bench_eval(
                   "op": op,
                   "n_fit": n_fit,
                   "n_eval": n_eval,
-                  "backend": "torch",
+                  "lane": "torch",
                   "threads": "",
                   "device": device,
                   "cache_integrals": str(cache).lower(),
@@ -352,9 +352,9 @@ def _bench_hinv(
       for op in ("hinv1", "hinv2"):
         cv = 1 if op == "hinv1" else 2
         methods = {
-          "closed_form": lambda o=op, bp=bc_plain: getattr(bp, o)(u_t),
-          "cached": lambda o=op, bc=bc_cached: getattr(bc, o)(u_t),
-          "itp": lambda c=cv, bp=bc_plain: _hinv_itp(bp, u_t, c),
+          "closed_form": lambda o=op, bp=bc_plain, t=u_t: getattr(bp, o)(t),
+          "cached": lambda o=op, bc=bc_cached, t=u_t: getattr(bc, o)(t),
+          "itp": lambda c=cv, bp=bc_plain, t=u_t: _hinv_itp(bp, t, c),
         }
         for name, fn in methods.items():
           ms = _time_repeats(fn, repeats, sync=sync)
@@ -431,7 +431,7 @@ def main() -> None:
     help="cache_integrals values to sweep (eval mode only; default false,true).",
   )
   ap.add_argument(
-    "--backends",
+    "--lanes",
     default="cpp,torch",
     type=_parse_str_list,
     help="Backends to bench (default: cpp,torch).",
@@ -451,13 +451,13 @@ def main() -> None:
     )
     devices = [d for d in devices if not d.startswith("cuda")]
 
-  backends = list(args.backends)
+  lanes = list(args.lanes)
 
   fieldnames_by_mode = {
     "fit": [
       "mode",
       "n",
-      "backend",
+      "lane",
       "threads",
       "device",
       "grid_type",
@@ -469,7 +469,7 @@ def main() -> None:
       "op",
       "n_fit",
       "n_eval",
-      "backend",
+      "lane",
       "threads",
       "device",
       "cache_integrals",
@@ -491,51 +491,58 @@ def main() -> None:
   }
   fieldnames = fieldnames_by_mode[args.mode]
 
-  out = sys.stdout if args.output == "-" else open(args.output, "w", newline="")
-  writer = csv.DictWriter(out, fieldnames=fieldnames)
-  writer.writeheader()
-  out.flush()
-  for n in args.n:
-    print(f"# {args.mode} cell n={n}", file=sys.stderr, flush=True)
-    if args.mode == "fit":
-      rows = _bench_fit(
-        n=n,
-        threads=args.threads,
-        devices=devices,
-        grid_types=args.grid_types,
-        grid_sizes=args.grid_sizes,
-        backends=backends,
-        repeats=args.repeats,
-        seed=args.seed,
+  with contextlib.ExitStack() as stack:
+    out = (
+      sys.stdout
+      if args.output == "-"
+      else stack.enter_context(
+        open(args.output, "w", encoding="utf-8", newline="")
       )
-    elif args.mode == "eval":
-      rows = _bench_eval(
-        n_fit=n,
-        n_eval=args.n_eval,
-        threads=args.threads,
-        devices=devices,
-        grid_types=args.grid_types,
-        grid_sizes=args.grid_sizes,
-        caches=args.cache,
-        backends=backends,
-        repeats=args.repeats,
-        seed=args.seed,
-      )
-    else:  # hinv
-      rows = _bench_hinv(
-        n_fit=n,
-        n_eval=args.n_eval,
-        devices=devices,
-        grid_sizes=args.grid_sizes,
-        repeats=args.repeats,
-        seed=args.seed,
-      )
-    for row in rows:
-      row["time_ms"] = f"{row['time_ms']:.3f}"
-      writer.writerow(row)
-      out.flush()
-  if args.output != "-":
-    out.close()
+    )
+    writer = csv.DictWriter(out, fieldnames=fieldnames)
+    writer.writeheader()
+    out.flush()
+    for n in args.n:
+      print(f"# {args.mode} cell n={n}", file=sys.stderr, flush=True)
+      if args.mode == "fit":
+        rows = _bench_fit(
+          n=n,
+          threads=args.threads,
+          devices=devices,
+          grid_types=args.grid_types,
+          grid_sizes=args.grid_sizes,
+          lanes=lanes,
+          repeats=args.repeats,
+          seed=args.seed,
+        )
+      elif args.mode == "eval":
+        rows = _bench_eval(
+          n_fit=n,
+          n_eval=args.n_eval,
+          threads=args.threads,
+          devices=devices,
+          grid_types=args.grid_types,
+          grid_sizes=args.grid_sizes,
+          caches=args.cache,
+          lanes=lanes,
+          repeats=args.repeats,
+          seed=args.seed,
+        )
+      else:  # hinv
+        rows = _bench_hinv(
+          n_fit=n,
+          n_eval=args.n_eval,
+          devices=devices,
+          grid_sizes=args.grid_sizes,
+          repeats=args.repeats,
+          seed=args.seed,
+        )
+      for row in rows:
+        row["time_ms"] = f"{row['time_ms']:.3f}"
+        writer.writerow(row)
+        out.flush()
+    if args.output != "-":
+      out.close()
 
 
 if __name__ == "__main__":

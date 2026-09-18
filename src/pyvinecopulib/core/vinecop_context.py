@@ -34,11 +34,9 @@ each pair's conditioning matrix ``x_e`` is built::
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Optional, Protocol, cast, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
-from array_api_compat import array_namespace
-
-from .protocols import ArrayT
+from .protocols import ArrayT, array_namespace
 
 __all__ = ["ConditioningContext", "NonSimplifiedContext", "SimplifiedContext"]
 
@@ -59,8 +57,8 @@ class ConditioningContext(Protocol[ArrayT]):
 
   @abstractmethod
   def edge_context(
-    self, *, u_D: Optional[ArrayT], x: Optional[ArrayT]
-  ) -> Optional[ArrayT]:
+    self, *, u_D: ArrayT | None, x: ArrayT | None
+  ) -> ArrayT | None:
     """Assemble the per-edge conditioning matrix ``x_e``.
 
     Parameters
@@ -92,8 +90,8 @@ class SimplifiedContext(ConditioningContext[ArrayT]):
   assembles_conditioning: bool = False
 
   def edge_context(
-    self, *, u_D: Optional[ArrayT] = None, x: Optional[ArrayT] = None
-  ) -> Optional[ArrayT]:
+    self, *, u_D: ArrayT | None = None, x: ArrayT | None = None
+  ) -> ArrayT | None:
     """Return the external covariates ``x`` unchanged (``u_D`` is ignored).
 
     Parameters
@@ -122,8 +120,8 @@ class NonSimplifiedContext(ConditioningContext[ArrayT]):
   assembles_conditioning: bool = True
 
   def edge_context(
-    self, *, u_D: Optional[ArrayT] = None, x: Optional[ArrayT] = None
-  ) -> Optional[ArrayT]:
+    self, *, u_D: ArrayT | None = None, x: ArrayT | None = None
+  ) -> ArrayT | None:
     """Concatenate ``[u_D, x]`` (C1 order); drop whichever is ``None``.
 
     Parameters

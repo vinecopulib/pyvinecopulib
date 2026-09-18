@@ -1,7 +1,7 @@
-"""Tests for the backend-neutral ``pyvinecopulib.core`` margin base.
+"""Tests for the array-agnostic ``pyvinecopulib.core`` margin base.
 
 Exercises :class:`pyvinecopulib.core.MarginBase` — the canonical,
-array-backend-agnostic partial implementation of the ``MarginLike`` contract —
+array-agnostic partial implementation of the ``MarginLike`` contract —
 purely on NumPy, so it also confirms that the neutral ``core`` layer runs
 without PyTorch. A conformance test pins that :class:`pyvinecopulib.core.Kde1d`
 satisfies ``MarginLike`` directly: it is the library's default margin, and the
@@ -11,7 +11,7 @@ contract was named after its surface so that it needs no wrapper.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -38,13 +38,13 @@ class _ShiftedExp(MarginBase[np.ndarray]):
   def support(self) -> tuple[float, float]:
     return (self.shift, float("inf"))
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     inside = y >= self.shift
     return np.where(
       inside, self.rate * np.exp(-self.rate * (y - self.shift)), 0.0
     )
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     inside = y >= self.shift
     return np.where(inside, 1.0 - np.exp(-self.rate * (y - self.shift)), 0.0)
 
@@ -64,10 +64,10 @@ class _Geometricish(MarginBase[np.ndarray]):
   def support(self) -> tuple[float, float]:
     return (0.0, float("inf"))
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     return np.where(y >= 0.0, 0.5 ** (y + 1.0), 0.0)
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     return np.where(y >= 0.0, 1.0 - 0.5 ** (y + 1.0), 0.0)
 
 
@@ -85,21 +85,13 @@ class _ZeroInflated(MarginBase[np.ndarray]):
   def support(self) -> tuple[float, float]:
     return (0.0, float("inf"))
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     body = (1.0 - self.prob0) * np.exp(-y)
     return np.where(y == 0.0, self.prob0, np.where(y > 0.0, body, 0.0))
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     body = (1.0 - self.prob0) * (1.0 - np.exp(-y))
     return np.where(y >= 0.0, self.prob0 + body, 0.0)
-
-
-def test_kde1d_satisfies_the_margin_contract() -> None:
-  """`Kde1d` is a `MarginLike` with no adapter, fitted or not."""
-  kde = pv.core.Kde1d()
-  assert isinstance(kde, MarginLike)
-  kde.fit(np.random.default_rng(0).normal(size=300))
-  assert isinstance(kde, MarginLike)
 
 
 def test_subclass_satisfies_the_contract() -> None:
@@ -290,11 +282,11 @@ class _Recording(ShiftedNormalMargin):
     super().__init__()
     self.seen: list[str] = []
 
-  def pdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, /, *, x: Any | None = None) -> Any:
     self.seen.append("pdf" if x is not None else "pdf-bare")
     return super().pdf(y, x=x)
 
-  def cdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, /, *, x: Any | None = None) -> Any:
     self.seen.append("cdf" if x is not None else "cdf-bare")
     return super().cdf(y, x=x)
 
@@ -334,7 +326,7 @@ def test_derived_members_require_row_aligned_covariates() -> None:
   ]
   for x in bad:
     for call in calls:
-      with pytest.raises(ValueError, match="one row per observation|shape"):
+      with pytest.raises(ValueError, match=r"one row per observation|shape"):
         call(_Seeded(), x)
 
 
@@ -406,10 +398,10 @@ def test_icdf_resolves_a_quantile_far_below_the_bracket() -> None:
     def support(self) -> tuple[float, float]:
       return (0.0, 1.0)
 
-    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    def pdf(self, y: Any, *, x: Any | None = None) -> Any:
       return 0.05 * np.asarray(y, dtype=float) ** -0.95
 
-    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    def cdf(self, y: Any, *, x: Any | None = None) -> Any:
       return np.asarray(y, dtype=float) ** 0.05
 
   p = np.array([0.2, 0.1, 0.05])
@@ -419,19 +411,6 @@ def test_icdf_resolves_a_quantile_far_below_the_bracket() -> None:
   # The defect was a collapse, not mere imprecision: distinct probabilities
   # all came back as the same value.
   assert np.all(np.diff(got) < 0.0)
-
-
-def test_declare_is_a_no_op_that_chains() -> None:
-  """A margin fixed by construction ignores the caller's schema.
-
-  `declare` exists so a caller with schema knowledge can hand it over before
-  fitting; a margin whose type and support are settled needs nothing from it, so
-  the base implementation must accept the call and change nothing.
-  """
-  m = _ShiftedExp(rate=2.0, shift=1.0)
-  assert m.declare(var_type="d", support=(0.0, 10.0)) is m
-  assert m.var_type == "c"
-  assert m.support == (1.0, math.inf)
 
 
 def test_a_margin_places_and_checks_its_own_argument() -> None:
@@ -507,32 +486,6 @@ def test_the_information_criteria_have_one_implementation() -> None:
     assert getattr(margin, name)(y) == pytest.approx(value)
 
 
-def test_an_array_in_the_controls_slot_is_refused_across_the_margin_level() -> (
-  None
-):
-  """`kde.fit(x, w)` is the compiled `Kde1d`'s spelling and nothing else's.
-
-  Every `MarginBase` margin reads `fit(y, controls, *, weights=...)`, so the
-  carried-over positional spelling binds the weights to `controls`, where they
-  are ignored -- an unweighted fit behind a weighted-looking call. Nothing in
-  the library passes an array there, so refusing one costs nothing.
-  """
-  rng = np.random.default_rng(0)
-  y = rng.normal(size=200)
-  w = np.linspace(0.1, 3.0, 200)
-
-  # `cast` because the wrongness is the subject: `controls` is typed
-  # `ControlsLike`, so a type-checked caller cannot reach this at all, and the
-  # guard exists for the one who is not.
-  with pytest.raises(TypeError, match="array where `controls` goes"):
-    FlatMargin().select(y, cast("ControlsLike", w))
-  # The legitimate spellings are untouched.
-  assert FlatMargin().select(y, weights=w) is not None
-  assert FlatMargin().select(y) is not None
-  # And the documented exception still reads the way its own docs say.
-  assert pv.core.Kde1d().fit(y, w) is not None
-
-
 # --------------------------------------------------------------------------- #
 # Covariates on the two variable types that carry atoms. The derived            #
 # `cdf_left` reaches `cdf` and `pdf` a second time there -- stepping back a     #
@@ -556,18 +509,18 @@ class _ConditionalPoisson(MarginBase[np.ndarray]):
     return (0.0, float("inf"))
 
   @staticmethod
-  def _mu(y: Any, x: Optional[Any]) -> Any:
+  def _mu(y: Any, x: Any | None) -> Any:
     if x is None:
       return np.ones(np.shape(y))
     return np.exp(np.asarray(x, dtype=float)[:, 0])
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     k = np.asarray(y, dtype=float)
     mu = self._mu(y, x)
     logp = -mu + k * np.log(mu) - np.vectorize(math.lgamma)(k + 1.0)
     return np.where(k >= 0.0, np.exp(logp), 0.0)
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     k = np.floor(np.asarray(y, dtype=float))
     mu = self._mu(y, x)
     # Sum the mass up to `k`, which needs no special function.
@@ -593,18 +546,18 @@ class _ConditionalZeroInflated(MarginBase[np.ndarray]):
     return (0.0, float("inf"))
 
   @staticmethod
-  def _prob0(y: Any, x: Optional[Any]) -> Any:
+  def _prob0(y: Any, x: Any | None) -> Any:
     if x is None:
       return np.full(np.shape(y), 0.5)
     return 1.0 / (1.0 + np.exp(-np.asarray(x, dtype=float)[:, 0]))
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     ya = np.asarray(y, dtype=float)
     p0 = self._prob0(y, x)
     body = (1.0 - p0) * np.exp(-ya)
     return np.where(ya == 0.0, p0, np.where(ya > 0.0, body, 0.0))
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     ya = np.asarray(y, dtype=float)
     p0 = self._prob0(y, x)
     return np.where(ya >= 0.0, p0 + (1.0 - p0) * (1.0 - np.exp(-ya)), 0.0)
@@ -661,11 +614,13 @@ class _EstimatedShift(ShiftedNormalMargin):
     self,
     y: np.ndarray,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    x: Optional[np.ndarray] = None,
-    weights: Optional[np.ndarray] = None,
-  ) -> "_EstimatedShift":
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: np.ndarray | None = None,
+    weights: np.ndarray | None = None,
+  ) -> _EstimatedShift:
     del controls, weights
     if x is None:
       raise ValueError("this margin is conditional; give it covariates")
@@ -688,7 +643,7 @@ def test_a_margin_estimated_from_covariates_recovers_the_truth() -> None:
   assert m.is_fitted is False
   assert m.fit(y, x=cov) is m
   assert m.slope == pytest.approx(slope, abs=0.05)
-  assert (m.nobs, m.n_parameters) == (4000, 1)
+  assert (m.nobs, m.npars) == (4000, 1)
 
   # And the fitted margin evaluates at the covariates it was fitted on.
   at_zero = m.icdf(np.full(3, 0.5), x=np.array([[0.0], [1.0], [-1.0]]))
@@ -699,3 +654,60 @@ def test_a_conditional_margin_fitted_without_covariates_refuses() -> None:
   """A conditional margin says so rather than fitting the unconditional one."""
   with pytest.raises(ValueError, match="conditional"):
     _EstimatedShift().fit(np.zeros(3))
+
+
+def test_every_fittable_class_declares_the_controls_it_reads() -> None:
+  """`controls_class` answers what `controls=None` means, once per class.
+
+  Read off the class, so a consumer builds a default without naming a
+  `FitControls*` of its own -- and `None` says the class reads no controls at
+  all, which is what a `family_set` refusal dispatches on now that there is no
+  separate boolean to fall out of step with it.
+  """
+  from pyvinecopulib.core import FitControlsMargin, MarginBase
+
+  # The bound classes carry it too, set from the binding.
+  assert pv.Bicop.controls_class is pv.FitControlsBicop
+  assert pv.Vinecop.controls_class is pv.FitControlsVinecop
+  assert pv.core.Kde1d.controls_class is pv.core.FitControlsKde1d
+  # A margin that reads controls names them; the base default covers the
+  # ecosystem adapters, which all read a `FitControlsMargin`.
+  assert MarginBase.controls_class is FitControlsMargin
+  # And each is constructible with no arguments, which is what makes it usable
+  # as "the default this class fits with".
+  for cls in (pv.Bicop, pv.Vinecop, pv.core.Kde1d, MarginBase):
+    declared: Any = cls.controls_class
+    assert isinstance(declared(), declared)
+
+
+def test_reading_controls_and_searching_a_family_are_different_questions() -> (
+  None
+):
+  """`Kde1d` takes controls and still has no family to choose.
+
+  The two were one boolean once, which made them impossible to tell apart:
+  a kernel density was declared to read no controls so that a `family_set`
+  would be refused, and `FitControlsKde1d` then had no way in. What the
+  refusal actually asks is whether the margin's controls carry a `family_set`
+  at all, which its declared class answers.
+  """
+  from pyvinecopulib.core import FitControlsMargin
+
+  # Reads controls -- the kernel knobs -- but they carry no family set.
+  assert pv.core.Kde1d.controls_class is pv.core.FitControlsKde1d
+  assert not hasattr(pv.core.FitControlsKde1d, "family_set")
+  # The parametric margins read controls that do.
+  assert hasattr(FitControlsMargin, "family_set")
+
+  rng = np.random.default_rng(0)
+  y = np.column_stack([rng.lognormal(size=200), rng.normal(size=200)])
+  # So a `family_set` aimed at a kernel density is still refused ...
+  with pytest.raises(TypeError, match="cannot select a family"):
+    pv.Vinedist.from_data(
+      y, margin_controls=FitControlsMargin(family_set=["gamma"])
+    )
+  # ... while the kernel knobs reach it, which is what they are for.
+  fitted = pv.Vinedist.from_data(
+    y, margin_controls=pv.core.FitControlsKde1d(bandwidth=0.5)
+  )
+  assert float(cast("Any", fitted.margins[0]).bandwidth) == pytest.approx(0.5)

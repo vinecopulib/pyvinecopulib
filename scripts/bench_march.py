@@ -21,10 +21,10 @@ def gen_bicop(n: int, seed: int) -> np.ndarray:
 
 
 def gen_vine(n: int, d: int, seed: int) -> np.ndarray:
-  np.random.seed(seed)
-  x = np.random.normal(size=n)[:, None] * np.ones(
-    (n, d)
-  ) + 0.5 * np.random.normal(size=(n, d))
+  rng = np.random.RandomState(seed)
+  x = rng.normal(size=n)[:, None] * np.ones((n, d)) + 0.5 * rng.normal(
+    size=(n, d)
+  )
   return pv.to_pseudo_obs(x)
 
 
@@ -101,7 +101,7 @@ def main() -> None:
     "repeats": args.repeats,
     "results": {k: dict(v) for k, v in results.items()},
   }
-  with open(args.output, "w") as f:
+  with open(args.output, "w", encoding="utf-8") as f:
     json.dump(out, f, indent=2)
 
   print(f"\n=== {args.label} ===")

@@ -11,24 +11,24 @@ whose parameters are given at construction is already fitted.
 - **Parametric** — :class:`SciPyMargin` wraps one SciPy family. Named,
   ``fit`` estimates its parameters; unnamed, ``select`` chooses the family too,
   from a curated candidate set scored by AIC / BIC / AICc. It needs the
-  ``scipy`` extra. :class:`OpenTURNSMargin` is the OpenTURNS counterpart, over
-  that library's families and its own ``FittingTest`` criteria; it needs the
-  ``openturns`` extra.
+  ``scipy`` extra.
 - **Interoperability** — :func:`as_margin` presents a distribution object from
   another ecosystem as a margin, and :func:`register_margin_adapter` teaches it
-  about one it does not know. SciPy's modern and legacy distributions,
-  OpenTURNS distributions, and continuous ``torch.distributions`` families
+  about one it does not know. SciPy's modern and legacy distributions
+  and continuous ``torch.distributions`` families
   with an implemented ``cdf`` are recognized out of the box. Torch ``Normal``,
   ``Gamma`` and ``LogNormal`` are supported; discrete Torch distributions are
   rejected because they do not expose the left-limit cdf a vine needs.
 
-- **Resolution** — :func:`resolve_margins` expands a ``margins=`` argument
-  (an alias, one margin, a sequence, a mapping, or a callable) into one
-  specification per variable, and :func:`resolve_margin_controls` does the same
-  for ``margin_controls=``. The two are complementary: ``margins`` says which
-  class each variable gets, and :class:`~pyvinecopulib.core.FitControlsMargin` says how to fit or
-  select it — so one call can bound the two variables whose bounds are known
-  and leave the rest alone.
+- **Resolution** — :func:`resolve_margin_controls` expands a
+  ``margin_controls=`` argument (one controls object, a sequence, or a mapping
+  keyed by name or position) into one
+  :class:`~pyvinecopulib.core.FitControlsMargin` per variable, so one call can
+  bound the search on the variables that need it and leave the rest alone.
+  Which *class* each variable gets is the distribution's ``margin_class``, and
+  what the caller knows about a variable -- its type and its bounds -- is a
+  declaration, passed as ``var_types=`` / ``supports=`` rather than as
+  configuration.
 
 Custom margins subclass :class:`pyvinecopulib.core.MarginBase`, which needs only
 ``pdf`` and ``cdf``; a custom *distribution* to put them in subclasses
@@ -41,21 +41,18 @@ theorem, and :class:`pyvinecopulib.core.MarginLike` states the contract these
 all satisfy.
 """
 
-from ..core._margins import as_margin, register_margin_adapter
-
-# Imported for its side effect as much as its names: it registers the OpenTURNS
-# adapter with `as_margin`, and it imports OpenTURNS itself only when used.
-from .openturns import OpenTURNSMargin
+from ..core._margins import (
+  as_margin,
+  register_margin_adapter,
+  resolve_margin_controls,
+)
 from ..core.margin_controls import FitControlsMargin
-from ..core._margins import resolve_margin_controls, resolve_margins
 from .scipy import SciPyMargin
 
 __all__ = [
   "FitControlsMargin",
-  "OpenTURNSMargin",
   "SciPyMargin",
   "as_margin",
-  "resolve_margin_controls",
-  "resolve_margins",
   "register_margin_adapter",
+  "resolve_margin_controls",
 ]

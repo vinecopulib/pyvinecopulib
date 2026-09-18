@@ -1,4 +1,4 @@
-"""The writing rules codespell cannot express.
+r"""The writing rules codespell cannot express.
 
 `.codespell-prose.txt` bans single tokens, which covers most of the rule and
 runs in `make lint` and pre-commit. Two things are out of its reach and live
@@ -27,7 +27,7 @@ import io
 import pathlib
 import re
 import tokenize
-from typing import Iterator
+from collections.abc import Iterator
 
 import pytest
 
@@ -56,6 +56,9 @@ _BANNED_PHRASES = (
 #: Files whose *identifiers* legitimately use a banned word, with the reason.
 #: codespell has no way to skip an identifier while still reading the prose
 #: around it, so the exemption is recorded rather than suppressed.
+#: Empty, and there is no staleness check: one that iterates an empty mapping
+#: asserts nothing and passes whatever the code does. Write it alongside the
+#: first entry, where it has something to check.
 _IDENTIFIER_EXEMPTIONS: dict[str, str] = {}
 
 
@@ -131,9 +134,11 @@ def _prose_of(path: pathlib.Path) -> list[tuple[int, str]]:
       doc = ast.get_docstring(node, clean=False)
       if doc:
         out.append((getattr(node, "lineno", 1), doc))
-  for tok in tokenize.generate_tokens(io.StringIO(src).readline):
-    if tok.type == tokenize.COMMENT:
-      out.append((tok.start[0], tok.string))
+  out.extend(
+    (tok.start[0], tok.string)
+    for tok in tokenize.generate_tokens(io.StringIO(src).readline)
+    if tok.type == tokenize.COMMENT
+  )
   return out
 
 
@@ -217,29 +222,6 @@ def test_no_banned_phrase_in_prose(phrase: str) -> None:
       if pattern.search(" ".join(text.split())):
         found.append(f"{path}:{line}")
   assert found == [], f"{phrase!r} appears at: {found}"
-
-
-def test_the_identifier_exemptions_are_still_needed() -> None:
-  """An exemption outlives its reason unless something checks.
-
-  Each entry claims a file needs a banned word as an *identifier*. The list is
-  empty: every case so far had a name that read better anyway -- the mask
-  `_fit_tll.py` called `gate` is the `outer` condition its own docstring
-  describes. Keep it that way if you can; the entry is the fallback.
-  """
-  for rel, reason in _IDENTIFIER_EXEMPTIONS.items():
-    path = pathlib.Path(rel)
-    if not path.is_file():  # installed rather than checked out
-      pytest.skip(f"{rel} not present")
-    banned = _banned_words()
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    names = {
-      node.arg for node in ast.walk(tree) if isinstance(node, ast.arg)
-    } | {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
-    parts = {
-      part.lower() for name in names for part in re.split(r"[^A-Za-z]+", name)
-    }
-    assert parts & banned, f"{rel}: exemption no longer applies -- {reason}"
 
 
 def test_the_ban_list_is_wired_into_codespell() -> None:

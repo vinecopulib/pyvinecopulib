@@ -1,6 +1,6 @@
 import contextlib
 import math
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -11,12 +11,11 @@ from pyvinecopulib.core._validation import reject_covariates
 
 def random_data(d: int = 5, n: int = 1000) -> NDArray[np.float64]:
   # Simulate some data
-  np.random.seed(1234)  # seed for the random generator
-  mean = np.random.normal(size=d)  # mean vector
-  cov = np.random.normal(size=(d, d))  # covariance matrix
+  rng = np.random.RandomState(1234)  # seed for the random generator
+  mean = rng.normal(size=d)  # mean vector
+  cov = rng.normal(size=(d, d))  # covariance matrix
   cov = np.dot(cov.transpose(), cov)  # make it non-negative definite
-  x = np.random.multivariate_normal(mean, cov, n)
-  return x
+  return rng.multivariate_normal(mean, cov, n)
 
 
 def compare_properties(
@@ -67,7 +66,7 @@ def compare_kde1d(kde1: Any, kde2: Any) -> None:
   )
 
   # Always compare basic properties
-  attrs = ["xmin", "xmax", "type"]
+  attrs = ["xmin", "xmax", "var_type"]
 
   if is_fitted1:
     # A fitted estimator is more than its evaluation grid: its controls and
@@ -81,8 +80,7 @@ def compare_kde1d(kde1: Any, kde2: Any) -> None:
       "degree",
       "grid_size",
       "boundary_repair",
-      "edf",
-      "n_parameters",
+      "npars",
     ]
   else:
     # For unfitted models: compare fitting parameters. Every one of them has
@@ -185,6 +183,9 @@ def count_transfers(device: str) -> Any:
   A no-op on CPU, where there is no device to leave.
   """
   import torch
+
+  # No public spelling: `TorchDispatchMode` is exported from nowhere else,
+  # checked against torch 2.13. Allowlisted in `test_import_surface.py`.
   from torch.utils._python_dispatch import TorchDispatchMode
 
   counts = TransferCounts()
@@ -193,7 +194,8 @@ def count_transfers(device: str) -> Any:
     return
 
   class _Counter(TorchDispatchMode):
-    def __torch_dispatch__(
+    # PyTorch's own protocol name.
+    def __torch_dispatch__(  # noqa: PLW3201
       self,
       func: Any,
       types: Any,
@@ -249,21 +251,23 @@ class FlatMargin(MarginBase[NDArray[np.float64]]):
     /,
     controls: object = None,
     *,
-    x: Optional[NDArray[np.float64]] = None,
-    weights: Optional[NDArray[np.float64]] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: NDArray[np.float64] | None = None,
+    weights: NDArray[np.float64] | None = None,
   ) -> "FlatMargin":
     reject_covariates(self, x)
-    del y, controls, weights
+    del y, controls, weights, var_type, support
     return self
 
   def pdf(
-    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+    self, y: NDArray[np.float64], /, *, x: NDArray[np.float64] | None = None
   ) -> NDArray[np.float64]:
     ya = np.asarray(y, dtype=float)
     return np.where((ya >= 0.0) & (ya <= 1.0), 1.0, 0.0)
 
   def cdf(
-    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+    self, y: NDArray[np.float64], /, *, x: NDArray[np.float64] | None = None
   ) -> NDArray[np.float64]:
     return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
 
@@ -291,13 +295,13 @@ class ShiftedNormalMargin(MarginBase[NDArray[np.float64]]):
     return self.slope * np.asarray(x, dtype=float)[:, 0]
 
   def pdf(
-    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+    self, y: NDArray[np.float64], /, *, x: NDArray[np.float64] | None = None
   ) -> NDArray[np.float64]:
     z = np.asarray(y, dtype=float) - self.center(y, x)
     return np.asarray(np.exp(-0.5 * z * z) / np.sqrt(2.0 * np.pi))
 
   def cdf(
-    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+    self, y: NDArray[np.float64], /, *, x: NDArray[np.float64] | None = None
   ) -> NDArray[np.float64]:
     z = np.asarray(y, dtype=float) - self.center(y, x)
     return np.asarray(0.5 * (1.0 + np.vectorize(math.erf)(z / np.sqrt(2.0))))
@@ -314,7 +318,7 @@ class AtomicMargin(MarginBase[NDArray[np.float64]]):
   """
 
   def __init__(self) -> None:
-    self._sorted: Optional[NDArray[np.float64]] = None
+    self._sorted: NDArray[np.float64] | None = None
 
   @property
   def is_fitted(self) -> bool:
@@ -331,28 +335,30 @@ class AtomicMargin(MarginBase[NDArray[np.float64]]):
     /,
     controls: object = None,
     *,
-    x: Optional[NDArray[np.float64]] = None,
-    weights: Optional[NDArray[np.float64]] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: NDArray[np.float64] | None = None,
+    weights: NDArray[np.float64] | None = None,
   ) -> "AtomicMargin":
     self._sorted = np.sort(np.asarray(y, dtype=float).ravel())
     return self
 
   def pdf(
-    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+    self, y: NDArray[np.float64], /, *, x: NDArray[np.float64] | None = None
   ) -> NDArray[np.float64]:
     raise NotImplementedError(
       "an atomic distribution has no density with respect to Lebesgue measure"
     )
 
   def cdf(
-    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+    self, y: NDArray[np.float64], /, *, x: NDArray[np.float64] | None = None
   ) -> NDArray[np.float64]:
     assert self._sorted is not None
     ranks = np.searchsorted(self._sorted, np.asarray(y, dtype=float), "right")
     return np.asarray(ranks / (self._sorted.size + 1.0), dtype=float)
 
   def icdf(
-    self, p: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+    self, p: NDArray[np.float64], /, *, x: NDArray[np.float64] | None = None
   ) -> NDArray[np.float64]:
     assert self._sorted is not None
     n = self._sorted.size
@@ -410,6 +416,9 @@ def run_without(package: str, body: str) -> None:
     "builtins.__import__ = blocked\n"
   )
   result = subprocess.run(
-    [_sys.executable, "-c", preamble + body], capture_output=True, text=True
+    [_sys.executable, "-c", preamble + body],
+    capture_output=True,
+    text=True,
+    check=False,
   )
   assert result.returncode == 0, result.stdout + result.stderr

@@ -11,21 +11,21 @@ same as satisfying its semantics.
 
 from __future__ import annotations
 
-from typing import Any
-
+import json
 from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import MarginLike
-from pyvinecopulib.core import Kde1d
+from pyvinecopulib.core import FitControlsKde1d, Kde1d, MarginLike
 from pyvinecopulib.margins import (
+  FitControlsMargin,
   SciPyMargin,
   as_margin,
   register_margin_adapter,
-  resolve_margins,
+  resolve_margin_controls,
 )
 
 scipy_stats = pytest.importorskip("scipy.stats")
@@ -106,14 +106,14 @@ def test_kde1d_margin_supports_weights(sample: np.ndarray) -> None:
   assert Kde1d.supports_weights is True
   w = np.where(sample > np.median(sample), 3.0, 1.0)
   plain = Kde1d().fit(sample)
-  tilted = Kde1d().fit(sample, weights=w)
+  tilted = Kde1d().fit(sample, FitControlsKde1d(weights=w))
   assert tilted.icdf(np.array([0.5]))[0] > plain.icdf(np.array([0.5]))[0]
 
 
 def test_kde1d_margin_discrete_left_limit() -> None:
   """The inherited `cdf_left` steps back a lattice point for counts."""
   counts = np.random.default_rng(1).poisson(3.0, size=500).astype(float)
-  m = Kde1d(type="discrete", xmin=0.0, xmax=15.0).fit(counts)
+  m = Kde1d(var_type="d", xmin=0.0, xmax=15.0).fit(counts)
   assert m.var_type == "d"
   k = np.arange(0.0, 6.0)
   np.testing.assert_allclose(m.cdf_left(k), m.cdf(k - 1.0), atol=0.0)
@@ -124,7 +124,7 @@ def test_kde1d_margin_zero_inflated_left_limit() -> None:
   """For a zero-inflated margin the jump at 0 is the point mass."""
   rng = np.random.default_rng(2)
   data = np.where(rng.uniform(size=600) < 0.3, 0.0, rng.exponential(size=600))
-  m = Kde1d(type="zero-inflated", xmin=0.0).fit(data)
+  m = Kde1d(var_type="zi", xmin=0.0).fit(data)
   assert m.var_type == "zi"
   jump = m.cdf(np.array([0.0])) - m.cdf_left(np.array([0.0]))
   np.testing.assert_allclose(jump, m.prob0, atol=1e-12)
@@ -132,8 +132,8 @@ def test_kde1d_margin_zero_inflated_left_limit() -> None:
 
 def test_kde1d_margin_rejects_unknown_type() -> None:
   """The type is validated at construction, where the mistake is."""
-  with pytest.raises(ValueError, match="variable type .* unknown"):
-    Kde1d(type="ordinal")
+  with pytest.raises(ValueError, match=r"variable type .* unknown"):
+    Kde1d(var_type="ordinal")
 
 
 def test_kde1d_margin_raises_before_fit() -> None:
@@ -155,79 +155,19 @@ def test_kde1d_is_passed_through_by_as_margin(sample: np.ndarray) -> None:
   assert as_margin(as_margin(kde)) is kde
 
 
-# --- resolve_margins -------------------------------------------------------- #
+# --- resolve_margin_controls ------------------------------------------------ #
 
 
-def test_resolve_margins_falls_back_to_the_given_default() -> None:
-  """An unaddressed variable takes the caller's default, not the library's."""
-  default = [Kde1d(type="discrete"), Kde1d(type="zero-inflated")]
-  resolved = resolve_margins({0: Kde1d()}, 2, default=default)
-  assert resolved[0].type == "continuous"
-  assert resolved[1].type == "zero-inflated"
-  assert resolve_margins(None, 2, default=default)[0].type == "discrete"
-
-
-def test_resolve_margins_defers_a_default_no_variable_needs() -> None:
-  """A specification naming every variable must not build the default at all.
-
-  The `default` parameter documents this, and it matters because building one
-  can legitimately raise -- the sklearn estimators pass a callable that reads
-  the variable types off the data, and `Kde1d` refuses a categorical whose
-  levels are not integers. Every branch has to honor it, mapping included.
-  """
-  calls = {"n": 0}
-
-  def default() -> Any:
-    calls["n"] += 1
-    raise AssertionError("built a default no variable needed")
-
-  assert len(resolve_margins({0: Kde1d(), 1: Kde1d()}, 2, default=default)) == 2
-  assert len(resolve_margins([Kde1d(), Kde1d()], 2, default=default)) == 2
-  assert len(resolve_margins(Kde1d(), 2, default=default)) == 2
-  assert len(resolve_margins("kde", 2, default=default)) == 2
-  assert calls["n"] == 0
-
-  # And it *is* built when a variable is actually left over.
-  resolved = resolve_margins(
-    {0: Kde1d()}, 2, default=lambda: [Kde1d(), Kde1d(type="discrete")]
-  )
-  assert resolved[1].type == "discrete"
-
-
-def test_resolve_margins_checks_the_default_length() -> None:
-  """A default is per variable, so its length is checked like a sequence's."""
-  with pytest.raises(ValueError, match="default has length 1"):
-    resolve_margins(None, 2, default=[Kde1d()])
-
-
-@pytest.mark.parametrize("key", [0.9, 1.0, np.float64(1.0)])
-def test_resolve_margins_rejects_noninteger_mapping_keys(key: Any) -> None:
+@pytest.mark.parametrize("key", [1.5, 0.5])
+def test_margin_controls_reject_noninteger_mapping_keys(key: Any) -> None:
   """A numeric key must be an integer position, never silently truncated."""
   with pytest.raises(ValueError, match="integer position"):
-    resolve_margins({key: Kde1d()}, 2)
+    resolve_margin_controls({key: FitControlsMargin()}, 2)
 
-  resolved = resolve_margins({np.int64(1): Kde1d(type="discrete")}, 2)
-  assert resolved[1].type == "discrete"
-
-
-def test_callable_margin_specifications_receive_weights() -> None:
-  """A callable owns its fitting, so observation weights must reach it."""
-  from pyvinecopulib.core import Vinedist
-
-  seen: list[dict[str, Any]] = []
-
-  def make_margin(y: Any, **kwargs: Any) -> Any:
-    seen.append(kwargs)
-    return SciPyMargin("norm", (float(np.mean(y)), 1.0))
-
-  rng = np.random.default_rng(8)
-  data = rng.normal(size=(40, 2))
-  weights = np.linspace(1.0, 2.0, data.shape[0])
-  Vinedist.from_data(data, margins=make_margin, weights=weights)
-
-  assert len(seen) == data.shape[1]
-  for kwargs in seen:
-    np.testing.assert_array_equal(kwargs["weights"], weights)
+  resolved = resolve_margin_controls(
+    {np.int64(1): FitControlsMargin(family_set=["norm"])}, 2
+  )
+  assert resolved[1].family_set == ["norm"]
 
 
 # --- as_margin -------------------------------------------------------------- #
@@ -241,9 +181,15 @@ def test_as_margin_adopts_a_raw_kde1d(sample: np.ndarray) -> None:
 
 
 def test_as_margin_accepts_a_structural_margin() -> None:
-  """The documented `MarginLike` hook does not require a library base class."""
+  """The documented `MarginLike` hook needs `pdf` / `cdf` / `icdf` and no more.
 
-  class StructuralMargin:
+  Those three are the contract's only abstract members; everything a consumer
+  reads beyond them -- `var_type`, `support`, `logpdf`, `cdf_left`, and the
+  two capability flags -- comes from the protocol as a default, so a margin
+  that has nothing else to say still composes.
+  """
+
+  class StructuralMargin(MarginLike[Any]):
     def pdf(self, y: Any, /, *, x: Any = None) -> Any:
       return np.exp(-(np.asarray(y) ** 2) / 2) / np.sqrt(2 * np.pi)
 
@@ -256,6 +202,14 @@ def test_as_margin_accepts_a_structural_margin() -> None:
   margin = StructuralMargin()
   assert isinstance(margin, MarginLike)
   assert as_margin(margin) is margin
+  # The defaults a consumer reads, none of which this margin wrote.
+  assert margin.var_type == "c"
+  assert margin.support == (float("-inf"), float("inf"))
+  assert margin.supports_covariates is False
+  assert margin.supports_weights is False
+  y = np.array([0.0, 1.0])
+  np.testing.assert_allclose(margin.logpdf(y), np.log(margin.pdf(y)))
+  np.testing.assert_allclose(margin.cdf_left(y), margin.cdf(y))
 
 
 @pytest.mark.parametrize(
@@ -436,7 +390,7 @@ def test_as_margin_rejects_discrete_torch_distributions(family: str) -> None:
   """Torch margins with atoms lack the cdf-left contract vines require."""
   torch = pytest.importorskip("torch")
   raw = getattr(torch.distributions, family)(torch.tensor(0.4))
-  with pytest.raises(TypeError, match="discrete torch distribution.*Kde1d"):
+  with pytest.raises(TypeError, match=r"discrete torch distribution.*Kde1d"):
     as_margin(raw)
 
 
@@ -446,7 +400,7 @@ def test_as_margin_rejects_torch_families_without_a_cdf(family: str) -> None:
   torch = pytest.importorskip("torch")
   args = (2.0, 3.0) if family == "Beta" else (5.0,)
   raw = getattr(torch.distributions, family)(*args)
-  with pytest.raises(TypeError, match="cdf is not implemented.*MarginBase"):
+  with pytest.raises(TypeError, match=r"cdf is not implemented.*MarginBase"):
     as_margin(raw)
 
 
@@ -492,14 +446,16 @@ def _shipped_margin_classes() -> dict[str, type]:
       module = importlib.import_module(name)
     except ImportError:  # the extra is not installed
       continue
-    for attr, value in vars(module).items():
-      if (
-        inspect.isclass(value)
+    found.update(
+      {
+        attr: value
+        for attr, value in vars(module).items()
+        if inspect.isclass(value)
         and issubclass(value, MarginBase)
         and value is not MarginBase
         and not attr.startswith("_")
-      ):
-        found[attr] = value
+      }
+    )
   return found
 
 
@@ -511,9 +467,6 @@ def _fitted(cls: type, y: np.ndarray) -> Any:
   if cls.__name__ == "TorchKde1d":
     torch = pytest.importorskip("torch")
     return cls().fit(torch.as_tensor(y))
-  if cls.__name__ == "OpenTURNSMargin":
-    pytest.importorskip("openturns")
-    return cls("Normal").fit(y)
   if cls.__name__ == "SciPyMargin":
     return cls("norm").fit(y)
   return cls().fit(y)
@@ -531,9 +484,10 @@ def test_every_shipped_margin_round_trips_through_json() -> None:
 
   for name, cls in sorted(classes.items()):
     margin = _fitted(cls, y)
-    payload = pv.core.margin_to_json(margin)
-    assert payload["kind"] == name, (name, payload["kind"])
-    restored = pv.core.margin_from_json(payload)
+    text = pv.core.margin_to_json(margin)
+    assert isinstance(text, str), (name, type(text))
+    assert json.loads(text)["kind"] == name, (name, text[:80])
+    restored = pv.core.margin_from_json(text)
     assert type(restored) is cls, (name, type(restored))
 
     probe = np.array([-0.5, 0.0, 0.5])

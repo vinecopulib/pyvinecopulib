@@ -28,11 +28,14 @@ from .helpers import widen
 torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
-from pyvinecopulib.margins import FitControlsMargin  # noqa: E402
-from pyvinecopulib.torch import (  # noqa: E402
+from itertools import starmap
+
+from pyvinecopulib.core import FitControlsKde1d
+from pyvinecopulib.margins import FitControlsMargin
+from pyvinecopulib.torch import (
   FitControlsTorchVinecop,
-  TorchKde1d,
   TorchDistributionMargin,
+  TorchKde1d,
   TorchVinecop,
   TorchVinedist,
 )
@@ -90,9 +93,7 @@ def test_logpdf_matches_the_numpy_vinedist(
   on-the-fly cascade, since the marginal terms are closed forms that agree to
   machine precision.
   """
-  reference = pv.Vinedist(
-    copula, [stats.norm(loc, scale) for loc, scale in _PARAMS]
-  )
+  reference = pv.Vinedist(copula, list(starmap(stats.norm, _PARAMS)))
   got = dist.logpdf(torch.as_tensor(data, dtype=_F64)).detach().numpy()
   np.testing.assert_allclose(
     got, reference.logpdf(data), atol=1e-10, rtol=1e-10
@@ -103,9 +104,7 @@ def test_marginal_cdf_matches_the_numpy_vinedist(
   data: np.ndarray, copula: pv.Vinecop, dist: TorchVinedist
 ) -> None:
   """The copula-scale transform agrees too, which is where a dtype slip shows."""
-  reference = pv.Vinedist(
-    copula, [stats.norm(loc, scale) for loc, scale in _PARAMS]
-  )
+  reference = pv.Vinedist(copula, list(starmap(stats.norm, _PARAMS)))
   got = dist.marginal_cdf(torch.as_tensor(data, dtype=_F64)).detach().numpy()
   np.testing.assert_allclose(
     got, reference.marginal_cdf(data), atol=1e-13, rtol=1e-13
@@ -324,22 +323,13 @@ def test_an_unfitted_broadcast_margin_is_copied_on_this_lane(
     assert closest == j
 
 
-def test_resolve_margins_copies_an_unfitted_torch_margin() -> None:
-  """The same guard, at the resolver every `from_data` goes through."""
-  from pyvinecopulib.margins import resolve_margins
-
-  resolved = resolve_margins(TorchKde1d(), 3)
-  assert len({id(m) for m in resolved}) == 3
-  assert all(isinstance(m, TorchKde1d) for m in resolved)
-
-
 # --- boundaries ------------------------------------------------------------- #
 
 
 def test_rejects_a_non_module_margin(copula: pv.Vinecop) -> None:
   """A SciPy margin would detach every gradient, so it is refused here."""
   torch_copula = TorchVinecop.from_vinecop(copula)
-  with pytest.raises(TypeError, match="torch.nn.Module"):
+  with pytest.raises(TypeError, match=r"torch\.nn\.Module"):
     TorchVinedist(torch_copula, [stats.norm(0, 1) for _ in range(3)])
 
 
@@ -378,74 +368,104 @@ def test_from_data_fits_end_to_end_in_torch(data: np.ndarray) -> None:
 def test_from_data_refuses_a_family_set_it_cannot_search(
   data: np.ndarray,
 ) -> None:
-  """`TorchKde1d` reads no controls, so a `family_set` must be a refusal.
+  """A kernel density reads controls and still cannot choose a family.
 
   Answering a parametric request with a kernel density is the silent downgrade
-  the weights contract already refuses. The margin declares that it cannot
-  search, which is what turns the request into an error -- introspection cannot
-  answer it, since the fit accepts a `controls` argument either way.
+  the weights contract already refuses. *Whether* the margin takes controls is
+  the wrong question -- `TorchKde1d` takes `FitControlsKde1d`, the kernel
+  knobs -- so what the refusal reads is whether the declared controls type
+  carries a `family_set` at all.
   """
-  from pyvinecopulib.margins import FitControlsMargin
-
-  assert not TorchKde1d.supports_controls
+  assert TorchKde1d.controls_class is FitControlsKde1d
+  assert not hasattr(FitControlsKde1d(), "family_set")
   with pytest.raises(TypeError, match="cannot select a family"):
     TorchVinedist.from_data(
       torch.as_tensor(data, dtype=_F64),
       margin_controls=FitControlsMargin(family_set=["gamma"]),
     )
-  # A declared type or support is a *default*, so it is still honored.
+  # And a declaration is not a controls object, so it is honored regardless.
   fitted = TorchVinedist.from_data(
     torch.as_tensor(data, dtype=_F64),
-    margin_controls=FitControlsMargin(support=(-10.0, 10.0)),
+    supports=[(-10.0, 10.0)] * data.shape[1],
   )
   assert all(isinstance(m, TorchKde1d) for m in fitted.margins)
 
 
 @pytest.mark.parametrize(
-  ("declared", "expected_kde_type", "expected_var_type"),
+  ("declared", "expected_copula_type"),
   [
-    ("c", "continuous", "c"),
-    ("d", "discrete", "d"),
-    ("zi", "zero-inflated", "d"),
+    ("c", "c"),
+    ("d", "d"),
+    ("zi", "d"),
   ],
 )
-def test_margin_controls_declare_the_variable_type(
-  declared: str, expected_kde_type: str, expected_var_type: str
+def test_var_types_declare_the_variable_type(
+  declared: str, expected_copula_type: str
 ) -> None:
-  """Every declared type reaches the torch margin's constructor.
+  """Every declared type reaches the torch margin, and the copula's layout.
 
-  Parametrized over all three because the two lanes translate the declaration
-  separately: the core `Kde1d` accepts either spelling of the zero-inflated
-  type and `TorchKde1d` accepts only the hyphenated one, so a second copy of
-  the mapping diverged silently on exactly that value.
+  Parametrized over all three because the margin keeps the declaration as
+  given while the copula sees only whether the variable has atoms -- so a
+  zero-inflated margin sits on a `"d"` edge, and the two answers differ for
+  exactly that value.
   """
   rng = np.random.default_rng(0)
   y = torch.as_tensor(
     np.column_stack([rng.normal(size=300), rng.poisson(3.0, 300).astype(float)])
   )
-  dist = TorchVinedist.from_data(
-    y, margin_controls={1: FitControlsMargin(var_type=declared)}
-  )
+  dist = TorchVinedist.from_data(y, var_types=[None, declared])
   margin = cast("Any", dist.margins[1])
-  assert margin.kde_type == expected_kde_type
-  assert dist.var_types[1] == expected_var_type
+  assert margin.var_type == declared
+  assert dist.var_types[1] == expected_copula_type
   assert torch.isfinite(dist.logpdf(y)).all()
 
 
-def test_margin_controls_declare_a_bound() -> None:
+def test_supports_declare_a_bound() -> None:
   """A declared support bounds the margin the library builds."""
   rng = np.random.default_rng(1)
   y = torch.as_tensor(rng.gamma(2.0, 1.0, size=(400, 2)))
-  bounded = TorchVinedist.from_data(
-    y, margin_controls=FitControlsMargin(support=(0.0, None))
-  )
+  bounded = TorchVinedist.from_data(y, supports=[(0.0, None)] * 2)
   assert all(float(cast("Any", m).xmin) == 0.0 for m in bounded.margins)
+
+
+def test_a_distribution_margin_is_fixed_across_a_refit(
+  data: np.ndarray,
+) -> None:
+  """`fit` re-estimates the copula and leaves a parameter-given margin alone.
+
+  `_fit_margin` treats a margin that overrides neither `fit` nor `select` as
+  fixed. `TorchDistributionMargin` used to override `fit` to raise a better
+  message than the inherited one, which made it look refittable -- so every
+  `TorchVinedist.fit` and `.select` raised that message instead of refitting
+  the copula. The guidance now lives in the class docstring, where a user
+  reads it, rather than in an exception composition has to walk into.
+  """
+  y = torch.as_tensor(data, dtype=torch.float64)
+  u = torch.as_tensor(pv.to_pseudo_obs(data), dtype=torch.float64)
+  copula = TorchVinecop.from_data(u)
+
+  def standard_normal() -> TorchDistributionMargin:
+    return TorchDistributionMargin.from_distribution(
+      torch.distributions.Normal(
+        torch.tensor(0.0, dtype=torch.float64),
+        torch.tensor(1.0, dtype=torch.float64),
+      )
+    )
+
+  dist = TorchVinedist(
+    copula, margins=[standard_normal() for _ in range(data.shape[1])]
+  )
+  held = list(dist.margins)
+
+  for verb in ("fit", "select"):
+    getattr(dist, verb)(y)
+    assert all(m is h for m, h in zip(dist.margins, held, strict=True)), verb
 
 
 def test_from_data_refuses_covariates(data: np.ndarray) -> None:
   """No torch margin reads them, so an unconditional fit would be a lie."""
   y = torch.as_tensor(data, dtype=torch.float64)
-  with pytest.raises(NotImplementedError, match="takes no covariates"):
+  with pytest.raises(ValueError, match="the fit would ignore"):
     TorchVinedist.from_data(y, x=torch.zeros(y.shape[0], 2))
 
 
@@ -468,14 +488,12 @@ def test_holds_margins_with_atoms() -> None:
     ]
   )
   # `from_data` does not guess a variable's type any more than the NumPy
-  # `Vinedist.from_data` does -- the caller declares it on the margin.
+  # `Vinedist.from_data` does -- the caller declares it, keyword-only and one
+  # entry per variable, exactly as `Bicop.from_data` takes `var_types`.
   dist = TorchVinedist.from_data(
     torch.as_tensor(y, dtype=_F64),
-    margins=[
-      TorchKde1d(type="discrete", xmin=0.0),
-      TorchKde1d(),
-      TorchKde1d(),
-    ],
+    var_types=["d", None, None],
+    supports=[(0.0, None), None, None],
   )
   assert dist.var_types == ["d", "c", "c"]
 
@@ -528,7 +546,7 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
 
     cdf_left = None
 
-  discrete = _Atomic(type="discrete", xmin=0.0)
+  discrete = _Atomic(var_type="d", xmin=0.0)
   discrete.fit(
     torch.as_tensor(
       np.random.default_rng(6).poisson(3.0, 400).astype(float), dtype=_F64
@@ -541,28 +559,22 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
     TorchVinedist(torch_copula, [discrete for _ in range(3)])
 
 
-@pytest.mark.parametrize(
-  ("device", "dtype"),
-  [(None, None), (None, torch.float32), ("cpu", torch.float64)],
-)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_from_data_puts_everything_on_one_device_and_dtype(
-  device: str | None, dtype: torch.dtype | None
+  dtype: torch.dtype,
 ) -> None:
-  """`from_data` documents one device and one dtype for the whole object.
+  """`from_data` reads one device and one dtype off `y`, for both halves.
 
-  The margins took theirs from `y` while the copula took `controls.device`, so
-  `from_data(..., controls=FitControlsTorchVinecop(device="cuda"))` left every
-  margin on the CPU: `state_dict` spanned two devices and `logpdf` raised.
+  Where the object evaluates is a property of the object, so it is taken from
+  the data rather than named in the controls: there is nothing a caller can
+  set that would leave the margins on one device and the copula on another.
   """
   rng = np.random.default_rng(0)
-  y = torch.as_tensor(rng.normal(size=(200, 3)))
-  controls = FitControlsTorchVinecop(device=device, dtype=dtype)
-  dist = TorchVinedist.from_data(y, controls=controls)
+  y = torch.as_tensor(rng.normal(size=(200, 3)), dtype=dtype)
+  dist = TorchVinedist.from_data(y, controls=FitControlsTorchVinecop())
   tensors = [v for v in dist.state_dict().values() if hasattr(v, "device")]
-  assert len({t.device for t in tensors}) == 1
-  assert len({t.dtype for t in tensors}) == 1
-  if dtype is not None:
-    assert tensors[0].dtype == dtype
+  assert {t.device for t in tensors} == {y.device}
+  assert {t.dtype for t in tensors} == {dtype}
   # And the object it produced can evaluate its own data.
   assert torch.isfinite(dist.log_prob(dist.sample(4))).all()
 

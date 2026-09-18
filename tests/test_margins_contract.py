@@ -1,14 +1,14 @@
 """The margin contract, checked once against every ecosystem adapter.
 
-`SciPyMargin` and `OpenTURNSMargin` wrap different family registries but answer
+`SciPyMargin` wraps one ecosystem's family registry and answers
 the same questions, so the answers are pinned here over the `ECOSYSTEMS` table
 and a third adapter inherits the suite by adding a row.
 
-What stays in `test_margins_scipy.py` / `test_margins_openturns.py` is what is
+What stays in `test_margins_scipy.py` is what is
 actually one ecosystem's: SciPy's curated candidate set, its traps and its
-admissibility check; OpenTURNS' marshaling conventions and its
+admissibility check; and its
 `DistributionFactory`; and each lane's own refusal messages -- including the
-discrete split, which SciPy pre-filters with a warning where OpenTURNS refuses
+discrete split, which SciPy pre-filters with a warning
 candidate by candidate.
 """
 
@@ -19,12 +19,13 @@ from typing import Any, NamedTuple
 import numpy as np
 import pytest
 
-from pyvinecopulib.core import Kde1d, MarginLike, Vinedist
+from pyvinecopulib.core import Kde1d, MarginLike, Vinecop, Vinedist
 from pyvinecopulib.margins import (
   FitControlsMargin,
-  OpenTURNSMargin,
   SciPyMargin,
 )
+from pyvinecopulib.utils import to_pseudo_obs
+
 from .helpers import widen
 
 
@@ -59,16 +60,6 @@ ECOSYSTEMS = [
     impossible=["t"],
     reason="t: degenerate parameter scale",
   ),
-  Ecosystem(
-    cls=OpenTURNSMargin,
-    module="openturns",
-    real="Normal",
-    true="Gamma",
-    count="Poisson",
-    competitors=["Normal", "Logistic", "Laplace"],
-    impossible=["Poisson"],
-    reason="Poisson: TypeError",
-  ),
 ]
 
 
@@ -82,6 +73,11 @@ def eco(request: pytest.FixtureRequest) -> Ecosystem:
 
 #: 500 draws from a gamma(2.5, 1.5), the running example of the design.
 POSITIVE = np.random.default_rng(0).gamma(2.5, 1.5, size=500)
+
+
+def dist_for(eco: Any) -> Any:
+  """A `Vinedist` whose `margin_class` is this ecosystem's."""
+  return type("EcoVinedist", (Vinedist,), {"margin_class": eco.cls})
 
 
 # --- a margin, fitted or not ------------------------------------------------ #
@@ -130,7 +126,7 @@ def test_an_unfitted_margin_answers_nothing(eco: Ecosystem) -> None:
   with pytest.raises(RuntimeError, match="is not fitted"):
     margin.pdf(np.array([1.0]))
   with pytest.raises(RuntimeError, match="is not fitted"):
-    margin.parameters
+    _ = margin.parameters
   with pytest.raises(RuntimeError, match="only defined after"):
     margin.loglik()
 
@@ -145,7 +141,7 @@ def test_an_unnamed_margin_has_no_family_until_select(eco: Ecosystem) -> None:
   margin = eco.cls()
   assert not margin.is_fitted
   with pytest.raises(RuntimeError, match="no family yet"):
-    margin.family_name
+    _ = margin.family_name
 
   chosen = margin.select(
     POSITIVE, FitControlsMargin(family_set=[eco.real, eco.true])
@@ -186,19 +182,20 @@ def test_select_replaces_a_wrong_family_and_fit_keeps_it(
 def test_select_on_a_named_margin_keeps_the_family(eco: Ecosystem) -> None:
   """Naming a family *is* the choice, so `select` reduces to `fit`.
 
-  It matters because `fit_margin` calls `select` by default, so without it a
-  named margin comes back as whatever won the registry search -- answering a
-  specification with a different model. `family_set` is how a caller asks for
-  the search back on one.
+  It matters because a vine distribution's margin loop calls `select`, so
+  without it a named margin comes back as whatever won the registry search --
+  answering a specification with a different model. `family_set` is how a
+  caller asks for the search back on one.
   """
-  from pyvinecopulib.core._margins import fit_margin
-
   named = eco.cls(eco.real)
   assert not named.is_fitted
   assert named.select(POSITIVE).family_name == eco.real
 
-  # And through the resolution path a vine distribution actually takes.
-  resolved = widen(fit_margin(eco.cls(eco.real), POSITIVE))
+  # And through the path a vine distribution actually takes.
+  y = np.column_stack([POSITIVE, POSITIVE * 2.0])
+  copula = Vinecop.from_data(np.asarray(to_pseudo_obs(y)))
+  dist = Vinedist(copula, [eco.cls(eco.real), eco.cls(eco.real)]).select(y)
+  resolved = widen(dist.margins[0])
   assert isinstance(resolved, eco.cls)
   assert resolved.family_name == eco.real
 
@@ -215,7 +212,7 @@ def test_criteria_match_their_definitions(eco: Ecosystem) -> None:
   rather than needing the sample again.
   """
   m = eco.cls(eco.true).fit(POSITIVE)
-  loglik, k, n = m.loglik(), m.n_parameters, float(m.nobs or 0)
+  loglik, k, n = m.loglik(), m.npars, float(m.nobs or 0)
   assert n == POSITIVE.size
   assert m.aic() == pytest.approx(-2.0 * loglik + 2.0 * k)
   assert m.bic() == pytest.approx(-2.0 * loglik + k * np.log(n))
@@ -265,9 +262,9 @@ def test_counts_select_a_count_family(
     chosen.pdf(k), chosen.cdf(k) - chosen.cdf_left(k), atol=1e-12
   )
 
-  forced_d = eco.cls().select(count_sample, FitControlsMargin(var_type="d"))
+  forced_d = eco.cls().select(count_sample, var_type="d")
   assert forced_d.family_name == eco.count
-  forced_c = eco.cls().select(count_sample, FitControlsMargin(var_type="c"))
+  forced_c = eco.cls().select(count_sample, var_type="c")
   assert forced_c.var_type == "c"
 
 
@@ -284,9 +281,8 @@ def test_margin_controls_address_each_variable(eco: Ecosystem) -> None:
   y = np.column_stack(
     [rng.gamma(2.5, 1.5, size=500), rng.normal(1.0, 2.0, size=500)]
   )
-  dist = Vinedist.from_data(
+  dist = dist_for(eco).from_data(
     y,
-    margins=eco.cls(),
     margin_controls={
       "positive": FitControlsMargin(family_set=[eco.true]),
       "real": FitControlsMargin(
@@ -301,9 +297,8 @@ def test_margin_controls_address_each_variable(eco: Ecosystem) -> None:
   assert np.all(dist.sample(200, seeds=[2])[:, 0] >= lo)
   assert np.all(np.isfinite(dist.logpdf(y[:20])))
 
-  shared = Vinedist.from_data(
+  shared = dist_for(eco).from_data(
     y,
-    margins=eco.cls(),
     margin_controls=FitControlsMargin(
       family_set=[eco.real, eco.true], selection_criterion="bic"
     ),
@@ -316,10 +311,17 @@ def test_margin_controls_address_each_variable(eco: Ecosystem) -> None:
 
 @pytest.mark.parametrize("verb", ["fit", "select"])
 def test_margin_fitters_reject_weights(eco: Ecosystem, verb: str) -> None:
-  """Neither registry's estimator weights observations, so asking must raise."""
+  """Neither registry's estimator weights observations, so asking must raise.
+
+  Every controls object carries weights, so the refusal is the only thing
+  standing between a weighted call and the unweighted fit it would silently
+  return.
+  """
   margin = eco.cls(eco.real) if verb == "fit" else eco.cls()
-  with pytest.raises(TypeError, match="cannot use observation weights"):
-    getattr(margin, verb)(POSITIVE, weights=np.ones_like(POSITIVE))
+  assert margin.supports_weights is False
+  weighted = FitControlsMargin(weights=np.ones_like(POSITIVE))
+  with pytest.raises(TypeError, match="honors no observation weights"):
+    getattr(margin, verb)(POSITIVE, weighted)
 
 
 @pytest.mark.parametrize("verb", ["fit", "select"])
@@ -350,7 +352,7 @@ def test_on_failure_fallback_substitutes_a_kernel_density(
   )
   controls = FitControlsMargin(family_set=eco.impossible, on_failure="fallback")
   with pytest.warns(UserWarning, match="kernel-density margin was") as caught:
-    dist = Vinedist.from_data(trap, margins=eco.cls(), margin_controls=controls)
+    dist = dist_for(eco).from_data(trap, margin_controls=controls)
   assert all(isinstance(m, Kde1d) for m in dist.margins)
   assert len(caught) == 2  # one per column, and no more
   assert eco.reason in str(caught[0].message)

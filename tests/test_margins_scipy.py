@@ -25,16 +25,22 @@ from typing import Any
 import numpy as np
 import pytest
 
-from pyvinecopulib.core import Kde1d, Vinedist
+from pyvinecopulib.core import Vinedist
 from pyvinecopulib.margins import (
   FitControlsMargin,
   SciPyMargin,
   resolve_margin_controls,
-  resolve_margins,
 )
+
 from .helpers import run_without
 
 pytest.importorskip("scipy.stats")
+
+
+class ParametricVinedist(Vinedist):
+  """A `Vinedist` whose margins are SciPy families: the `margin_class` route."""
+
+  margin_class = SciPyMargin
 
 
 @pytest.fixture
@@ -77,8 +83,8 @@ def test_parametric_margin_counts_only_free_parameters(
   pinned = SciPyMargin("gamma", floc=0.0).fit(gamma_sample)
   # SciPy returns three numbers either way; only one of the two estimated three.
   assert len(free.parameters) == len(pinned.parameters) == 3
-  assert free.n_parameters == 3.0
-  assert pinned.n_parameters == 2.0
+  assert free.npars == 3.0
+  assert pinned.npars == 2.0
   assert pinned.fixed_parameters == {"loc": 0.0}
   # And pinning it is what makes the support the family's own half-line.
   assert pinned.support == (0.0, float("inf"))
@@ -88,7 +94,7 @@ def test_parametric_margin_fully_specified_is_already_fitted() -> None:
   """Parameters given at construction need no data, and estimate nothing."""
   m = SciPyMargin("norm", (0.0, 1.0))
   assert m.is_fitted
-  assert m.n_parameters == 0.0
+  assert m.npars == 0.0
   np.testing.assert_allclose(m.cdf(np.array([0.0])), [0.5], atol=1e-12)
 
 
@@ -120,7 +126,7 @@ def test_parametric_margin_pins_the_discrete_lattice_offset(
   m = SciPyMargin("poisson").fit(count_sample)
   assert m.var_type == "d"
   assert m.fixed_parameters == {"loc": 0.0}
-  assert m.n_parameters == 1.0
+  assert m.npars == 1.0
   # `pdf` is the probability mass, and `cdf_left` steps back one lattice point.
   k = np.array([0.0, 1.0, 4.0])
   np.testing.assert_allclose(m.pdf(k), m.cdf(k) - m.cdf_left(k), atol=1e-12)
@@ -131,13 +137,13 @@ def test_parametric_margin_fits_when_nothing_is_free() -> None:
   x = np.random.default_rng(2).uniform(1.0, 3.0, size=100)
   m = SciPyMargin("uniform", floc=1.0, fscale=2.0).fit(x)
   assert m.parameters == (1.0, 2.0)
-  assert m.n_parameters == 0.0
+  assert m.npars == 0.0
   assert m.loglik() == pytest.approx(100 * np.log(0.5))
 
 
 def test_parametric_margin_rejects_an_unknown_family() -> None:
   """A typo in the family name fails at construction, not at fit."""
-  with pytest.raises(ValueError, match="unknown scipy.stats family"):
+  with pytest.raises(ValueError, match=r"unknown scipy\.stats family"):
     SciPyMargin("gaussian")
 
 
@@ -209,7 +215,7 @@ def test_a_selected_margin_round_trips_through_pickle(
   clone = pickle.loads(pickle.dumps(m))
   assert clone.family_name == m.family_name
   assert clone.parameters == m.parameters
-  assert clone.n_parameters == m.n_parameters
+  assert clone.npars == m.npars
   assert clone.nobs == m.nobs
 
 
@@ -225,20 +231,22 @@ def test_from_data_honors_a_named_family_and_chooses_an_unnamed_one(
   normal and gets one -- replacing it would answer the specification with a
   different model. Leaving the family out is what asks for the search.
   """
-  named = Vinedist.from_data(lognormal_pair, margins=SciPyMargin("norm"))
+  named = ParametricVinedist.from_data(
+    lognormal_pair,
+    margin_controls=FitControlsMargin(family_set=["norm"]),
+  )
   assert [m.family_name for m in parametric_margins(named)] == ["norm", "norm"]
   assert np.all(np.isfinite(named.logpdf(lognormal_pair)))
 
-  chosen = Vinedist.from_data(lognormal_pair, margins="parametric")
+  chosen = ParametricVinedist.from_data(lognormal_pair)
   assert [m.family_name for m in parametric_margins(chosen)] == [
     "lognorm",
     "lognorm",
   ]
 
   # ... and `family_set` is how a caller asks to re-search a named family.
-  research = Vinedist.from_data(
+  research = ParametricVinedist.from_data(
     lognormal_pair,
-    margins=SciPyMargin("norm"),
     margin_controls=FitControlsMargin(family_set=["lognorm", "expon"]),
   )
   assert [m.family_name for m in parametric_margins(research)] == [
@@ -254,7 +262,7 @@ def test_select_picks_the_true_family(gamma_sample: np.ndarray) -> None:
   """Gamma data select a gamma, ahead of ten other admissible candidates."""
   m = SciPyMargin().select(gamma_sample)
   assert m.family_name == "gamma"
-  assert m.n_parameters == 2.0
+  assert m.npars == 2.0
   assert m.fixed_parameters == {"loc": 0.0}
   assert m.nobs == gamma_sample.size
 
@@ -293,16 +301,16 @@ def test_select_adds_the_unit_group_for_data_inside_the_unit_interval() -> None:
   assert m.family_name == "beta"
   # The unit group pins both endpoints, so only the two shapes are estimated.
   assert m.fixed_parameters == {"loc": 0.0, "scale": 1.0}
-  assert m.n_parameters == 2.0
+  assert m.npars == 2.0
 
 
 def test_declared_bounds_anchor_the_candidates() -> None:
   """Given `(a, b)`, the candidates live on `[a, b]` and are pinned there."""
   x = np.random.default_rng(3).uniform(1.0, 3.0, size=400)
-  m = SciPyMargin().select(x, FitControlsMargin(support=(1.0, 3.0)))
+  m = SciPyMargin().select(x, support=(1.0, 3.0))
   assert m.family_name == "uniform"
   assert m.support == (1.0, 3.0)
-  assert m.n_parameters == 0.0
+  assert m.npars == 0.0
 
 
 def test_a_half_bounded_support_is_not_a_bounded_one() -> None:
@@ -313,7 +321,7 @@ def test_a_half_bounded_support_is_not_a_bounded_one() -> None:
   infinite endpoint.
   """
   x = np.random.default_rng(5).gamma(2.0, 1.5, size=400)
-  m = SciPyMargin().select(x, FitControlsMargin(support=(0.0, None)))
+  m = SciPyMargin().select(x, support=(0.0, None))
   assert m.family_name not in ("uniform", "beta")
 
 
@@ -344,7 +352,7 @@ def test_a_declared_var_type_supplies_what_the_sample_cannot_show() -> None:
   assert SciPyMargin().select(x).var_type == "c"
 
   with pytest.raises(ValueError) as caught:
-    SciPyMargin().select(x, FitControlsMargin(var_type="d"))
+    SciPyMargin().select(x, var_type="d")
   message = str(caught.value)
   for family in ("poisson", "nbinom", "geom"):
     assert f"{family}: support" in message
@@ -367,13 +375,14 @@ def test_counts_and_densities_are_never_ranked_together(
   with pytest.warns(UserWarning, match="not comparable"):
     mixed = SciPyMargin().select(
       count_sample,
-      FitControlsMargin(family_set=["poisson", "norm", "t"], var_type="d"),
+      FitControlsMargin(family_set=["poisson", "norm", "t"]),
+      var_type="d",
     )
   assert mixed.family_name == "poisson"
 
   with pytest.raises(ValueError, match="every family in family_set is of the"):
     SciPyMargin().select(
-      count_sample, FitControlsMargin(family_set=["norm"], var_type="d")
+      count_sample, FitControlsMargin(family_set=["norm"]), var_type="d"
     )
 
 
@@ -527,10 +536,14 @@ def test_candidates_that_would_tie_are_deduplicated(
   )
   assert families(bounded) == ["nbinom", "nbinom"]
 
-  # Two already-fitted models with no exposed parameter vector have unreadable
-  # identities. Neither may be discarded merely because the family names tie.
-  fitted_kdes = [Kde1d().fit(count_sample), Kde1d().fit(count_sample + 3.0)]
-  assert len(_dedupe(fitted_kdes)) == 2
+  # Two already-fitted models of one family are two models: the estimates are
+  # part of the identity, so neither is discarded because the names tie.
+  fitted = [
+    SciPyMargin("norm").fit(count_sample),
+    SciPyMargin("norm").fit(count_sample + 3.0),
+  ]
+  assert len(_dedupe(fitted)) == 2
+  assert len(_dedupe([fitted[0], fitted[0]])) == 1
 
 
 # --- criteria --------------------------------------------------------------- #
@@ -547,7 +560,7 @@ def test_criteria_take_a_sample_or_read_the_fitted_value(
   """
   fixed = SciPyMargin("norm", (0.0, 1.0))
   deviance = -2.0 * float(np.sum(fixed.logpdf(gamma_sample)))
-  assert fixed.n_parameters == 0.0
+  assert fixed.npars == 0.0
   assert fixed.aic(gamma_sample) == pytest.approx(deviance)
   assert fixed.bic(gamma_sample) == pytest.approx(deviance)
   assert fixed.aicc(gamma_sample) == pytest.approx(deviance)
@@ -563,12 +576,8 @@ def test_criteria_take_a_sample_or_read_the_fitted_value(
   [
     ({"selection_criterion": "cv"}, "selection_criterion='cv' is not one of"),
     ({"on_failure": "ignore"}, "on_failure='ignore' is not one of"),
-    ({"var_type": "zi2"}, "var_type='zi2' is not one of"),
     ({"family_set": []}, "family_set is empty"),
     ({"family_set": [3]}, "must name families as strings"),
-    ({"support": (1.0,)}, r"support must be a \(lo, hi\) pair"),
-    ({"support": (3.0, 1.0)}, "is not an increasing interval"),
-    ({"support": (1.0, 1.0)}, "is not an increasing interval"),
   ],
 )
 def test_fit_controls_margin_validates_its_arguments(
@@ -579,17 +588,34 @@ def test_fit_controls_margin_validates_its_arguments(
     FitControlsMargin(**kwargs)
 
 
+@pytest.mark.parametrize(
+  ("kwargs", "match"),
+  [
+    ({"var_type": "zi2"}, "var_type='zi2' is not one of"),
+    ({"support": (1.0,)}, r"support must be a \(lo, hi\) pair"),
+    ({"support": (3.0, 1.0)}, "is not an increasing interval"),
+    ({"support": (1.0, 1.0)}, "is not an increasing interval"),
+  ],
+)
+def test_a_declaration_is_validated_where_it_is_read(
+  kwargs: dict[str, Any], match: str
+) -> None:
+  """The declaration travels as an argument, so it is checked as one."""
+  from pyvinecopulib.core._validation import validate_declaration
+
+  with pytest.raises(ValueError, match=match):
+    validate_declaration(kwargs.get("var_type"), kwargs.get("support"))
+
+
 def test_fit_controls_margin_defaults_and_to_dict() -> None:
   """`to_dict` is what makes it a `ControlsLike`, and the defaults search."""
   assert FitControlsMargin().to_dict() == {
     "family_set": None,
     "selection_criterion": "aic",
-    "var_type": None,
-    "support": None,
     "on_failure": "raise",
+    "weights": None,
   }
-  # A one-sided bound is a legal declaration; it is simply not a bounded one.
-  assert FitControlsMargin(support=(0.0, None)).support == (0.0, None)
+  assert FitControlsMargin(family_set=["norm"]).family_set == ["norm"]
   assert FitControlsMargin(family_set=("gamma",)).to_dict()["family_set"] == [
     "gamma"
   ]
@@ -614,9 +640,7 @@ def test_select_raises_rather_than_silently_falling_back(
   # Substituting another kind of margin is a decision about which margin the
   # column gets, so it is made where the margin is chosen, not inside one.
   with pytest.raises(ValueError, match="no parametric family fits"):
-    Vinedist.from_data(
-      collapsed_trap, margins="parametric", margin_controls=controls
-    )
+    ParametricVinedist.from_data(collapsed_trap, margin_controls=controls)
 
 
 def test_family_set_is_refused_by_a_margin_that_cannot_search(
@@ -630,7 +654,6 @@ def test_family_set_is_refused_by_a_margin_that_cannot_search(
   with pytest.raises(TypeError, match="cannot select a family"):
     Vinedist.from_data(
       lognormal_pair,
-      margins="kde",
       margin_controls=FitControlsMargin(family_set=["gamma"]),
     )
 
@@ -639,8 +662,8 @@ def test_family_set_is_refused_by_a_margin_that_cannot_search(
 
 
 def test_resolve_margin_controls_addresses_each_variable() -> None:
-  """The `margins=` rules, applied to the marginal configuration."""
-  bounded = FitControlsMargin(support=(0.0, None))
+  """One controls object per variable, by the four shapes."""
+  bounded = FitControlsMargin(family_set=["norm"])
   assert resolve_margin_controls(None, 3) == [None, None, None]
   # Broadcast is shared, not copied: controls are read, never written to.
   assert all(c is bounded for c in resolve_margin_controls(bounded, 3))
@@ -674,7 +697,7 @@ def test_declared_bounds_reach_the_default_margin(
   dist = Vinedist.from_data(
     lognormal_pair,
     names=["bounded", "free"],
-    margin_controls={"bounded": FitControlsMargin(support=(0.0, None))},
+    supports=[(0.0, None), None],
   )
   draws = dist.sample(2000, seeds=[3])
   assert draws[:, 0].min() >= 0.0
@@ -684,25 +707,11 @@ def test_declared_bounds_reach_the_default_margin(
 # --- wiring ----------------------------------------------------------------- #
 
 
-def test_resolve_margins_knows_the_parametric_alias() -> None:
-  """`margins="parametric"` means "choose a family", one margin per variable."""
-  resolved = resolve_margins("parametric", 3)
-  assert len(resolved) == 3
-  assert all(isinstance(m, SciPyMargin) for m in resolved)
-  for margin in resolved:
-    with pytest.raises(RuntimeError, match="has no family yet"):
-      margin.family_name
-  # Copied, not shared: fitting one must not fit the others.
-  assert len({id(m) for m in resolved}) == 3
-
-
 def test_vinedist_from_data_selects_margins(
   lognormal_pair: np.ndarray,
 ) -> None:
   """The alias reaches `Vinedist.from_data`, which selects one per column."""
-  dist = Vinedist.from_data(
-    lognormal_pair, margins="parametric", names=["a", "b"]
-  )
+  dist = ParametricVinedist.from_data(lognormal_pair, names=["a", "b"])
   chosen = parametric_margins(dist)
   assert len(chosen) == dist.dim
   assert all(m.is_fitted for m in chosen)
@@ -722,7 +731,7 @@ def test_margins_imports_without_scipy() -> None:
     "sys.exit(0 if 'scipy.stats' not in sys.modules else 1)"
   )
   result = subprocess.run(
-    [sys.executable, "-c", code], capture_output=True, text=True
+    [sys.executable, "-c", code], capture_output=True, text=True, check=False
   )
   assert result.returncode == 0, result.stderr
 

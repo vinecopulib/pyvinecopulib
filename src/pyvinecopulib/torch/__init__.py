@@ -29,7 +29,7 @@ Requires PyTorch. Install with ``pip install pyvinecopulib[torch]``.
 See Also
 --------
 pyvinecopulib.core : Reference vine-copula evaluators (default everywhere).
-pyvinecopulib.sklearn : sklearn-compatible vine-copula estimators that route through either backend.
+pyvinecopulib.sklearn : sklearn-compatible vine-copula estimators, which fit a ``TorchVinedist`` when handed one.
 
 Notes
 -----
@@ -62,7 +62,7 @@ Notes
 - :class:`TorchDistributionMargin` — a margin on a ``torch.distributions``
   family, whose **parameters an optimizer learns**. It is the torch member of
   the same trio as :class:`~pyvinecopulib.margins.SciPyMargin` and
-  :class:`~pyvinecopulib.margins.OpenTURNSMargin`: each adapts one ecosystem's
+  each adapts one ecosystem's
   family registry. Registers the family's parameters and rebuilds the
   distribution on each call, so ``.to(device)``, ``state_dict()`` and autograd
   all reach them. Continuous families only, and only those implementing
@@ -89,47 +89,36 @@ Notes
 References
 ----------
 .. [1] Geenens, G. (2014). *Probit Transformation for Kernel Density
-       Estimation on the Unit Interval.* JASA 109(505), 346–358 —
+       Estimation on the Unit Interval.* JASA 109(505), 346--358 —
        original TLL motivation.
 .. [2] Nagler, T. (2018). *A Generic Approach to Nonparametric
        Function Estimation with Mixed Data.* Statistics & Probability
-       Letters 137, 326–330 — multivariate TLL.
+       Letters 137, 326--330 — multivariate TLL.
 """
 
 from ..core._validation import extra_required
 
-with extra_required(
+with extra_required(  # noqa: RUF067
   extra="torch", requirement="pyvinecopulib.torch requires PyTorch."
 ):
   import torch  # noqa: F401
 
-from .tll_bicop import TorchTllBicop
-from .kde1d import TorchKde1d
+from ._placement import TensorPlacementMixin, reference_tensor
+from .controls import FitControlsTorchBicop, FitControlsTorchVinecop
 from .distribution_margin import TorchDistributionMargin
+from .kde1d import TorchKde1d
+from .tll_bicop import TorchTllBicop
 from .vinecop import TorchVinecop
 from .vinedist import TorchVinedist
-from .controls import FitControlsTorchBicop, FitControlsTorchVinecop
-from ._placement import TensorPlacementMixin, reference_tensor
 
 __all__ = [
-  "TorchTllBicop",
-  "TorchKde1d",
-  "TorchDistributionMargin",
-  "TorchVinecop",
-  "TorchVinedist",
   "FitControlsTorchBicop",
   "FitControlsTorchVinecop",
   "TensorPlacementMixin",
+  "TorchDistributionMargin",
+  "TorchKde1d",
+  "TorchTllBicop",
+  "TorchVinecop",
+  "TorchVinedist",
   "reference_tensor",
 ]
-
-
-# Registered here for the same reason the margin adapters are: `core` holds
-# the registries and names no ecosystem, so the lane that owns a class is the
-# lane that teaches `margin_from_json` to rebuild it.
-from ..core._margins import register_margin_json
-
-register_margin_json("TorchKde1d", TorchKde1d.from_json_payload)
-register_margin_json(
-  "TorchDistributionMargin", TorchDistributionMargin.from_json_payload
-)

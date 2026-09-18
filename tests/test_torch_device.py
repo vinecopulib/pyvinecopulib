@@ -10,22 +10,22 @@ compiled library: it is a lower precision, so the float64 tolerances do not
 apply to it and loosening them would weaken the check that does.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")
 
-import pyvinecopulib as pv  # noqa: E402
-from pyvinecopulib.torch import (  # noqa: E402
+import pyvinecopulib as pv
+from pyvinecopulib.torch import (
   FitControlsTorchVinecop,
-  TorchTllBicop,
   TorchKde1d,
+  TorchTllBicop,
   TorchVinecop,
   TorchVinedist,
 )
-from tests.helpers import assert_on_device, count_transfers  # noqa: E402
+from tests.helpers import assert_on_device, count_transfers
 
 # cuda vs cpu at the same dtype. Tight enough that the cpu-vs-C++ 1e-10
 # tolerances carry over to cuda by the triangle inequality.
@@ -205,7 +205,7 @@ def test_every_buffer_follows_to_device(
   assert_on_device(vine, device, out, extra=(vine._batched,))
 
 
-@pytest.mark.parametrize("op", _EVAL_OPS + ("sample",))
+@pytest.mark.parametrize("op", (*_EVAL_OPS, "sample"))
 def test_evaluation_does_not_round_trip_through_the_host(
   device: str, op: str, cpp_vine: pv.Vinecop, u_eval: np.ndarray
 ) -> None:
@@ -251,9 +251,7 @@ def test_batched_fit_peak_memory_stays_bounded(device: str) -> None:
     ),
   ).structure
   u = torch.as_tensor(u_np, device=device)
-  controls = FitControlsTorchVinecop(
-    device=torch.device(device), batched_fit=True
-  )
+  controls = FitControlsTorchVinecop(batched_fit=True)
   TorchVinecop.from_data(u, structure=structure, controls=controls)  # warm
   torch.cuda.empty_cache()
   torch.cuda.reset_peak_memory_stats()
@@ -268,7 +266,7 @@ def test_fit_and_select_run_on_device(device: str) -> None:
   """Fitting and structure selection work with device-resident data."""
   u = _u(4, 600, 11)
   ut = torch.as_tensor(u, device=device)
-  ctl = FitControlsTorchVinecop(device=torch.device(device))
+  ctl = FitControlsTorchVinecop()
   fixed = pv.Vinecop.from_data(
     u, controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.tll])
   )
@@ -418,9 +416,7 @@ def test_batched_fit_matches_the_per_edge_fit_on_device(
     flag: TorchVinecop.from_data(
       u_t,
       structure=structure,
-      controls=FitControlsTorchVinecop(
-        device=torch.device(device), batched_fit=flag
-      ),
+      controls=FitControlsTorchVinecop(batched_fit=flag),
     )
     for flag in (False, True)
   }
@@ -438,7 +434,7 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
 ) -> None:
   """The mixin resolves a declaration, not only registered tensors.
 
-  A pair copula that is not an ``nn.Module`` -- backend
+  A pair copula that is not an ``nn.Module`` -- holding fitted
   estimators, a device handle and Python scalars, no tensor -- registers
   nothing for ``reference_tensor`` to find. Before this it reached
   ``self.parameters()`` and raised ``AttributeError``; the array-API inference
@@ -455,7 +451,7 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
       self.device = torch.device(device)
       self.dtype = torch.float64
 
-    def pdf(self, u: Any, *, x: Any = None) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       u = self._prep_args(u)
       assert isinstance(u, torch.Tensor) and u.device.type == device
       assert x is None or (
@@ -463,10 +459,10 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
       )
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
 
-    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       return self._prep_args(u)[:, 1]
 
-    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       return self._prep_args(u)[:, 0]
 
   pair = _Declared()
@@ -499,19 +495,19 @@ def test_a_member_named_parameters_does_not_decide_the_placement(
   class _Coincidental(TensorPlacementMixin, BicopBase[torch.Tensor]):
     # Not callable, and not tensors: exactly what a wrapped estimator's own
     # hyperparameter record looks like.
-    parameters = {"n_estimators": 400, "depth": 6}
+    parameters: ClassVar[dict[str, int]] = {"n_estimators": 400, "depth": 6}
 
     def __init__(self) -> None:
       self.device = torch.device(device)
       self.dtype = torch.float64
 
-    def pdf(self, u: Any, *, x: Any = None) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
 
-    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       return self._prep_args(u)[:, 1]
 
-    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       return self._prep_args(u)[:, 0]
 
   placed = _Coincidental()._prep(np.array([[0.3, 0.5]], dtype=np.float32))
@@ -550,7 +546,7 @@ def test_a_host_with_parameters_but_no_buffers_still_resolves(
   assert reference_tensor(object()) is None
 
   class _Coincidental:
-    parameters = {"depth": 6}
+    parameters: ClassVar[dict[str, int]] = {"depth": 6}
 
   assert reference_tensor(_Coincidental()) is None
 
@@ -591,13 +587,13 @@ def test_an_undeclared_host_gets_the_documented_default() -> None:
   from pyvinecopulib.torch import TensorPlacementMixin
 
   class _Bare(TensorPlacementMixin, BicopBase[torch.Tensor]):
-    def pdf(self, u: Any, *, x: Any = None) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       return torch.ones(u.shape[0], dtype=u.dtype)
 
-    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 1]
 
-    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 0]
 
   placed = _Bare()._prep(np.array([[0.3, 0.5]], dtype=np.float32))
@@ -613,9 +609,7 @@ def test_fit_and_select_place_their_data(device: str) -> None:
   across namespaces. `from_data` was unaffected -- it places from the controls.
   """
   u_np = pv.to_pseudo_obs(np.random.default_rng(0).normal(size=(150, 3)))
-  controls = FitControlsTorchVinecop(
-    device=torch.device(device), dtype=torch.float64
-  )
+  controls = FitControlsTorchVinecop()
   vine = TorchVinecop.from_data(
     torch.as_tensor(u_np, dtype=torch.float64, device=device), controls
   )

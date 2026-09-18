@@ -9,21 +9,15 @@ supplies with a continuous-correct default, and prefers an optional
 ``grid_points`` for the x-range where the margin has one.
 """
 
-from typing import Any, Callable, Optional, Union
+from collections.abc import Callable
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ..pyvinecopulib_ext import Kde1d
 from ._covariates import covariate_row
 from ._placement import to_numpy
 from .protocols import ArrayT, MarginLike
-
-
-#: `Kde1d` is named outright because it satisfies `MarginLike` *nominally*
-#: only: its `pdf` / `cdf` take no covariate `x`, so a static check rejects it.
-_Margin = Union[MarginLike[ArrayT], Kde1d]
-
 
 #: Shared with `MarginBase.plot`, which adds `x` and a `Raises`.
 MARGIN_PLOT_PARAMS = """    xlim : tuple of float, or None, optional
@@ -72,12 +66,12 @@ MARGIN_PLOT_DOC = (
     >>> kde = pv.core.Kde1d().fit(rng.beta(0.5, 2.0, 100))
     >>> kde.plot()
     >>> kde.plot(kind="cdf")
-    >>> counts = pv.core.Kde1d(type="discrete")
+    >>> counts = pv.core.Kde1d(var_type="d")
     >>> counts.fit(rng.poisson(3, 100).astype(float))
     >>> counts.plot()
     >>> y = rng.exponential(2, 100)
     >>> y[rng.choice(100, 30, replace=False)] = 0.0
-    >>> pv.core.Kde1d(xmin=0, type="zero-inflated").fit(y).plot()
+    >>> pv.core.Kde1d(xmin=0, var_type="zi").fit(y).plot()
 """
 )
 
@@ -86,13 +80,13 @@ MARGIN_PLOT_DOC = (
 _TAIL = (1e-3, 1 - 1e-3)
 
 
-def _support(margin: _Margin[Any]) -> tuple[float, float]:
+def _support(margin: MarginLike[Any]) -> tuple[float, float]:
   """The margin's declared support, as two floats."""
   lo, hi = getattr(margin, "support", (-np.inf, np.inf))
   return (float(lo), float(hi))
 
 
-def _grid_points(margin: _Margin[Any]) -> Optional[np.ndarray]:
+def _grid_points(margin: MarginLike[Any]) -> np.ndarray | None:
   """The fitted evaluation grid, where the margin publishes one."""
   gp = getattr(margin, "grid_points", None)
   if gp is None:
@@ -102,8 +96,8 @@ def _grid_points(margin: _Margin[Any]) -> Optional[np.ndarray]:
 
 
 def _draw_range(
-  margin: _Margin[ArrayT],
-  place: Optional[Callable[[np.ndarray], Any]],
+  margin: MarginLike[ArrayT],
+  place: Callable[[np.ndarray], Any] | None,
 ) -> tuple[float, float]:
   """The interval to evaluate over.
 
@@ -136,13 +130,13 @@ def _draw_range(
 
 
 def make_plotting_grid(
-  margin: _Margin[ArrayT],
+  margin: MarginLike[ArrayT],
   grid_size: int = 200,
   *,
-  place: Optional[Callable[[np.ndarray], Any]] = None,
+  place: Callable[[np.ndarray], Any] | None = None,
 ) -> np.ndarray:
   """The points a margin's plot is evaluated on, by variable type."""
-  var_type = getattr(margin, "var_type", "c")
+  var_type = margin.var_type
   lo, hi = _draw_range(margin, place)
 
   if var_type == "d":
@@ -161,17 +155,16 @@ def make_plotting_grid(
 
 
 def margin_plot(
-  margin: _Margin[ArrayT],
-  xlim: Optional[tuple[float, float]] = None,
-  ylim: Optional[tuple[float, float]] = None,
+  margin: MarginLike[ArrayT],
+  xlim: tuple[float, float] | None = None,
+  ylim: tuple[float, float] | None = None,
   grid_size: int = 200,
   show_zero_mass: bool = True,
   *,
   kind: str = "density",
-  x: Optional[ArrayT] = None,
-  place: Optional[Callable[[np.ndarray], Any]] = None,
+  x: ArrayT | None = None,
+  place: Callable[[np.ndarray], Any] | None = None,
 ) -> None:
-  """{}""".format(MARGIN_PLOT_DOC)
 
   if kind not in ("density", "cdf"):
     raise ValueError(f"kind must be 'density' or 'cdf'; got {kind!r}")
@@ -188,16 +181,16 @@ def margin_plot(
   ## A conditional margin's density is a different curve at every covariate
   ## value, so a 2-d plot shows one slice: a single row, repeated across the
   ## grid. Placed but not clamped -- covariates are reals.
-  row: Optional[np.ndarray] = None
+  row: np.ndarray | None = None
   if x is not None:
-    if not getattr(margin, "supports_covariates", False):
+    if not margin.supports_covariates:
       raise ValueError(
         "this margin declares no `supports_covariates`, so it models f(y) "
         "and there is no covariate value to draw at; drop `x=`"
       )
     row = covariate_row(np.asarray(x, dtype=float))
 
-  var_type = getattr(margin, "var_type", "c")
+  var_type = margin.var_type
   ev = make_plotting_grid(margin, grid_size, place=place)
 
   ## The grid is manufactured here, so this is the one place a margin is
@@ -250,3 +243,9 @@ def margin_plot(
   plt.ylabel("density" if kind == "density" else "probability")
   plt.grid(True, alpha=0.3)
   plt.show()
+
+
+# Assigned rather than written inline: an `f"""{MARGIN_PLOT_DOC}"""` in the
+# function body is a joined string, not a docstring, so `margin_plot.__doc__` was
+# `None` -- and this is the callable the binding resolves for `.plot()`.
+margin_plot.__doc__ = MARGIN_PLOT_DOC

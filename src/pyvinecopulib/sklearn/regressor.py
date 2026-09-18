@@ -1,26 +1,27 @@
 import math
+from collections.abc import Iterator, Sequence
 from numbers import Integral
-from typing import Any, Callable, Iterable, Iterator, Optional
+from typing import Any, ClassVar
 
 import numpy as np
+import pandas as pd
+from scipy.special import logsumexp
 from sklearn.base import RegressorMixin
 from sklearn.metrics import r2_score
-from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted
 
-from ..core import Vinedist
+import pyvinecopulib as pv
+
+from ..core import ControlsLike, VinedistLike
+from ..core.extend import to_numpy
 from ._base import (
   _DOC_DISCRETE,
   _DOC_FACTORIZATION,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
   VineBase,
-  _as_ndarray,
-  _RandomStateLike,
-  _XLike,
-  _YLike,
 )
-from .backends import _VinecopBackendBase
+from ._sklearn_private import Interval
 
 # Half-width, in standard deviations, of the probit substitution behind the
 # quadrature nodes: the outermost node sits at Phi(-a), so this is how far into
@@ -32,7 +33,7 @@ _PROBIT_HALF_WIDTH = 5.0
 
 class VineRegressor(RegressorMixin, VineBase):
   # Inherits VineBase._parameter_constraints; extend with regressor knobs.
-  _parameter_constraints: dict[str, list[object]] = {
+  _parameter_constraints: ClassVar[dict[str, list[object]]] = {
     **VineBase._parameter_constraints,
     "mean": ["boolean"],
     "quantiles": ["array-like", None],
@@ -44,17 +45,19 @@ class VineRegressor(RegressorMixin, VineBase):
   def __init__(
     self,
     mean: bool = True,
-    quantiles: Optional[_YLike] = None,
-    backend: Optional[_VinecopBackendBase[Any]] = None,
-    margins: object = None,
+    quantiles: np.ndarray | Sequence[float] | None = None,
+    distribution: type[VinedistLike[Any]] | None = None,
+    controls: ControlsLike | None = None,
+    structure: pv.RVineStructure | None = None,
+    margin_controls: object = None,
     batch_size: int = 100,
     use_grid: bool = True,
     n_nodes: int = 401,
     normalize_weights: bool = True,
-    random_state: _RandomStateLike = None,
-    n_jobs: Optional[int] = None,
+    random_state: int | np.random.RandomState | None = None,
+    n_jobs: int | None = None,
   ) -> None:
-    """Sklearn-compatible vine-copula regressor.
+    r"""Sklearn-compatible vine-copula regressor.
 
     Predicts the conditional mean
     :math:`\\hat{\\mathbb{E}}[Y \\mid X = x]` and/or conditional
@@ -70,19 +73,27 @@ class VineRegressor(RegressorMixin, VineBase):
     quantiles : array-like of float, shape (n_quantiles,), or None, optional
         Quantile levels in ``(0, 1)`` to predict. ``None`` disables
         quantile prediction.
-    backend : VinecopBackend or compatible, or None, optional
-        Backend instance bundling fit-time controls and an optional
-        pre-specified structure on ``(Y, X_1, ..., X_d)`` (`Y`
-        always in the first dimension). `None` resolves to a default
-        ``VinecopBackend`` with the ``tll`` pair family at fit time.
-    margins : object, or None, optional
-        The marginal half of the model, in any form
-        :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
-        fits a ``Kde1d`` per column. The specification addresses
-        the covariates; one that broadcasts (an alias, a single margin,
-        a callable) applies to the response as well. The response
-        margin must be continuous, and any such margin works with
-        either `use_grid` setting.
+    distribution : type, or None, optional
+        The ``VinedistBase`` subclass to fit --- ``Vinedist`` (the default,
+        pairing ``Vinecop`` with ``Kde1d``) or
+        :class:`pyvinecopulib.torch.TorchVinedist` for the PyTorch lane.
+        Naming it is the whole lane choice, and importing ``TorchVinedist``
+        to name it is the explicit opt-in to PyTorch.
+    controls : ControlsLike, or None, optional
+        Fit-time controls for the copula half. `None` fits the nonparametric
+        ``tll`` pair family truncated at depth 20.
+    structure : RVineStructure, or None, optional
+        A pre-specified vine structure on ``(Y, X_1, ..., X_d)`` (`Y` always
+        in the first dimension); `None` selects one.
+    margin_controls : object, or None, optional
+        How to fit each margin, in any form
+        :func:`pyvinecopulib.margins.resolve_margin_controls` accepts: one
+        :class:`pyvinecopulib.core.FitControlsMargin` broadcast to every
+        column, a sequence, or a mapping keyed by feature name or position.
+        The variable type and bounds inferred from the input are filled in
+        underneath, so a mapping addressing one column does not retype the
+        others. Which *class* each margin is comes from ``distribution``'s
+        ``margin_class``.
     batch_size : int, default=100
         Number of test points processed per batch in `predict`.
     use_grid : bool, default=True
@@ -105,11 +116,11 @@ class VineRegressor(RegressorMixin, VineBase):
         to about one node spacing, so raise it when they are the
         output of interest.
     normalize_weights : bool, default=True
-        If ``True`` (default), per-row weights produced by
-        `_iter_weights` are rescaled to sum to one. Set to
-        ``False`` to get the raw copula weights instead -- useful
-        when a caller combines the weights of several fitted
-        estimators and wants to rescale once, after combining.
+        If ``True`` (default), each row of
+        :meth:`VineRegressor.conditional_weights` is rescaled to sum to one.
+        A prediction is a ratio of those weights, so it is the same either
+        way; what the flag is for is a caller combining several fitted
+        estimators, who rescales once after combining rather than per member.
     random_state : int, RandomState instance, or None, optional
         Seeds the RNG used by stochastic operations. Resolved via
         `sklearn.utils.check_random_state` inside `fit`.
@@ -126,8 +137,10 @@ class VineRegressor(RegressorMixin, VineBase):
         it when a single vine is the whole job.
     """
     super().__init__(
-      backend=backend,
-      margins=margins,
+      distribution=distribution,
+      controls=controls,
+      structure=structure,
+      margin_controls=margin_controls,
       batch_size=batch_size,
       random_state=random_state,
       n_jobs=n_jobs,
@@ -138,14 +151,19 @@ class VineRegressor(RegressorMixin, VineBase):
     self.n_nodes = n_nodes
     self.normalize_weights = normalize_weights
 
-  def fit(self, X: np.ndarray, y: np.ndarray) -> "VineRegressor":
+  def fit(
+    self,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
+    y: np.ndarray | Sequence[float],
+  ) -> "VineRegressor":
     """Fits a vine copula to the joint distribution of ``(Y, X)``.
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features), dtype float
-        Training covariates.
-    y : ndarray, shape (n_samples,), dtype float
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
+        Training covariates. A DataFrame may mix numeric,
+        ordered-categorical, and unordered-categorical columns.
+    y : array-like of float, shape (n_samples,)
         Training responses (continuous).
 
     Returns
@@ -175,39 +193,28 @@ class VineRegressor(RegressorMixin, VineBase):
       self.quantiles_ = q_arr
     else:
       self.quantiles_ = None
-    self._fit_marginals(X, y)
-    if getattr(self._y_margin, "supports_covariates", False):
-      raise ValueError(
-        "VineRegressor cannot use a conditional response margin "
-        f"({type(self._y_margin).__name__} declares supports_covariates): the "
-        "quadrature inverts one shared probability grid, which a margin whose "
-        "quantiles move with the covariates turns into one grid per test row."
-      )
-
-    uy_train = self._to_u_scale(y, is_y=True)
-    ux = self._to_u_scale(X)
-
-    # The response leads the joint model, and being continuous it adds no
-    # left-limit column, so its `u` column simply prepends to the covariates'
-    # own layout.
-    margins = (self._y_margin, *self._x_margins)
-    var_types = Vinedist.copula_var_types(margins)
-    self._fit_vine(np.column_stack([uy_train, ux]), var_types=var_types)
-    self._bind_distribution(margins)
+    # The response leads the joint model, so the whole thing is one fit on
+    # `(y, X)` and the response is simply variable zero.
+    self._fit_distribution(
+      np.column_stack([np.asarray(y, dtype=float), X]), response=True
+    )
 
     if not self.use_grid:
+      uy_train = self._to_u_scale(y, is_y=True)
       self._u_nodes = uy_train
-      self._y_nodes = y
+      self.y_nodes_ = y
       self._node_weights = None
     else:
       p_nodes, node_weights = self._probability_grid()
       self._u_nodes = p_nodes.reshape(-1, 1)
-      self._y_nodes = _as_ndarray(self._y_margin.icdf(p_nodes)).ravel()
+      self.y_nodes_ = to_numpy(
+        self._y_margin.icdf(p_nodes), dtype=float
+      ).ravel()
       self._node_weights = node_weights
     return self
 
   def _probability_grid(self) -> tuple[np.ndarray, np.ndarray]:
-    """Quadrature nodes on ``(0, 1)``, and their weights.
+    r"""Quadrature nodes on ``(0, 1)``, and their weights.
 
     The rule integrates
     :math:`\\int_0^1 F_Y^{-1}(p)\\, c(p, u_x)\\, dp` under the
@@ -233,10 +240,13 @@ class VineRegressor(RegressorMixin, VineBase):
     weights = np.exp(-0.5 * z**2) * (dz / math.sqrt(2.0 * math.pi))
     return p, weights[np.newaxis, :]
 
-  def _copula_marginal_density(
-    self, X: np.ndarray, log: bool = False, n_grid: int = 101
+  def copula_marginal_density(
+    self,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
+    log: bool = False,
+    n_grid: int = 101,
   ) -> np.ndarray:
-    """Computes :math:`c_X(u_X) = \\int_0^1 c_{Y, X}(u_Y, u_X)\\, du_Y`.
+    r"""Computes :math:`c_X(u_X) = \\int_0^1 c_{Y, X}(u_Y, u_X)\\, du_Y`.
 
     Numerical approximation via Simpson's rule. This is the term
     that turns the joint copula density into the conditional
@@ -246,8 +256,8 @@ class VineRegressor(RegressorMixin, VineBase):
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features), dtype float
-        Conditioning covariates.
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
+        Conditioning covariates. Must match the training schema.
     log : bool, default=False
         If ``True``, return the log-density.
     n_grid : int, default=101
@@ -261,7 +271,7 @@ class VineRegressor(RegressorMixin, VineBase):
     """
     check_is_fitted(self, attributes=["_vine"])
 
-    X = np.asarray(X)
+    X = self._validate_input(X, reset=False)
     ux = self._to_u_scale(X)
     n_test = ux.shape[0]
 
@@ -275,29 +285,42 @@ class VineRegressor(RegressorMixin, VineBase):
     w = np.ones(n_grid)
     w[1:-1:2] = 4
     w[2:-1:2] = 2
-    simpson_factor = 1.0 / (n_grid - 1) / 3.0
+    log_factor = np.log(1.0 / (n_grid - 1) / 3.0)
 
-    out = np.empty(n_test)
+    log_out = np.empty(n_test)
 
+    # The quadrature runs in log space throughout. The integrand is a copula
+    # density -- a product over edges -- so on a deep or strongly dependent
+    # vine it underflows at the nodes long before the integral does, and
+    # summing the underflowed values reports zero mass where there is some.
+    # A row whose every node underflows is outside the model, and comes
+    # back `-inf`, which is the answer a caller can act on.
     for start in range(0, n_test, self.batch_size):
       end = min(start + self.batch_size, n_test)
       ux_batch = np.repeat(ux[start:end], n_grid, axis=0)
       uy_rep = np.tile(uy_nodes, (end - start, 1))
       u = np.column_stack([uy_rep, ux_batch])
 
-      vals = self.backend_.pdf(self._vine, u)
-      vals = np.asarray(vals).reshape(end - start, n_grid)
-      out[start:end] = simpson_factor * (vals * w[None, :]).sum(axis=1)
+      log_vals = to_numpy(self._threaded("logpdf")(u), dtype=float).reshape(
+        end - start, n_grid
+      )
+      log_out[start:end] = (
+        logsumexp(log_vals, axis=1, b=w[None, :]) + log_factor
+      )
 
-    return np.log(np.clip(out, eps, None)) if log else out
+    return log_out if log else np.exp(log_out)
 
-  def _weights_for_batch(self, X_batch: np.ndarray) -> np.ndarray:
-    """Conditional copula weights for one batch of test rows.
+  def conditional_weights(
+    self, X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]]
+  ) -> np.ndarray:
+    r"""Conditional copula weights over the response nodes, one row per query.
 
-    Single source of truth for the weight math: `_iter_weights` is
-    the batched generator over it and `_predict_from_iter` the
-    consumer. Kept as a separate, directly callable hook so external
-    code can reuse the exact weight definition. Each weight pairs one
+    The estimator itself, before it is summarized: :meth:`predict` is these
+    weights against ``y_nodes_``, as a ratio for the mean and through
+    :func:`numpy.quantile` for a level. Public because a caller combining
+    several fitted vines needs them -- which is also what
+    ``normalize_weights=False`` is for, since a prediction is a ratio and
+    never depends on it. Each weight pairs one
     node :math:`y_k` -- a training response when ``use_grid=False``,
     else :math:`\\hat F_Y^{-1}(p_k)` -- with
 
@@ -315,22 +338,45 @@ class VineRegressor(RegressorMixin, VineBase):
 
     Parameters
     ----------
-    X_batch : ndarray, shape (batch, n_features), dtype float
-        Test covariates on the original (un-transformed) scale.
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
+        Test covariates. Must match the training schema.
 
     Returns
     -------
-    w : ndarray, shape (batch, n_nodes), dtype float
+    ndarray, shape (n_samples, n_nodes), dtype float
+        One row of weights per query, against ``y_nodes_``.
+
+    See Also
+    --------
+    predict : The weighted statistics these weights produce.
+    """
+    check_is_fitted(self, attributes=["_vine"])
+    X = self._validate_input(X, reset=False)
+    return np.concatenate(
+      [w for w, _, _ in self._iter_weights(np.asarray(X))], axis=0
+    )
+
+  def _weights_for_batch(self, X_batch: np.ndarray) -> np.ndarray:
+    """Weights for one batch of already-validated rows.
+
+    Parameters
+    ----------
+    X_batch : ndarray, shape (batch, n_features), dtype float
+        Test covariates, validated and expanded.
+
+    Returns
+    -------
+    ndarray, shape (batch, n_nodes), dtype float
         Per-row weights for the batch.
     """
     ux_batch_rows = self._to_u_scale(np.asarray(X_batch))
     m = ux_batch_rows.shape[0]
-    n_nodes = self._y_nodes.shape[0]
+    n_nodes = self.y_nodes_.shape[0]
     ux_batch = np.repeat(ux_batch_rows, n_nodes, axis=0)
     uy_rep = np.tile(self._u_nodes, (m, 1)).reshape(-1, 1)
     u_test = np.column_stack([uy_rep, ux_batch])
 
-    w = np.asarray(self.backend_.pdf(self._vine, u_test)).reshape(m, n_nodes)
+    w = to_numpy(self._threaded("pdf")(u_test), dtype=float).reshape(m, n_nodes)
     if self._node_weights is not None:
       w = w * self._node_weights
     if self.normalize_weights:
@@ -365,22 +411,13 @@ class VineRegressor(RegressorMixin, VineBase):
       end = min(start + self.batch_size, n_test)
       yield self._weights_for_batch(X[start:end]), start, end
 
-  def _predict_from_iter(
-    self,
-    X: np.ndarray,
-    iter_weights: Callable[[np.ndarray], Iterable[tuple[np.ndarray, int, int]]],
-  ) -> np.ndarray:
+  def _predict_from_iter(self, X: np.ndarray) -> np.ndarray:
     """Combines batched weights with the response nodes into predictions.
 
     Parameters
     ----------
     X : ndarray, shape (n_samples, n_features), dtype float
         Test covariates (already validated / expanded).
-    iter_weights : Callable
-        Generator factory yielding ``(weights, start, end)``
-        triples. Usually `_iter_weights`; taking it as an argument
-        keeps the prediction step reusable with any other weight
-        source that follows the same batching contract.
 
     Returns
     -------
@@ -397,7 +434,7 @@ class VineRegressor(RegressorMixin, VineBase):
     )
     y_pred = np.empty((n_test, n_outputs))
 
-    for w, start, end in iter_weights(X):
+    for w, start, end in self._iter_weights(X):
       col = 0
       if self.mean:
         # A ratio, not a plain dot product: the conditional mean is
@@ -411,12 +448,12 @@ class VineRegressor(RegressorMixin, VineBase):
             "the copula density vanished on every quadrature node for at "
             "least one row of X, so no conditional mean is defined there"
           )
-        y_pred[start:end, col] = (w @ self._y_nodes) / totals
+        y_pred[start:end, col] = (w @ self.y_nodes_) / totals
         col += 1
       if quantiles is not None:
         batch_preds = [
           np.quantile(
-            a=self._y_nodes,
+            a=self.y_nodes_,
             q=quantiles,
             weights=row_w,
             method="inverted_cdf",
@@ -429,12 +466,14 @@ class VineRegressor(RegressorMixin, VineBase):
     # `squeeze()` turns a one-row prediction into a scalar.
     return y_pred[:, 0] if y_pred.shape[1] == 1 else y_pred
 
-  def predict(self, X: _XLike) -> np.ndarray:
-    """Predicts the conditional mean and/or quantiles of ``Y`` given ``X``.
+  def predict(
+    self, X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]]
+  ) -> np.ndarray:
+    r"""Predicts the conditional mean and/or quantiles of ``Y`` given ``X``.
 
     Computes weights :math:`w_k(x)` from the fitted copula
-    (`_iter_weights`) and returns the weighted statistics over the
-    response nodes :math:`y_k`:
+    (:meth:`conditional_weights`) and returns the weighted statistics over
+    the response nodes ``y_nodes_``:
     :math:`\\hat{\\mathbb{E}}[Y \\mid X = x] = \\sum_k w_k(x)\\, y_k`
     for the mean (closed-form solution of the estimating equation
     :math:`\\int (y - \\beta) \\hat f(y \\mid x)\\, dy = 0`) and the
@@ -457,13 +496,13 @@ class VineRegressor(RegressorMixin, VineBase):
     """
     check_is_fitted(self, attributes=["_vine"])
     X = self._validate_input(X, reset=False)
-    return self._predict_from_iter(X, self._iter_weights)
+    return self._predict_from_iter(X)
 
   def score(
     self,
-    X: _XLike,
-    y: _YLike,
-    sample_weight: Optional[_YLike] = None,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
+    y: np.ndarray | Sequence[float],
+    sample_weight: np.ndarray | Sequence[float] | None = None,
   ) -> float:
     """Return :math:`R^2` for the fitted conditional mean.
 

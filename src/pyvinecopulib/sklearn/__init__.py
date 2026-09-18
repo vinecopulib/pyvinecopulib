@@ -21,21 +21,22 @@ Requires scikit-learn and pandas. Install with
 
 Notes
 -----
-**Margins.** The marginal half of the model is configured with
-``margins=``, in any form :func:`pyvinecopulib.margins.resolve_margins`
-accepts: an alias (``"kde"``, the default,
-``"parametric"``), one margin broadcast to every column, a per-column
-sequence, a mapping keyed by feature name, or a callable. Fitting
-assembles both halves into a :class:`pyvinecopulib.core.Vinedist`,
-published as ``distribution_``, and ``margin_summary_`` describes the
-margin each variable ended up with.
+**Margins.** Which margin class each variable gets is the distribution's:
+``distribution=`` names a :class:`pyvinecopulib.core.VinedistBase` subclass,
+and its ``margin_class`` is what an estimator fits per column. *How* each
+one is fitted is ``margin_controls=``, in any form
+:func:`pyvinecopulib.margins.resolve_margin_controls` accepts: one controls
+object broadcast to every column, a per-column sequence, or a mapping keyed
+by feature name. Fitting runs the whole two-step estimator on the
+distribution, published as ``distribution_``, and ``margin_summary_``
+describes the margin each variable ended up with.
 
-**Backends.** By default the estimators run on ``Vinecop`` (the
-default backend), so the sklearn module
-**does not require PyTorch**. Pass a configured
-:class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` via the
-``backend=`` kwarg to route through the torch backend instead — see
-:mod:`pyvinecopulib.sklearn.backends` for a comparison and examples.
+**Which lane.** By default the estimators fit a
+:class:`pyvinecopulib.core.Vinedist` --- ``Vinecop`` paired with ``Kde1d``
+--- so the sklearn module **does not require PyTorch**. Pass
+``distribution=TorchVinedist`` to route the same pipeline through the
+PyTorch evaluator (GPU placement, autograd); importing that class to name
+it is the explicit opt-in.
 
 **DataFrame input.** Every estimator accepts both NumPy arrays and
 pandas DataFrames. DataFrames may mix numeric, ordered-categorical,
@@ -43,37 +44,26 @@ and unordered-categorical columns; the latter are expanded to ordered
 ``{0, 1}`` dummies before fitting, and the same expansion is
 re-applied at predict time.
 
-**Low-level knobs.** Pair family, threading, structure-selection
-algorithm, etc. are passed through to
-:class:`pyvinecopulib.core.FitControlsVinecop` and
-:class:`pyvinecopulib.core.RVineStructure` (carried inside the
-backend object). Reach for those directly whenever you need control
-beyond the sklearn convenience layer. See each class docstring for
+**Low-level knobs.** Pair family, threading and the structure-selection
+algorithm are :class:`pyvinecopulib.core.FitControlsVinecop`'s, passed as
+``controls=``; a pre-specified :class:`pyvinecopulib.core.RVineStructure`
+is passed as ``structure=``. Reach for those directly whenever you need
+control beyond the sklearn convenience layer. See each class docstring for
 the full methodology and references.
 """
 
 from ..core._validation import extra_required
 
-with extra_required(
+with extra_required(  # noqa: RUF067
   extra="sklearn",
   requirement="pyvinecopulib.sklearn requires scikit-learn.",
 ):
   import sklearn  # noqa: F401
 
-from . import backends
-from .backends import (
-  TorchVinecopBackend,
-  VinecopBackend,
-  resolve_backend,
-)
 from .density import VineDensity
 from .regressor import VineRegressor
 
 __all__ = [
-  "TorchVinecopBackend",
   "VineDensity",
   "VineRegressor",
-  "VinecopBackend",
-  "backends",
-  "resolve_backend",
 ]

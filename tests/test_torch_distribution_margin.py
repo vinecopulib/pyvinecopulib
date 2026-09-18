@@ -19,11 +19,11 @@ independent implementation available.
 """
 
 from __future__ import annotations
-import math
 
+import math
 import pickle
 import warnings
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import pytest
@@ -31,9 +31,10 @@ import pytest
 torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
-from pyvinecopulib.core import MarginBase  # noqa: E402
-from pyvinecopulib.torch import TorchDistributionMargin  # noqa: E402
-from .helpers import widen  # noqa: E402
+from pyvinecopulib.core import MarginBase
+from pyvinecopulib.torch import TorchDistributionMargin
+
+from .helpers import widen
 
 _D = torch.distributions
 _F64 = torch.float64
@@ -383,7 +384,9 @@ def test_from_distribution_rejects_unreadable_parameters() -> None:
   """A family declaring a parameter it does not expose cannot be lifted."""
 
   class _Opaque(_D.Distribution):
-    arg_constraints = {"hyperparameter": _D.constraints.real}
+    arg_constraints: ClassVar[dict[str, Any]] = {
+      "hyperparameter": _D.constraints.real
+    }
 
   with pytest.raises(ValueError, match="arg_constraints"):
     TorchDistributionMargin.from_distribution(_Opaque(validate_args=False))
@@ -410,13 +413,13 @@ def test_validate_args_is_forwarded_to_the_family() -> None:
 def test_the_criteria_penalize_the_trainable_parameters() -> None:
   """A trainable margin is penalized for what an optimizer can move.
 
-  Without a ``n_parameters`` the inherited criteria read ``MarginBase``'s
+  Without a ``npars`` the inherited criteria read ``MarginBase``'s
   default of zero, so all three collapsed to ``-2 * loglik`` and a fitted
   margin scored as though it had estimated nothing.
   """
   y = torch.as_tensor(np.random.default_rng(1).normal(size=200), dtype=_F64)
   margin = TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))
-  assert margin.n_parameters == 2.0
+  assert margin.npars == 2.0
   aic, bic, aicc = margin.aic(y), margin.bic(y), margin.aicc(y)
   assert len({round(float(v), 9) for v in (aic, bic, aicc)}) == 3
   # `aic` is exactly `-2 * loglik + 2 * k`, so the penalty is visible.
@@ -429,7 +432,7 @@ def test_a_frozen_margin_is_penalized_for_nothing() -> None:
   margin = TorchDistributionMargin.from_distribution(
     _D.Normal(0.0, 1.0), trainable=False
   )
-  assert margin.n_parameters == 0.0
+  assert margin.npars == 0.0
   y = torch.as_tensor(np.random.default_rng(2).normal(size=120), dtype=_F64)
   loglik = float(margin.loglik(y))
   assert float(margin.aic(y)) == pytest.approx(-2.0 * loglik)
@@ -460,23 +463,22 @@ def test_the_criteria_do_not_warn_about_the_graph() -> None:
 def test_controls_are_refused_because_there_is_no_fit_to_configure() -> None:
   """This margin carries its parameters, so a `family_set` must not be ignored.
 
-  It inherited ``supports_controls = True`` from ``MarginBase`` while having no
+  It inherited ``MarginBase``'s ``controls_class`` while having no
   ``fit`` at all, which is what let a parametric request reach a class that
   could not act on it and be dropped instead of refused.
   """
   from pyvinecopulib.margins import FitControlsMargin
-  from pyvinecopulib.core._margins import fit_margin
+  from pyvinecopulib.torch import TorchVinecop, TorchVinedist
 
-  assert TorchDistributionMargin.supports_controls is False
-  margin = TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))
-  y = torch.as_tensor(np.random.default_rng(0).normal(size=50), dtype=_F64)
+  assert TorchDistributionMargin.controls_class is None
+  rng = np.random.default_rng(0)
+  y = torch.as_tensor(rng.normal(size=(50, 2)), dtype=_F64)
+  dist = TorchVinedist(
+    TorchVinecop.from_data(torch.rand(50, 2, dtype=_F64)),
+    [TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))] * 2,
+  )
   with pytest.raises(TypeError, match="cannot select a family"):
-    fit_margin(
-      margin,
-      y,
-      controls=FitControlsMargin(family_set=["norm"]),
-      refit=True,
-    )
+    dist.select(y, margin_controls=FitControlsMargin(family_set=["norm"]))
 
 
 # --------------------------------------------------------------------------- #

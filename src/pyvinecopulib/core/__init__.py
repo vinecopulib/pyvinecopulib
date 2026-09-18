@@ -57,7 +57,7 @@ Notes
   works (:class:`MarginLike`); subclass :class:`MarginBase` to write
   one, or reach for the parametric families and family selection in
   :mod:`pyvinecopulib.margins`.
-- *A custom pair copula on a discrete edge* — :class:`DiscreteBicop`.
+- *A custom pair copula on a discrete edge* — ``BicopBase.with_var_types``.
   Wrap a continuous pair copula (anything with a ``cdf``) in the variable
   types :meth:`VinecopBase.pair_var_types` derives for its slot, and it
   supplies the mixed-discrete density and h-functions the cascades ask for.
@@ -82,31 +82,27 @@ The :doc:`concepts page </concepts>` is a primer with formulas, the
 :ref:`structure selection <concepts-structure-selection>`.
 """
 
+from .._deprecations import _method_alias
 from ..pyvinecopulib_ext import (
   Bicop,
   BicopFamily,
   CVineStructure,
   DVineStructure,
   FitControlsBicop,
+  FitControlsKde1d,
   FitControlsVinecop,
   Kde1d,
   RVineStructure,
   Vinecop,
 )
-from .._deprecations import _method_alias
-from .bicop_discrete import DiscreteBicop
-from .bicop_independence import IndependenceBicop
-from .bicop_base import BicopBase
-from .vinecop_context import (
-  ConditioningContext,
-  NonSimplifiedContext,
-  SimplifiedContext,
-)
 from ._margins import (
   margin_from_json,
+  margin_json,
   margin_to_json,
   register_margin_json,
 )
+from .bicop_base import BicopBase
+from .bicop_independence import IndependenceBicop
 from .margin_base import MarginBase
 from .margin_controls import FitControlsMargin
 from .protocols import (
@@ -117,41 +113,49 @@ from .protocols import (
   VinecopLike,
   VinedistLike,
 )
+from .vinecop_base import VinecopBase
+from .vinecop_context import (
+  ConditioningContext,
+  NonSimplifiedContext,
+  SimplifiedContext,
+)
 from .vinedist import Vinedist
 from .vinedist_base import VinedistBase
-from .vinecop_base import VinecopBase
 
 # Deprecated aliases for the pre-1.0 `simulate` spelling. The canonical name is
 # `sample`, matching scikit-learn, `torch.distributions` and SciPy's modern
 # distributions; these three shipped in 0.7.6, so they warn rather than vanish.
 # `Vinecop.sample_conditional` has never been released and carries no alias.
-Bicop.simulate = _method_alias(Bicop.sample, "simulate", "core.Bicop")
-Kde1d.simulate = _method_alias(Kde1d.sample, "simulate", "core.Kde1d")
-Vinecop.simulate = _method_alias(Vinecop.sample, "simulate", "core.Vinecop")
-RVineStructure.simulate = staticmethod(
+Bicop.simulate = _method_alias(  # noqa: RUF067
+  Bicop.sample, "simulate", "core.Bicop"
+)
+Kde1d.simulate = _method_alias(  # noqa: RUF067
+  Kde1d.sample, "simulate", "core.Kde1d"
+)
+Vinecop.simulate = _method_alias(  # noqa: RUF067
+  Vinecop.sample, "simulate", "core.Vinecop"
+)
+RVineStructure.simulate = staticmethod(  # noqa: RUF067
   _method_alias(RVineStructure.sample, "simulate", "core.RVineStructure")
 )
 
 __all__ = [
+  "ArrayT",
   "Bicop",
   "BicopBase",
   "BicopFamily",
-  "ArrayT",
   "BicopLike",
+  "CVineStructure",
   "ConditioningContext",
   "ControlsLike",
-  "CVineStructure",
-  "DiscreteBicop",
   "DVineStructure",
   "FitControlsBicop",
+  "FitControlsKde1d",
   "FitControlsMargin",
   "FitControlsVinecop",
   "IndependenceBicop",
   "Kde1d",
   "MarginBase",
-  "margin_from_json",
-  "margin_to_json",
-  "register_margin_json",
   "MarginLike",
   "NonSimplifiedContext",
   "RVineStructure",
@@ -162,4 +166,8 @@ __all__ = [
   "Vinedist",
   "VinedistBase",
   "VinedistLike",
+  "margin_from_json",
+  "margin_json",
+  "margin_to_json",
+  "register_margin_json",
 ]

@@ -1,4 +1,4 @@
-"""Tests for the backend-agnostic monotone root-finder.
+"""Tests for the array-agnostic monotone root-finder.
 
 `solve_increasing` backs two different inverses: the pair-copula h-inverses,
 which always search the unit interval, and the marginal `icdf`, which may have
@@ -10,7 +10,8 @@ need.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pytest
@@ -46,7 +47,7 @@ def _norm_cdf(x: Any) -> Any:
 def test_unit_interval_is_bit_for_bit_unchanged() -> None:
   """The default bracket reproduces the previous implementation exactly."""
   p = np.linspace(1e-10, 1 - 1e-10, 97)
-  for f in (lambda x: x, lambda x: x**3, lambda x: np.sqrt(x)):
+  for f in (lambda x: x, lambda x: x**3, np.sqrt):
     got = solve_increasing(f, p)
     want = _reference_unit_interval(f, p)
     assert np.array_equal(got, want)
@@ -113,7 +114,7 @@ def test_infinite_bracket_without_expansion_raises() -> None:
     solve_increasing(_norm_cdf, np.array([0.5]), lo=-np.inf, max_expand=0)
 
 
-def test_torch_backend_matches_numpy() -> None:
+def test_torch_matches_numpy() -> None:
   """The same code path runs on torch tensors and agrees with numpy."""
   torch = pytest.importorskip("torch")
   p_np = np.array([0.05, 0.5, 0.95])

@@ -9,13 +9,12 @@ have to name the concrete copula.
 
 from __future__ import annotations
 
-import copy
-from typing import Any, ClassVar, Optional, Sequence
+from typing import Any, ClassVar
 
 import numpy as np
 
 from ..pyvinecopulib_ext import Kde1d, Vinecop
-from .protocols import ControlsLike, MarginLike
+from .protocols import ControlsLike, MarginLike, VinecopLike
 from .vinedist_base import VinedistBase
 
 __all__ = ["Vinedist"]
@@ -90,16 +89,12 @@ class Vinedist(VinedistBase[np.ndarray]):
   # The two halves this route fits: NumPy arrays throughout. Plain comments,
   # not `#:` ones -- autosummary cannot resolve an attribute whose value is
   # itself a class, and the declarations are documented on the base.
-  vinecop_class: ClassVar[Optional[type]] = Vinecop
-  margin_class: ClassVar[Optional[type]] = Kde1d
-
-  #: `_copula_controls` writes weights into a copy of the controls, so both
-  #: halves of the fit are weighted by the one argument.
-  supports_weighted_copula: bool = True
+  vinecop_class: ClassVar[type[VinecopLike[Any]] | None] = Vinecop
+  margin_class: ClassVar[type[MarginLike[Any]] | None] = Kde1d
 
   def _bind_dist(
     self,
-    vinecop: Any,  # noqa: ANN401 - as `VinedistBase.__init__`
+    vinecop: VinecopLike[np.ndarray],
     margins: object,
   ) -> None:
     """Install the parts, refusing PyTorch ones.
@@ -137,56 +132,11 @@ class Vinedist(VinedistBase[np.ndarray]):
   def _coerce_fit_data(
     cls,
     y: object,
-    weights: Optional[np.ndarray],
-    controls: Optional[ControlsLike],
-  ) -> tuple[np.ndarray, Optional[np.ndarray]]:
-    """Put the fit inputs on NumPy.
+    controls: ControlsLike | None,
+  ) -> np.ndarray:
+    """Put the observations on NumPy.
 
-    NumPy carries no placement, so ``controls`` goes unread, and the weights
-    pass through unchanged — ``validate_weights`` coerces those against the
-    data.
+    NumPy carries no placement, so ``controls`` goes unread.
     """
     del controls
-    return np.asarray(y, dtype=float), weights
-
-  @classmethod
-  def _default_margins(
-    cls,
-    d: int,
-    controls: Optional[ControlsLike] = None,
-    margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
-  ) -> Sequence[MarginLike[np.ndarray]]:
-    """One ``Kde1d`` per variable, bounded and typed as its controls declare.
-
-    A kernel density takes its variable type and its bounds at construction, so
-    a declaration has to reach it before the fit: an unbounded grid is padded
-    past the data, and for a variable that cannot be negative that puts mass
-    where nothing can occur.
-    """
-    del controls
-    from ._margins import kde_from_controls
-
-    per_variable = margin_controls or [None] * d
-    return [kde_from_controls(mc) for mc in per_variable]
-
-  @classmethod
-  def _copula_controls(
-    cls,
-    controls: Optional[ControlsLike],
-    u: np.ndarray,
-    weights: Optional[np.ndarray],
-  ) -> Optional[ControlsLike]:
-    """``controls`` with the explicit ``weights`` written in.
-
-    The explicit argument governs both halves of the fit, so it is written
-    into a *copy* -- overriding a controls object's own weights must not
-    mutate one the caller still holds.
-    """
-    del u
-    from ..pyvinecopulib_ext import FitControlsVinecop
-
-    resolved: Any = FitControlsVinecop() if controls is None else controls
-    if weights is not None:
-      resolved = copy.deepcopy(resolved)
-      resolved.weights = np.asarray(weights, dtype=float)
-    return resolved
+    return np.asarray(y, dtype=float)

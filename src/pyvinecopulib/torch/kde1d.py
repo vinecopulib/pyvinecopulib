@@ -20,22 +20,24 @@ improvement on it.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, cast
+from typing import Any, ClassVar, cast
 
 import torch
 from torch import Tensor
 
-from ..core import ControlsLike, Kde1d, MarginBase
+from ..core import ControlsLike, FitControlsKde1d, Kde1d, MarginBase
+from ..core._json import read_payload
+from ..core._margins import margin_json, register_margin_json
 from ..core._validation import (
-  reject_array_controls,
   reject_covariates,
+  validate_declaration,
   validate_univariate,
   validate_weights,
 )
 from . import _margin_kde1d_interp as interp
 
 
-def _bound(value: Optional[float], unbounded: float) -> float:
+def _bound(value: float | None, unbounded: float) -> float:
   """One end of a support, with ``Kde1d``'s ``nan`` normalized.
 
   Parameters
@@ -53,11 +55,23 @@ def _bound(value: Optional[float], unbounded: float) -> float:
   if value is None:
     return unbounded
   out = float(value)
-  return unbounded if out != out else out
+  return unbounded if math.isnan(out) else out
 
 
-#: ``Kde1d``'s spellings of the variable type, and the contract's.
-_VAR_TYPE_OF = {"continuous": "c", "discrete": "d", "zero-inflated": "zi"}
+#: Every spelling `Kde1d` accepts, mapped to the one this package uses.
+#: Reading a stored payload is the only place a long name still arrives.
+_VAR_TYPE_OF = {
+  "c": "c",
+  "cont": "c",
+  "continuous": "c",
+  "d": "d",
+  "disc": "d",
+  "discrete": "d",
+  "zi": "zi",
+  "zinfl": "zi",
+  "zero-inflated": "zi",
+  "zero_inflated": "zi",
+}
 
 
 class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
@@ -89,11 +103,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   optimize it calls ``values.requires_grad_(True)`` -- the same opt-in
   ``TorchTllBicop`` uses for its grid.
 
-  Two of ``Kde1d``'s attribute names cannot be reused here, because the base
-  classes already own them: ``type`` is ``nn.Module``'s legacy dtype cast, and
-  ``loglik`` is the contract's *method*. The constructor argument stays
-  ``type=``; read it back as :attr:`kde_type`, and read the fitted
-  log-likelihood as ``loglik()``.
+  One of ``Kde1d``'s names cannot be reused here: ``loglik`` is the contract's
+  *method*, so the fitted log-likelihood is read as ``loglik()``.
 
   Parameters
   ----------
@@ -105,9 +116,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   xmax : float, or None, optional
       Upper bound of the support, or ``None`` for unbounded; read as ``xmin``
       is, so the largest integer for a discrete variable.
-  type : {"continuous", "discrete", "zero-inflated"}, default="continuous"
-      The variable type, spelled as ``Kde1d`` reports it. The hyphen is not
-      optional here.
+  var_type : {"c", "d", "zi"}, default="c"
+      The variable type, spelled as ``var_types`` spells it everywhere else.
   multiplier : float, default=1.0
       Bandwidth multiplier: the bandwidth used is ``bandwidth * multiplier``.
   bandwidth : float, or None, optional
@@ -155,48 +165,47 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   """
 
   supports_weights: bool = True
-  #: The bandwidth, bounds and variable type are named at construction, so
-  #: `fit` reads no controls. Declaring it is what makes a `family_set` a
-  #: refusal rather than a kernel density fitted in silence.
-  supports_controls: bool = False
-  #: The variable type in ``Kde1d``'s spelling; read back as
-  #: :attr:`kde_type`, since ``type`` is ``nn.Module``'s dtype cast.
+  # The bandwidth, bounds and variable type are named at construction, so
+  # `fit` reads no controls. Declaring that is what makes a `family_set` a
+  # refusal rather than a kernel density fitted in silence. A plain comment,
+  # not a `#:` one: autosummary cannot page an attribute whose value is a
+  # class, which is what this holds on a margin that does read controls.
+  controls_class: ClassVar[type[ControlsLike] | None] = FitControlsKde1d
+  #: The variable type, read back as :attr:`var_type`.
   _type: str
 
   def __init__(
     self,
     *,
-    xmin: Optional[float] = None,
-    xmax: Optional[float] = None,
-    type: str = "continuous",
+    xmin: float | None = None,
+    xmax: float | None = None,
+    var_type: str = "c",
     multiplier: float = 1.0,
-    bandwidth: Optional[float] = None,
+    bandwidth: float | None = None,
     degree: int = 2,
     grid_size: int = 400,
     boundary_repair: bool = True,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
     # Initialize nn.Module explicitly: this also subclasses MarginBase (a
     # Protocol-derived ABC), whose __init__ chain would otherwise shadow
     # nn.Module's under super().
     torch.nn.Module.__init__(self)
-    if type not in _VAR_TYPE_OF:
-      raise ValueError(
-        f"unknown type={type!r}; expected one of {list(_VAR_TYPE_OF)}"
-      )
+    if var_type not in _VAR_TYPE_OF:
+      raise ValueError(f"var_type={var_type!r} is not one of ['c', 'd', 'zi']")
     self.xmin = xmin
     self.xmax = xmax
-    self._type = type
+    self._type = _VAR_TYPE_OF[var_type]
     self.multiplier = multiplier
     self.bandwidth = bandwidth
     self._bandwidth_spec = bandwidth
     self.degree = degree
     self.grid_size = grid_size
     self.boundary_repair = boundary_repair
-    self._loglik: Optional[float] = None
-    self.edf: Optional[float] = None
-    self._selected_bandwidth: Optional[float] = None
+    self._loglik: float | None = None
+    self._npars: float | None = None
+    self._selected_bandwidth: float | None = None
     self._dtype = dtype
     self._device = device
     self.register_buffer(
@@ -242,15 +251,18 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     for name in ("grid_points", "values", "prob0"):
       incoming = state_dict.get(prefix + name)
       current = getattr(self, name, None)
-      if incoming is not None and current is not None:
-        if incoming.shape != current.shape:
-          setattr(
-            self,
-            name,
-            torch.empty(
-              incoming.shape, dtype=current.dtype, device=current.device
-            ),
-          )
+      if (
+        incoming is not None
+        and current is not None
+        and incoming.shape != current.shape
+      ):
+        setattr(
+          self,
+          name,
+          torch.empty(
+            incoming.shape, dtype=current.dtype, device=current.device
+          ),
+        )
     super()._load_from_state_dict(
       state_dict,
       prefix,
@@ -267,11 +279,12 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self,
     y: Tensor,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    x: Optional[Tensor] = None,
-    weights: Optional[Tensor] = None,
-  ) -> "TorchKde1d":
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: Tensor | None = None,
+  ) -> TorchKde1d:
     """Estimate the density from one column of data, in place.
 
     The fit is ``Kde1d``'s, and the grid it settles on is what this margin
@@ -282,15 +295,21 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,)
         Observations on the original scale.
-    controls : ControlsLike, or None, optional
-        Unused; the bandwidth, bounds and variable type are named at
-        construction, so a margin fitted differently is constructed
-        differently. Accepted because every margin's fit takes one.
+    controls : FitControlsKde1d, or None, optional
+        The kernel knobs this fit runs with -- all of them, as on ``Kde1d``:
+        a controls object carries a value for every field, so passing one
+        replaces the construction values rather than merging with them.
+        ``None`` keeps what this margin was constructed with.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : Tensor, or None, optional
         Not supported; a kernel density reads no covariates, so passing them
         raises rather than fitting an unconditional margin silently.
-    weights : Tensor, shape (n,), or None, optional
-        Observation weights, one per observation.
 
     Returns
     -------
@@ -300,8 +319,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     Raises
     ------
     ValueError
-        If ``y`` or ``weights`` is not one-dimensional, if the two have
-        different lengths, or if ``x`` was supplied.
+        If ``y`` or ``controls.weights`` is not one-dimensional, if the two
+        have different lengths, or if ``x`` was supplied.
 
     See Also
     --------
@@ -309,32 +328,46 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     from_kde1d : Lift a ``Kde1d`` that is already fitted.
     """
     reject_covariates(self, x)
-    # `kde.fit(x, w)` is the compiled `Kde1d`'s spelling, and here it would
-    # bind the weights to `controls` and fit unweighted.
-    reject_array_controls(self, controls)
-    kde = Kde1d(
-      xmin=self.xmin,
-      xmax=self.xmax,
-      type=self._type,
-      multiplier=self.multiplier,
-      # The construction spec, not `self.bandwidth`: a previous fit overwrote
-      # that with the bandwidth it selected, and passing a value back in pins
-      # it, so a refit on different data reused the first fit's bandwidth.
-      bandwidth=self._bandwidth_spec,
-      degree=self.degree,
-      grid_size=self.grid_size,
-      boundary_repair=self.boundary_repair,
+    var_type, support = validate_declaration(var_type, support)
+    # A declaration replaces what this margin was built with: a kernel
+    # density reads its type and bounds when the grid is built, so a fit that
+    # ignored them would keep the construction-time answer.
+    if var_type is not None:
+      self._type = var_type
+    if support is not None:
+      self.xmin, self.xmax = support
+    # All of the knobs or none of them, as `kde1d_configured` does on the
+    # compiled side: controls carry a value for every field, so reading them
+    # one at a time cannot tell a default from a choice. The construction
+    # *spec*, not `self.bandwidth`, which holds what the last fit selected --
+    # passing that back in would pin an automatic bandwidth to one sample.
+    knobs: dict[str, Any] = (
+      {
+        "multiplier": self.multiplier,
+        "bandwidth": self._bandwidth_spec,
+        "degree": self.degree,
+        "grid_size": self.grid_size,
+        "boundary_repair": self.boundary_repair,
+      }
+      if controls is None
+      else controls.to_dict()
     )
     y_tensor = validate_univariate(torch.as_tensor(y))
     # The shared validators, not a local pair of shape checks: their dtype,
     # finiteness, nonnegativity and positive-sum rules are what keep a weight
     # array out of `Kde1d`'s bandwidth selection, which divides by the sum.
-    weight_tensor = validate_weights(weights, y_tensor)
+    # They go back in as the array the compiled fit wants, so the one
+    # validation covers whichever lane the caller set them from.
+    weight_tensor = validate_weights(knobs.pop("weights", None), y_tensor)
+    if weight_tensor is not None:
+      knobs["weights"] = weight_tensor.detach().cpu().numpy().astype(float)
     data = y_tensor.detach().cpu().numpy()
-    if weight_tensor is None:
-      kde.fit(data)
-    else:
-      kde.fit(data, weight_tensor.detach().cpu().numpy())
+    kde = Kde1d.from_data(
+      data,
+      FitControlsKde1d(**knobs),
+      var_type=self._type,
+      support=(self.xmin, self.xmax),
+    )
     fitted = self._adopt(kde)
     # The retained rows, not the input length: `Kde1d` drops a NaN observation
     # and a NaN or zero weight, and the log-likelihood `_adopt` just read is
@@ -350,9 +383,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     cls,
     kde: Kde1d,
     *,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
-  ) -> "TorchKde1d":
+  ) -> TorchKde1d:
     """Lift a fitted ``Kde1d`` onto tensors.
 
     An exact transfer rather than a second fit: the same grid, bounds,
@@ -386,7 +419,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     out = cls(
       xmin=kde.xmin,
       xmax=kde.xmax,
-      type=kde.type,
+      var_type=kde.var_type,
       multiplier=kde.multiplier,
       # `bandwidth_spec` is what the compiled object was *asked* for; its
       # `bandwidth` is what it selected. Adopting the latter as the spec would
@@ -408,12 +441,12 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     *,
     prob0: float = 0.0,
     **kwargs: Any,  # noqa: ANN401 - forwarded to `__init__`
-  ) -> "TorchKde1d":
+  ) -> TorchKde1d:
     """Build a margin directly from a grid, with no fit.
 
     The fit-free injection point, mirroring ``Kde1d.from_grid``: a density
     obtained some other way -- optimized, transferred, hand-built -- becomes a
-    margin. Nothing was estimated, so ``loglik()`` and ``n_parameters`` have no
+    margin. Nothing was estimated, so ``loglik()`` and ``npars`` have no
     fitted value to report.
 
     Parameters
@@ -455,7 +488,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     )
     return out
 
-  def _adopt(self, kde: Kde1d) -> "TorchKde1d":
+  def _adopt(self, kde: Kde1d) -> TorchKde1d:
     """Copy a fitted ``Kde1d``'s state onto this module's buffers."""
     ref = self.grid_points
     self.grid_points = torch.as_tensor(
@@ -467,7 +500,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.prob0 = torch.as_tensor(
       float(kde.prob0), dtype=ref.dtype, device=ref.device
     )
-    self._type = kde.type
+    self._type = kde.var_type
     self.xmin = kde.xmin
     self.xmax = kde.xmax
     self.bandwidth = float(kde.bandwidth)
@@ -476,17 +509,16 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.multiplier = kde.multiplier
     self.boundary_repair = kde.boundary_repair
     self._loglik = float(kde.loglik())
-    self.edf = float(kde.edf)
+    self._npars = float(kde.npars)
     return self
 
-  def to_json(self) -> dict[str, Any]:
+  def to_json(self) -> str:
     """Return this margin's JSON payload.
 
     Returns
     -------
-    dict
-        A JSON-serializable mapping that
-        :func:`~pyvinecopulib.core.margin_from_json` reads back.
+    str
+        JSON text that :func:`~pyvinecopulib.core.margin_from_json` reads back.
 
     Raises
     ------
@@ -497,28 +529,32 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       raise ValueError(
         "an unfitted TorchKde1d cannot be serialized; call fit(y) first"
       )
-    return {
-      "kind": "TorchKde1d",
-      "state": self.get_extra_state(),
-      "grid_points": [float(v) for v in self.grid_points.tolist()],
-      "values": [float(v) for v in self.values.tolist()],
-      "prob0": float(self.prob0),
-    }
+    return margin_json(
+      self,
+      {
+        "kind": "TorchKde1d",
+        "state": self.get_extra_state(),
+        "grid_points": [float(v) for v in self.grid_points.tolist()],
+        "values": [float(v) for v in self.values.tolist()],
+        "prob0": float(self.prob0),
+      },
+    )
 
   @classmethod
-  def from_json_payload(cls, payload: dict[str, Any]) -> "TorchKde1d":
-    """Rebuild a margin from the payload :meth:`to_json` produced.
+  def from_json(cls, json: str) -> TorchKde1d:
+    """Rebuild a margin from the text :meth:`to_json` produced.
 
     Parameters
     ----------
-    payload : dict
-        The mapping :meth:`to_json` returned.
+    json : str
+        The text :meth:`to_json` returned.
 
     Returns
     -------
     TorchKde1d
         The reconstructed margin, on the default device and dtype.
     """
+    payload = read_payload(json, "margin")
     state = dict(payload["state"])
     out = cls.from_grid(
       torch.as_tensor(payload["grid_points"], dtype=torch.float64),
@@ -526,7 +562,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       prob0=float(payload.get("prob0", 0.0)),
       xmin=state.get("xmin"),
       xmax=state.get("xmax"),
-      type=str(state.get("type", "continuous")),
+      var_type=_VAR_TYPE_OF[str(state.get("type", "c"))],
       multiplier=float(state.get("multiplier", 1.0)),
       degree=int(state.get("degree", 2)),
       boundary_repair=bool(state.get("boundary_repair", True)),
@@ -558,7 +594,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       "grid_size": self.grid_size,
       "boundary_repair": self.boundary_repair,
       "loglik": self._loglik,
-      "edf": self.edf,
+      "edf": self._npars,
       "nobs": self._nobs,
     }
 
@@ -579,7 +615,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       raise RuntimeError("unsupported TorchKde1d state-dict version")
     self.xmin = state["xmin"]
     self.xmax = state["xmax"]
-    self._type = state["type"]
+    self._type = _VAR_TYPE_OF[state["type"]]
     self.multiplier = state["multiplier"]
     self.bandwidth = state["bandwidth"]
     self._bandwidth_spec = state["bandwidth_spec"]
@@ -588,39 +624,23 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.grid_size = state["grid_size"]
     self.boundary_repair = state["boundary_repair"]
     self._loglik = state["loglik"]
-    self.edf = state["edf"]
+    self._npars = state["edf"]
     # The payload is an opaque ``object``, and the retained sample size is
     # declared on ``MarginBase`` as what the `nobs` property answers.
-    self._nobs = cast("Optional[int]", state["nobs"])
+    self._nobs = cast("int | None", state["nobs"])
 
   # --- declared capabilities ------------------------------------------------ #
 
   @property
-  def kde_type(self) -> str:
-    """The variable type in ``Kde1d``'s spelling.
-
-    Not exposed as ``type``: ``nn.Module.type`` is the legacy dtype cast, and
-    shadowing it would break ``module.type(torch.float32)`` on this class alone.
-    The constructor argument keeps the familiar name.
-
-    Returns
-    -------
-    str
-        ``"continuous"``, ``"discrete"`` or ``"zero-inflated"``, hyphenated as
-        ``Kde1d`` spells it.
-    """
-    return self._type
-
-  @property
   def var_type(self) -> str:
-    """Variable type in the contract's spelling.
+    """Variable type.
 
     Returns
     -------
     str
         ``"c"``, ``"d"`` or ``"zi"``.
     """
-    return _VAR_TYPE_OF[self._type]
+    return self._type
 
   @property
   def support(self) -> tuple[float, float]:
@@ -649,7 +669,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     return int(self.grid_points.numel()) > 0
 
   @property
-  def nobs(self) -> Optional[int]:
+  def nobs(self) -> int | None:
     """Number of observations the fit **retained**.
 
     ``Kde1d`` drops a NaN observation and a NaN or zero weight, so this falls
@@ -663,7 +683,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     return self._nobs
 
   @property
-  def n_parameters(self) -> float:
+  def npars(self) -> float:
     """Effective degrees of freedom of the fit.
 
     Returns
@@ -673,7 +693,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         marginal and the copula side. ``nan`` for a grid supplied directly,
         which was not fitted here.
     """
-    return float("nan") if self.edf is None else self.edf
+    return float("nan") if self._npars is None else self._npars
 
   @property
   def family_name(self) -> str:
@@ -702,7 +722,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     if not self.is_fitted:
       raise RuntimeError("TorchKde1d is not fitted; call fit(y)")
 
-  def _as_tensor(self, values: Any) -> Tensor:  # noqa: ANN401 - as_tensor input
+  def _as_tensor(self, values: object) -> Tensor:
     """Coerce a query onto the buffers' dtype and device, flattened."""
     return torch.as_tensor(
       values, dtype=self.grid_points.dtype, device=self.grid_points.device
@@ -731,7 +751,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       if hi_b == math.inf
       else torch.as_tensor(hi_b, dtype=g.dtype, device=g.device)
     )
-    n = int(round(float(hi - lo))) + 1
+    n = round(float(hi - lo)) + 1
     return lo + torch.arange(n, dtype=g.dtype, device=g.device)
 
   def _pdf_continuous(self, y: Tensor) -> Tensor:
@@ -774,15 +794,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     )
     return torch.where(torch.isnan(y), y, out)
 
-  def pdf(self, y: Tensor, /, *, x: Optional[Tensor] = None) -> Tensor:
+  def pdf(self, y: Tensor, /) -> Tensor:
     """Density with respect to this margin's own reference measure.
 
     Parameters
     ----------
     y : Tensor, shape (n,)
         Evaluation points.
-    x : Tensor, or None, optional
-        Ignored; a kernel density reads no covariates.
 
     Returns
     -------
@@ -793,25 +811,25 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     """
     self._check_fitted()
     ya = self._as_tensor(y)
-    if self._type == "discrete":
+    if self._type == "d":
       return self._pdf_discrete(ya)
-    if self._type == "zero-inflated":
+    if self._type == "zi":
       return torch.where(
-        ya == 0.0,
+        # Exact: a zero-inflated variable's atom sits at zero, so this asks
+        # whether the observation *is* the atom, not whether it is near it.
+        ya == 0.0,  # noqa: RUF069
         self.prob0.expand_as(ya),
         (1.0 - self.prob0) * self._pdf_continuous(ya),
       )
     return self._pdf_continuous(ya)
 
-  def cdf(self, y: Tensor, /, *, x: Optional[Tensor] = None) -> Tensor:
+  def cdf(self, y: Tensor, /) -> Tensor:
     """Distribution function.
 
     Parameters
     ----------
     y : Tensor, shape (n,)
         Evaluation points.
-    x : Tensor, or None, optional
-        Ignored; a kernel density reads no covariates.
 
     Returns
     -------
@@ -820,9 +838,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     """
     self._check_fitted()
     ya = self._as_tensor(y)
-    if self._type == "discrete":
+    if self._type == "d":
       return self._cdf_discrete(ya)
-    if self._type == "zero-inflated":
+    if self._type == "zi":
       atom = (ya >= 0.0).to(ya.dtype)
       tail = (
         torch.zeros_like(ya)
@@ -861,7 +879,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     corrected = q - residual / torch.clamp(density, min=tiny)
     return corrected + (q - corrected).detach()
 
-  def icdf(self, p: Tensor, /, *, x: Optional[Tensor] = None) -> Tensor:
+  def icdf(self, p: Tensor, /, *, x: Tensor | None = None) -> Tensor:
     """Quantile function.
 
     Parameters
@@ -897,7 +915,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       bool(torch.any(finite < 0.0)) or bool(torch.any(finite > 1.0))
     ):
       raise ValueError("probabilities must lie in [0, 1]")
-    if self._type == "discrete":
+    if self._type == "d":
       lvs, f_cum = self._level_cdf()
       # The lowest level whose cdf has reached `p`, not the lowest that has
       # passed it -- `lower_bound`, as the compiled quantile does. The two
@@ -908,7 +926,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         max=lvs.numel() - 1,
       )
       return torch.where(torch.isnan(pa), pa, lvs[idx])
-    if self._type == "zero-inflated":
+    if self._type == "zi":
       zero = torch.zeros(1, dtype=pa.dtype, device=pa.device)
       if float(self.prob0) >= 1.0:
         # An all-zero column: the mass is the whole distribution and there is
@@ -931,7 +949,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   def _sample_uniform(self, n: int, seeds: list[int]) -> Tensor:
     """Draw ``n`` uniforms on the buffers' dtype and device."""
     ref = self.grid_points
-    generator: Optional[torch.Generator] = None
+    generator: torch.Generator | None = None
     if seeds:
       generator = torch.Generator(device=ref.device).manual_seed(int(seeds[0]))
     return torch.rand(
@@ -947,9 +965,15 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         The type, the grid size and the support.
     """
     if not self.is_fitted:
-      return f"TorchKde1d(type={self._type!r}, unfitted)"
+      return f"TorchKde1d(var_type={self._type!r}, unfitted)"
     lo, hi = self.support
     return (
-      f"TorchKde1d(type={self._type!r}, grid_size={self.grid_points.numel()}, "
+      f"TorchKde1d(var_type={self._type!r}, "
+      f"grid_size={self.grid_points.numel()}, "
       f"support=({lo}, {hi}))"
     )
+
+
+# `core` holds the registry and names no ecosystem, so the module that
+# owns the class is the one that teaches `margin_from_json` to rebuild it.
+register_margin_json("TorchKde1d", TorchKde1d.from_json)

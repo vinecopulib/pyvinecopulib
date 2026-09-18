@@ -14,12 +14,9 @@ the same way -- one table, resolved when it is needed:
   ``version`` a reader checks, so a format change fails loudly rather than
   producing a wrong model.
 
-* **Resolution.** :func:`resolve_margins` turns a ``margins=`` specification
-  -- a string alias, one instance broadcast per variable, a length-``d``
-  sequence, or a mapping keyed by position or name -- into one margin per
-  variable, and :func:`resolve_margin_controls` expands ``margin_controls=``
-  by the same four shapes. :func:`fit_margin` then estimates one column's
-  margin, whatever shape the specification arrived in.
+* **Resolution.** :func:`resolve_margin_controls` expands ``margin_controls=``
+  -- one controls object broadcast per variable, a length-``d`` sequence, or a
+  mapping keyed by position or name -- into one entry per variable.
 
 Each registry has a table of the margins this package ships and a registration
 function for everything else (:func:`register_margin_adapter`,
@@ -37,16 +34,15 @@ from __future__ import annotations
 
 import copy
 import operator
-import warnings
-from typing import Any, Callable, Optional, Sequence, Union, cast
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 
 from ..pyvinecopulib_ext import Kde1d
-from ._json import MODEL_JSON_VERSION, read_payload
+from ._json import MODEL_JSON_VERSION, dumps, loads, read_payload
 from .margin_base import MarginBase, support_of
-from .protocols import ArrayT, ControlsLike, MarginLike
-
+from .protocols import ArrayT, MarginLike
 
 __all__ = [
   "as_margin",
@@ -55,7 +51,6 @@ __all__ = [
   "register_margin_adapter",
   "register_margin_json",
   "resolve_margin_controls",
-  "resolve_margins",
 ]
 
 
@@ -122,11 +117,11 @@ class _WrappedMargin(MarginBase[ArrayT]):
     pdf: Callable[[ArrayT], ArrayT],
     cdf: Callable[[ArrayT], ArrayT],
     icdf: Callable[[ArrayT], ArrayT],
-    logpdf: Optional[Callable[[ArrayT], ArrayT]] = None,
+    logpdf: Callable[[ArrayT], ArrayT] | None = None,
     var_type: str = "c",
-    cdf_left: Optional[Callable[[ArrayT], ArrayT]] = None,
-    support: Optional[tuple[float, float]] = None,
-    family_name: Optional[str] = None,
+    cdf_left: Callable[[ArrayT], ArrayT] | None = None,
+    support: tuple[float, float] | None = None,
+    family_name: str | None = None,
   ) -> None:
     self.wrapped = obj
     self._pdf = pdf
@@ -146,21 +141,21 @@ class _WrappedMargin(MarginBase[ArrayT]):
   def support(self) -> tuple[float, float]:
     return self._support
 
-  def pdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def pdf(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     return self._pdf(y)
 
-  def logpdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def logpdf(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     if self._logpdf is None:
       return super().logpdf(y)
     return self._logpdf(y)
 
-  def cdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def cdf(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     return self._cdf(y)
 
-  def icdf(self, p: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def icdf(self, p: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     return self._icdf(p)
 
-  def cdf_left(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def cdf_left(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     if self._cdf_left is None:
       return super().cdf_left(y)
     return self._cdf_left(y)
@@ -275,20 +270,19 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:  # noqa: ANN401
     raise TypeError(
       f"cannot adapt discrete torch distribution {type(obj).__name__!r}: "
       "torch.distributions does not provide the cdf and left-limit cdf a "
-      "discrete vine margin needs. Use Kde1d, a SciPy or OpenTURNS margin, "
+      "discrete vine margin needs. Use Kde1d or a SciPy margin, "
       "or implement MarginBase.cdf_left explicitly."
     )
 
   cdf = getattr(type(obj), "cdf", None)
-  if (
-    cdf is None
-    or getattr(cdf, "__module__", "") == "torch.distributions.distribution"
+  if cdf is None or (
+    getattr(cdf, "__module__", "") == "torch.distributions.distribution"
     and getattr(cdf, "__qualname__", "") == "Distribution.cdf"
   ):
     raise TypeError(
       f"cannot adapt torch distribution {type(obj).__name__!r}: its cdf is "
       "not implemented. Use a continuous torch distribution with a cdf, "
-      "provide a MarginBase implementation, or use a SciPy/OpenTURNS margin."
+      "provide a MarginBase implementation, or use a SciPy margin."
     )
 
   lo, hi = support_of(obj)
@@ -376,12 +370,10 @@ _BUILTIN_ADAPTERS: tuple[
 
 #: Readers registered by a caller. Consulted before ``_BUILTIN_READERS``, so a
 #: caller may replace a shipped one.
-_READERS: dict[str, Callable[[dict[str, Any]], Any]] = {}
+_READERS: dict[str, Callable[[str], Any]] = {}
 
 
-def register_margin_json(
-  kind: str, reader: Callable[[dict[str, Any]], Any]
-) -> None:
+def register_margin_json(kind: str, reader: Callable[[str], Any]) -> None:
   """Teach :func:`margin_from_json` how to rebuild one margin type.
 
   Parameters
@@ -404,8 +396,35 @@ def register_margin_json(
   _READERS[kind] = reader
 
 
-def margin_to_json(margin: object) -> dict[str, Any]:
-  """Return one margin's JSON payload.
+def margin_json(margin: object, payload: dict[str, Any]) -> str:
+  """Serialize one margin's fields, stamped and encoded the shared way.
+
+  What a margin's own ``to_json`` calls, so every class produces the same
+  envelope through the same codec rather than reaching for the private
+  encoder itself. Two things it carries that a bare ``json.dumps`` would
+  lose: ``inf`` / ``nan`` travel as tagged strings, JSON having no spelling
+  for either, and ``kind`` is pinned so a **subclass** reads back as itself.
+
+  Parameters
+  ----------
+  margin : object
+      The margin being serialized; names the default ``kind``.
+  payload : dict
+      Its fields. A ``kind`` already present is kept.
+
+  Returns
+  -------
+  str
+      The JSON text ``margin_from_json`` reads back.
+  """
+  out = dict(payload)
+  out.setdefault("kind", type(margin).__name__)
+  out.setdefault("version", MODEL_JSON_VERSION)
+  return dumps(out)
+
+
+def margin_to_json(margin: object) -> str:
+  """Return one margin's JSON text.
 
   Parameters
   ----------
@@ -415,8 +434,8 @@ def margin_to_json(margin: object) -> dict[str, Any]:
 
   Returns
   -------
-  dict
-      A JSON-serializable mapping carrying ``kind`` and ``version``.
+  str
+      JSON text carrying ``kind`` and ``version``.
 
   Raises
   ------
@@ -427,27 +446,34 @@ def margin_to_json(margin: object) -> dict[str, Any]:
   if to_json is None:
     raise TypeError(
       f"{type(margin).__name__} cannot be serialized: it has no `to_json`. "
-      "Implement `to_json` returning a JSON-serializable mapping, and call "
+      "Implement `to_json` returning JSON text -- "
+      "`pyvinecopulib.core.margin_json` builds the envelope -- and call "
       "`pyvinecopulib.core.register_margin_json` so it can be read back."
     )
-  payload = to_json()
-  if isinstance(payload, str):
-    # A compiled margin (`Kde1d`) serializes itself to a JSON string.
-    payload = {"kind": type(margin).__name__, "json": payload}
-  else:
-    payload = dict(payload)
-    payload.setdefault("kind", type(margin).__name__)
+  text = to_json()
+  payload = loads(text)
+  if "kind" not in payload:
+    # A compiled margin (`Kde1d`) serializes to upstream's own JSON, which
+    # carries neither `kind` nor `version`, so the envelope is synthesized
+    # around it rather than merged into it.
+    return dumps(
+      {
+        "kind": type(margin).__name__,
+        "version": MODEL_JSON_VERSION,
+        "json": text,
+      }
+    )
   payload.setdefault("version", MODEL_JSON_VERSION)
-  return payload
+  return dumps(payload)
 
 
-def margin_from_json(payload: dict[str, Any]) -> MarginLike[Any]:
-  """Rebuild one margin from the payload :func:`margin_to_json` produced.
+def margin_from_json(payload: str) -> MarginLike[Any]:
+  """Rebuild one margin from the text :func:`margin_to_json` produced.
 
   Parameters
   ----------
-  payload : dict
-      A mapping carrying ``kind`` and ``version``.
+  payload : str
+      JSON text carrying ``kind`` and ``version``.
 
   Returns
   -------
@@ -461,8 +487,8 @@ def margin_from_json(payload: dict[str, Any]) -> MarginLike[Any]:
   """
   # No `kind=` here: this reader dispatches on `kind` itself and says far
   # more about an unknown one than a bare mismatch could.
-  payload = read_payload(payload, "margin")
-  kind = payload.get("kind")
+  decoded = read_payload(payload, "margin")
+  kind = decoded.get("kind")
   reader = _READERS.get(kind) or _BUILTIN_READERS.get(kind)
   if reader is None:
     known = ", ".join(sorted({*_READERS, *_BUILTIN_READERS})) or "(none)"
@@ -476,9 +502,9 @@ def margin_from_json(payload: dict[str, Any]) -> MarginLike[Any]:
   return reader(payload)
 
 
-def _read_kde1d(payload: dict[str, Any]) -> Kde1d:
-  """Rebuild a ``Kde1d``, whose own JSON is a string rather than a mapping."""
-  return Kde1d.from_json(payload["json"])
+def _read_kde1d(payload: str) -> Kde1d:
+  """Rebuild a ``Kde1d``, whose own JSON is upstream's rather than ours."""
+  return Kde1d.from_json(read_payload(payload, "margin")["json"])
 
 
 #: ``kind`` -> the reader for it. Only ``Kde1d`` is here: it is a ``core``
@@ -486,99 +512,13 @@ def _read_kde1d(payload: dict[str, Any]) -> Kde1d:
 #: reader from its own module through :func:`register_margin_json`, which is
 #: what keeps ``core`` from naming a class it must not import -- and makes the
 #: first-party margins use the same hook a third party does.
-_BUILTIN_READERS: dict[str, Callable[[dict[str, Any]], Any]] = {
+_BUILTIN_READERS: dict[str, Callable[[str], Any]] = {
   "Kde1d": _read_kde1d,
 }
 
 
-def _parametric_margin() -> MarginLike[Any]:
-  """Build a parametric margin with its family left to be selected.
-
-  Deferred so that :mod:`pyvinecopulib.margins` imports without SciPy, which
-  ``SciPyMargin`` needs and this module does not.
-
-  Returns
-  -------
-  MarginLike
-      An unfitted ``SciPyMargin``, with no family yet.
-  """
-  from ..margins.scipy import SciPyMargin
-
-  return SciPyMargin()
-
-
-#: String aliases for the built-in margins. ``"parametric"`` names the class
-#: without naming a family, which is what makes it an alias at all: choosing
-#: the family from the data is `SciPyMargin.select`'s job.
-_ALIASES = {
-  "kde": Kde1d,
-  "parametric": _parametric_margin,
-}
-
-
-def _prototype(alias: str) -> object:
-  """Build a margin from a string alias.
-
-  Parameters
-  ----------
-  alias : str
-      One of the keys of the alias table.
-
-  Returns
-  -------
-  object
-      A fresh, unfitted margin -- a ``Kde1d`` or a ``SciPyMargin``.
-
-  Raises
-  ------
-  ValueError
-      If the alias is unknown.
-  """
-  if alias not in _ALIASES:
-    raise ValueError(
-      f"unknown margins={alias!r}; expected one of {sorted(_ALIASES)}, "
-      "a margin, a sequence of margins, a mapping, or a callable"
-    )
-  return _ALIASES[alias]()
-
-
-def _resolve_one(entry: object) -> object:
-  """Resolve a single column's specification.
-
-  Parameters
-  ----------
-  entry : object
-      A string alias, a margin, a foreign distribution, or a callable.
-
-  Returns
-  -------
-  object
-      Either something to fit, or a callable to call with the column.
-  """
-  if isinstance(entry, str):
-    return _prototype(entry)
-  if callable(entry) and not hasattr(entry, "cdf"):
-    # A fitter: it receives the column and returns a margin.
-    return entry
-  return entry
-
-
-#: What an unaddressed variable gets: one entry per variable, or a callable
-#: producing them, invoked only if some variable is in fact unaddressed.
-_Default = Union[
-  Sequence[Any],
-  Callable[[], Optional[Sequence[Any]]],
-]
-
-
-#: What :func:`resolve_margins` produces and :func:`fit_margin` consumes: a
-#: margin to fit, one already fitted, or a callable handed the column. The
-#: array type is not known until the fit, which is why it is not carried here.
-MarginSpec = Union[MarginLike[Any], Callable[..., Any]]
-
-
 def _index_for(
-  key: Union[str, int], lookup: dict[str, int], d: int, label: str
+  key: str | int, lookup: dict[str, int], d: int, label: str
 ) -> int:
   """Resolve one mapping key to a variable position.
 
@@ -634,7 +574,7 @@ def _per_variable(
   spec: object,
   d: int,
   *,
-  names: Optional[Sequence[str]],
+  names: Sequence[str] | None,
   default: object,
   label: str,
   is_atom: Callable[[Any], bool],
@@ -697,15 +637,14 @@ def resolve_margin_controls(
   spec: object,
   d: int,
   *,
-  names: Optional[Sequence[str]] = None,
+  names: Sequence[str] | None = None,
 ) -> list[Any]:
   """Expand ``margin_controls=`` into one controls object per variable.
 
-  Follows the same rules as ``margins=`` (see :func:`resolve_margins`): one
-  controls object broadcast to every variable, a length-``d`` sequence, or a
-  mapping keyed by variable name or position with the unaddressed variables
-  left unconfigured. That is what lets one call give a bound to the two
-  variables that need one and leave the rest alone.
+  Four shapes: ``None``, one controls object broadcast to every variable, a
+  length-``d`` sequence, or a mapping keyed by variable name or position with
+  the unaddressed variables left unconfigured. That is what lets one call bound
+  the family search on the variables that need it and leave the rest alone.
 
   A broadcast object is **shared**, not copied: controls are read during a fit,
   never written to, so there is no state to leak between variables.
@@ -729,10 +668,6 @@ def resolve_margin_controls(
   ValueError
       If a sequence has the wrong length, or a mapping names an unknown
       variable.
-
-  See Also
-  --------
-  resolve_margins : The same rules, for the margins themselves.
   """
   return _per_variable(
     spec,
@@ -744,110 +679,6 @@ def resolve_margin_controls(
     # sequence in principle: `to_dict` is what makes it one.
     is_atom=lambda value: hasattr(value, "to_dict"),
   )
-
-
-def resolve_margins(
-  spec: object,
-  d: int,
-  *,
-  names: Optional[Sequence[str]] = None,
-  default: Optional[_Default] = None,
-) -> list[Any]:
-  """Expand ``spec`` into one specification per variable.
-
-  Accepted forms, in the order they are recognized: ``None`` (the default
-  margin), a string alias (``"kde"``, ``"parametric"``), a
-  mapping keyed by variable name or position over the default, a sequence of
-  length ``d`` mixing any of the above, a single margin broadcast to every
-  variable, or a callable receiving a column and returning a margin.
-
-  A broadcast margin is **copied** per variable rather than shared: margins are
-  mutable, and one estimator fitted repeatedly would carry state between
-  variables.
-
-  Parameters
-  ----------
-  spec : object
-      The user's ``margins=`` argument.
-  d : int
-      Number of variables.
-  names : sequence of str, or None, optional
-      Variable names, needed only to resolve a mapping keyed by name.
-  default : sequence, callable, or None, optional
-      What an unaddressed variable gets, one entry per variable. ``None`` means
-      a kernel-density margin throughout. Worth setting whenever the caller
-      knows something per variable that the library cannot: the sklearn
-      estimators pass the variable types and bounds they inferred from the
-      data, so a mapping that addresses one column does not silently retype the
-      others. A callable is invoked only if some variable is actually
-      unaddressed, which matters when building the default is expensive or can
-      fail -- a specification that names every variable should not be held
-      hostage to a default it never uses.
-
-  Returns
-  -------
-  list
-      ``d`` specifications, each either fittable or callable.
-
-  Raises
-  ------
-  ValueError
-      If a sequence has the wrong length, or a mapping names an unknown
-      variable.
-  """
-
-  def base_specs() -> list[Any]:
-    if default is None:
-      return [_prototype("kde") for _ in range(d)]
-    computed = default() if isinstance(default, Callable) else default
-    if computed is None:
-      # A callable that answers `None` says what `default=None` says: this
-      # module's own default. Deferred precisely so a specification naming
-      # every variable is not held hostage to a default it never uses -- one
-      # that can legitimately raise.
-      return [_prototype("kde") for _ in range(d)]
-    entries: Sequence[Any] = computed
-    if len(entries) != d:
-      raise ValueError(
-        f"default has length {len(entries)}, but there are {d} variables"
-      )
-    return [_resolve_one(entry) for entry in entries]
-
-  if spec is None:
-    return base_specs()
-
-  if isinstance(spec, dict):
-    lookup = {name: j for j, name in enumerate(names or [])}
-    addressed: dict[int, Any] = {}
-    for key, value in spec.items():
-      addressed[_index_for(key, lookup, d, "margins")] = _resolve_one(value)
-    # Resolve the keys first, then build the default only if a variable is
-    # actually left over -- the deferral the `default` parameter documents, and
-    # the reason it matters is that building one can raise.
-    if len(addressed) == d:
-      return [addressed[j] for j in range(d)]
-    resolved: list[Any] = list(base_specs())
-    for index, value in addressed.items():
-      resolved[index] = value
-    return resolved
-
-  if isinstance(spec, str):
-    return [_prototype(spec) for _ in range(d)]
-
-  # A sequence, but not a margin (which may itself be iterable in principle).
-  if isinstance(spec, (list, tuple)) and not hasattr(spec, "cdf"):
-    if len(spec) != d:
-      raise ValueError(
-        f"margins has length {len(spec)}, but there are {d} variables"
-      )
-    return [_resolve_one(entry) for entry in spec]
-
-  one = _resolve_one(spec)
-  if callable(one) and not hasattr(one, "cdf"):
-    # A fitter, called once per column and returning a fresh margin each time.
-    return [one for _ in range(d)]
-  # A margin: fitting mutates it, so every column needs its own.
-  return [copy.deepcopy(one) for _ in range(d)]
 
 
 def unshare(margins: Sequence[Any]) -> list[Any]:
@@ -880,188 +711,3 @@ def unshare(margins: Sequence[Any]) -> list[Any]:
       seen.add(id(margin))
       out.append(margin)
   return out
-
-
-def declared_kde_kwargs(controls: Optional[ControlsLike]) -> dict[str, Any]:
-  """Translate a margin's declared type and support into kernel-density kwargs.
-
-  A kernel density takes both at construction, so a declaration has to reach it
-  *before* the fit: a grid fitted unbounded is already padded past the data by
-  the time anything could tell it otherwise. The declaration is authoritative
-  here, unlike on a margin the caller built, because this margin does not exist
-  yet -- which is what makes a bounded default reachable without naming a class.
-
-  Shared by both lanes on purpose. ``Kde1d`` accepts either spelling of the
-  zero-inflated type and ``TorchKde1d`` accepts only the hyphenated one, so a
-  second copy of this mapping is a divergence waiting to happen -- it already
-  was one.
-
-  Parameters
-  ----------
-  controls : ControlsLike, or None, optional
-      A ``FitControlsMargin``, read for ``var_type`` and ``support``; both
-      optional.
-
-  Returns
-  -------
-  dict
-      Keyword arguments for ``Kde1d`` or
-      :class:`~pyvinecopulib.torch.TorchKde1d`.
-  """
-  kwargs: dict[str, Any] = {}
-  var_type = getattr(controls, "var_type", None)
-  if var_type == "d":
-    kwargs["type"] = "discrete"
-  elif var_type == "zi":
-    kwargs["type"] = "zero-inflated"
-  support = getattr(controls, "support", None)
-  if support is not None:
-    lo, hi = support
-    if lo is not None and np.isfinite(lo):
-      kwargs["xmin"] = float(lo)
-    if hi is not None and np.isfinite(hi):
-      kwargs["xmax"] = float(hi)
-  return kwargs
-
-
-def kde_from_controls(controls: Optional[ControlsLike]) -> Kde1d:
-  """Build a kernel-density margin honoring what the controls declare.
-
-  Parameters
-  ----------
-  controls : ControlsLike, or None, optional
-      A ``FitControlsMargin``, read for ``var_type`` and ``support``; both
-      optional.
-
-  Returns
-  -------
-  Kde1d
-      An unfitted margin, bounded and typed as declared.
-  """
-  return Kde1d(**declared_kde_kwargs(controls))
-
-
-def fit_margin(
-  entry: MarginSpec,
-  y: ArrayT,
-  *,
-  x: Optional[ArrayT] = None,
-  weights: Optional[ArrayT] = None,
-  var_type: Optional[str] = None,
-  support: Optional[tuple[float, float]] = None,
-  controls: Optional[ControlsLike] = None,
-  verb: str = "select",
-  refit: bool = False,
-) -> MarginLike[ArrayT]:
-  """Obtain a fitted margin for one column.
-
-  Parameters
-  ----------
-  entry : object
-      A specification produced by :func:`resolve_margins`.
-  y : array, shape (n,), dtype float
-      The column.
-  x : array, shape (n, p), or None, optional
-      Exogenous covariates, forwarded only to a margin that declares
-      ``supports_covariates``; a callable specification is handed them by
-      keyword, so one that models no covariates fails loudly rather than
-      fitting the wrong model.
-  weights : array, shape (n,), or None, optional
-      Observation weights. A callable specification receives them by keyword.
-  var_type : str, or None, optional
-      The variable type the caller resolved, handed to a margin that
-      implements ``declare``. Without it such a margin re-infers the type
-      from the sample, which knows less than the caller does.
-  support : tuple of float, or None, optional
-      The declared bounds, handed over the same way.
-  controls : ControlsLike, or None, optional
-      Fit configuration, forwarded to the margin's estimator.
-  verb : str, default='select'
-      Which estimator to call, ``"select"`` (the default, so a margin that
-      searches a family set does) or ``"fit"`` (the current family only).
-      ``MarginBase.select`` reduces to ``fit`` where there is nothing to
-      choose, so the default is the weaker requirement.
-  refit : bool, default=False
-      Re-estimate a margin that reports itself already fitted. Off by default,
-      so a specification may mix fixed margins with ones to estimate.
-
-  Returns
-  -------
-  MarginLike
-      A fitted margin.
-
-  Raises
-  ------
-  TypeError
-      If weights were supplied for a margin that cannot use them, since
-      ignoring them would silently fit a different model than was asked for.
-  """
-  if callable(entry) and not hasattr(entry, "cdf"):
-    kwargs: dict[str, Any] = {}
-    if x is not None:
-      kwargs["x"] = x
-    if weights is not None:
-      kwargs["weights"] = weights
-    return cast("MarginLike[ArrayT]", as_margin(entry(y, **kwargs)))
-
-  # Capability-based dispatch: `fit` / `is_fitted` / `supports_weights` are
-  # optional members, so this is not narrowed to `MarginLike`.
-  margin: Any = as_margin(entry)
-  if not refit and getattr(margin, "is_fitted", True):
-    return cast("MarginLike[ArrayT]", margin)
-
-  if weights is not None and not getattr(margin, "supports_weights", False):
-    raise TypeError(
-      f"{type(margin).__name__} cannot use observation weights; pass "
-      "margins='kde' for a weighted fit, or drop weights="
-    )
-  kwargs: dict[str, Any] = {}
-  if weights is not None:
-    kwargs["weights"] = weights
-  if x is not None and getattr(margin, "supports_covariates", False):
-    kwargs["x"] = x
-  declare = getattr(margin, "declare", None)
-  if declare is not None and (var_type is not None or support is not None):
-    declare(var_type=var_type, support=support)
-  estimator = getattr(margin, verb, None) or margin.fit
-  if controls is not None:
-    # A `family_set` is an instruction to search, so whatever is about to run
-    # has to be able to. Two ways it cannot: the margin reads no controls at
-    # all, or the verb is `fit`, which estimates the family it already has.
-    # Either way, refusing beats fitting one family and looking like it chose.
-    # A declared type or support is a *default* rather than an instruction, so
-    # neither case refuses one -- an estimator that cannot read it has usually
-    # been built with it already.
-    if getattr(controls, "family_set", None) is not None and (
-      verb == "fit" or not getattr(margin, "supports_controls", False)
-    ):
-      cannot = (
-        "`fit` estimates the family it already has"
-        if verb == "fit"
-        else f"{type(margin).__name__} cannot select a family"
-      )
-      raise TypeError(
-        f"family_set= would be ignored: {cannot}. Use select (or "
-        "`Vinedist.select`) to choose a family, pass margins='parametric', "
-        "or drop family_set"
-      )
-    if getattr(margin, "supports_controls", False):
-      kwargs["controls"] = controls
-  try:
-    estimator(y, **kwargs)
-  except ValueError as e:
-    # Substituting a different kind of margin is a decision about which margin
-    # this column gets, so it is made here rather than inside a margin that
-    # would have to stop being itself to make it.
-    if getattr(controls, "on_failure", "raise") != "fallback":
-      raise
-    warnings.warn(
-      f"{type(margin).__name__} could not fit this variable, so a "
-      f"kernel-density margin was substituted. The cause was:\n{e}",
-      UserWarning,
-      stacklevel=2,
-    )
-    margin = kde_from_controls(controls)
-    fitted = margin.fit(y) if weights is None else margin.fit(y, weights)
-    return cast("MarginLike[ArrayT]", as_margin(fitted))
-  return cast("MarginLike[ArrayT]", margin)

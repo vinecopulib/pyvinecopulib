@@ -2,11 +2,12 @@
 
 import inspect
 import os
+import pathlib
 import re
 from typing import Any
 
-import sphinx.ext.autodoc as autodoc
 import sphinx.util.inspect as sphinxinspect
+from sphinx.ext import autodoc
 from sphinx.ext.autodoc import AttributeDocumenter, ModuleDocumenter
 
 import pyvinecopulib as pv
@@ -135,18 +136,31 @@ nitpick_ignore_regex = [
     r"pyvinecopulib\.\w+\.\w+\.(bicop|vinecop|margin)_class",
   ),
   # The structural Protocols that type an unimported ecosystem's objects --
-  # `margins/openturns.py`'s `_Distribution`, `_Factory` and their kin. Neither
-  # SciPy nor OpenTURNS ships `py.typed`, and `scipy-stubs` needs Python 3.12
   # against this project's 3.11 floor, so a Protocol naming exactly the members
   # the code calls is what types those boundaries. They are private, so
   # autosummary generates no page for them to point at, while the numpydoc
   # `Returns` beside each says the ecosystem type a reader wants
-  # (`openturns.Distribution`). Retires if either library ships types.
   (r"py:.*", r"pyvinecopulib\.\w+\.\w+\._[A-Z]\w+"),
-  # `ArrayT` is the TypeVar the array-agnostic contracts are generic over. It
-  # appears in rendered signatures wherever one is parameterized, and a
-  # TypeVar has no page of its own to link to.
-  (r"py:class", r"pyvinecopulib\.core\.protocols\.ArrayT"),
+  # `ArrayT` is the TypeVar the array-agnostic contracts are generic over, and
+  # `Array` / `BoolArray` / `Namespace` / `FInfo` are the protocols bounding it
+  # and its namespace. All appear in rendered signatures wherever one is
+  # parameterized, and none has a page of its own to link to.
+  (
+    r"py:class",
+    r"pyvinecopulib\.core\.protocols\.(ArrayT|Array|BoolArray|Namespace|FInfo)",
+  ),
+  # `controls_class` names the fit configuration a class reads, so wherever it
+  # is set its value really is a class -- on `MarginBase`, on the torch parts,
+  # and on the bound `Bicop` / `Vinecop` / `Kde1d`. numpydoc lists every public
+  # attribute in the class-member autosummary, and autosummary generates no
+  # page for one whose value is a class, so the entry it writes points at
+  # nothing. The declarations beside it (`bicop_class`, `vinecop_class`,
+  # `margin_class`) hold `None` on the bases and page normally; a Python
+  # subclass keeps its own out of the rendered API with a plain comment rather
+  # than a `#:` one, which a compiled class cannot carry. Retires if
+  # autosummary learns to page a class-valued attribute. The declaration is
+  # documented in `AGENTS.md` under "Declare the parts, inherit the fitting".
+  (r"py:obj", r"pyvinecopulib\.[\w.]+\.controls_class"),
 ]
 
 
@@ -156,9 +170,7 @@ nitpick_ignore_regex = [
 # otherwise-private members.
 def _skip_inherited(app, what, name, obj, skip, options):
   mod = getattr(obj, "__module__", "")
-  if isinstance(mod, str) and (
-    mod.startswith("sklearn") or mod.startswith("torch")
-  ):
+  if isinstance(mod, str) and (mod.startswith(("sklearn", "torch"))):
     return True
   return None
 
@@ -182,7 +194,9 @@ exclude_patterns = [
 ]
 
 project = "pyvinecopulib"
-copyright = "2024, Thomas Nagler and Thibault Vatter"
+# Sphinx reads this name from the config namespace, so it is the spelling
+# or nothing.
+copyright = "2024, Thomas Nagler and Thibault Vatter"  # noqa: A001
 author = "Thomas Nagler and Thibault Vatter"
 
 release = pv.__version__
@@ -219,9 +233,9 @@ _CLASS_MODULE = {
   "BicopBase": "pyvinecopulib.core",
   "MarginLike": "pyvinecopulib.core",
   "MarginBase": "pyvinecopulib.core",
-  "OpenTURNSMargin": "pyvinecopulib.margins",
   "SciPyMargin": "pyvinecopulib.margins",
   "FitControlsMargin": "pyvinecopulib.core",
+  "FitControlsKde1d": "pyvinecopulib.core",
   "Bicop": "pyvinecopulib.core",
   "VinecopLike": "pyvinecopulib.core",
   "VinecopBase": "pyvinecopulib.core",
@@ -238,8 +252,6 @@ _CLASS_MODULE = {
   "Kde1d": "pyvinecopulib.core",
   "VineDensity": "pyvinecopulib.sklearn",
   "VineRegressor": "pyvinecopulib.sklearn",
-  "VinecopBackend": "pyvinecopulib.sklearn.backends",
-  "TorchVinecopBackend": "pyvinecopulib.sklearn.backends",
   "TorchTllBicop": "pyvinecopulib.torch",
   "TorchKde1d": "pyvinecopulib.torch",
   "TorchDistributionMargin": "pyvinecopulib.torch",
@@ -248,7 +260,6 @@ _CLASS_MODULE = {
   "FitControlsTorchBicop": "pyvinecopulib.torch",
   "FitControlsTorchVinecop": "pyvinecopulib.torch",
   "ControlsLike": "pyvinecopulib.core",
-  "DiscreteBicop": "pyvinecopulib.core",
   "NotBatchable": "pyvinecopulib.core.extend",
   "IndependenceBicop": "pyvinecopulib.core",
   "VinedistLike": "pyvinecopulib.core",
@@ -269,7 +280,6 @@ _FUNCTION_MODULE = {
   "register_margin_json": "pyvinecopulib.core",
   "as_margin": "pyvinecopulib.margins",
   "register_margin_adapter": "pyvinecopulib.margins",
-  "resolve_margins": "pyvinecopulib.margins",
   "resolve_margin_controls": "pyvinecopulib.margins",
   "to_pseudo_obs": "pyvinecopulib.utils",
   "sample_uniform": "pyvinecopulib.utils",
@@ -305,7 +315,6 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
     "pyvinecopulib.utils",
     "pyvinecopulib.margins",
     "pyvinecopulib.sklearn",
-    "pyvinecopulib.sklearn.backends",
     "pyvinecopulib.torch",
   ]
 
@@ -355,8 +364,8 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
     content = re.sub(
       rf"{bt}{re.escape(func)}{bt}", f"{func_ref}~{mod}.{func}`", content
     )
-  # Module references — longest-prefix first so `pyvinecopulib.sklearn.backends`
-  # wins over `pyvinecopulib.sklearn`.
+  # Module references — longest-prefix first, so a nested module name wins
+  # over the package it sits in.
   for mod in sorted(modules, key=len, reverse=True):
     content = re.sub(rf"{bt}{re.escape(mod)}{bt}", rf"{mod_ref}{mod}`", content)
 
@@ -411,13 +420,13 @@ DOCSTRING_SUBPACKAGES = {
       "VinecopBase",
       "FitControlsVinecop",
       "FitControlsMargin",
+      "FitControlsKde1d",
       "CVineStructure",
       "DVineStructure",
       "RVineStructure",
       "ConditioningContext",
       "SimplifiedContext",
       "NonSimplifiedContext",
-      "DiscreteBicop",
       "IndependenceBicop",
       "MarginLike",
       "MarginBase",
@@ -468,12 +477,10 @@ DOCSTRING_SUBPACKAGES = {
     # `process_cross_references` resolves the bare name to `core`.
     "classes": [
       "SciPyMargin",
-      "OpenTURNSMargin",
     ],
     "functions": [
       "as_margin",
       "register_margin_adapter",
-      "resolve_margins",
       "resolve_margin_controls",
     ],
   },
@@ -483,13 +490,6 @@ DOCSTRING_SUBPACKAGES = {
       "VineRegressor",
     ],
     "functions": [],
-  },
-  "sklearn.backends": {
-    "classes": [
-      "VinecopBackend",
-      "TorchVinecopBackend",
-    ],
-    "functions": ["resolve_backend"],
   },
   "torch": {
     "classes": [
@@ -539,12 +539,12 @@ def _stage_repo_files(docs_dir, repo_root):
   readme_src = os.path.join(docs_dir, "README.md")
   readme_inlined = os.path.join(docs_dir, "_README_inlined.md")
   if os.path.isfile(readme_src):
-    readme = open(readme_src).read()
+    readme = pathlib.Path(readme_src).read_text(encoding="utf-8")
     readme = process_cross_references(readme, is_docstring=False)
     # Drop the first 8 lines (title + badges) — matches the historical
     # `.. include:: README.md :start-line: 8`.
     readme = "\n".join(readme.splitlines()[8:])
-    with open(readme_inlined, "w") as f:
+    with open(readme_inlined, "w", encoding="utf-8") as f:
       f.write("```{eval-rst}\n.. currentmodule:: pyvinecopulib\n```\n")
       f.write(readme)
 
@@ -553,7 +553,7 @@ def _write_features_rst(out_path):
   """Generate API documentation RST: one section per subpackage."""
   rst_name = "API Documentation"
   bar = "=" * len(rst_name)
-  with open(out_path, "w") as f:
+  with open(out_path, "w", encoding="utf-8") as f:
     f.write(".. GENERATED FILE DO NOT EDIT\n\n")
     f.write(f"{bar}\n{rst_name}\n{bar}\n\n")
     for subpkg, contents in DOCSTRING_SUBPACKAGES.items():
@@ -565,15 +565,13 @@ def _write_features_rst(out_path):
       if classes:
         f.write("Classes\n^^^^^^^\n\n")
         f.write(".. autosummary::\n    :toctree: _generate\n\n")
-        for cls in classes:
-          f.write(f"    {module}.{cls}\n")
+        f.writelines(f"    {module}.{cls}\n" for cls in classes)
         f.write("\n")
       functions = contents.get("functions", [])
       if functions:
         f.write("Functions\n^^^^^^^^^\n\n")
         f.write(".. autosummary::\n    :toctree: _generate\n\n")
-        for fn in functions:
-          f.write(f"    {module}.{fn}\n")
+        f.writelines(f"    {module}.{fn}\n" for fn in functions)
         f.write("\n")
 
 
@@ -586,14 +584,13 @@ def _write_examples_rst(out_path, examples_dir):
   )
   if not notebooks:
     return
-  with open(out_path, "w") as f:
+  with open(out_path, "w", encoding="utf-8") as f:
     f.write("Examples\n========\n\n")
     f.write(
       "The following example notebooks are included in this documentation:\n\n"
     )
     f.write(".. toctree::\n   :maxdepth: 1\n   :titlesonly:\n\n")
-    for nb in notebooks:
-      f.write(f"   examples/{os.path.splitext(nb)[0]}\n")
+    f.writelines(f"   examples/{os.path.splitext(nb)[0]}\n" for nb in notebooks)
 
 
 # Stage docs and write features.rst / examples.rst at conf.py load time.

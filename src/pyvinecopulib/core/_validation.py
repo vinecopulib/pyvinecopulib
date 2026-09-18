@@ -11,17 +11,73 @@ same way.
 from __future__ import annotations
 
 import contextlib
-from typing import Any, Iterator, Optional, cast
+from collections.abc import Iterator
+from typing import Any, cast
 
-from array_api_compat import array_namespace
-
-from .protocols import ArrayT
+from .protocols import ArrayT, array_namespace
 
 __all__ = [
+  "declared_weights",
   "reject_covariates",
+  "reject_weights",
   "usable_observations",
   "validate_weights",
 ]
+
+
+def declared_weights(controls: object) -> Any:  # noqa: ANN401 - see below
+  """The observation weights a controls object carries, or ``None``.
+
+  One reading of the question every estimator in the package now asks of its
+  controls, because "no weights" has two spellings: ``FitControlsBicop`` and
+  ``FitControlsVinecop`` are upstream's and say it with an empty vector, while
+  the types this repository owns say it with ``None``.
+
+  Parameters
+  ----------
+  controls : object
+      Any controls object, or ``None``.
+
+  Returns
+  -------
+  array, or None
+      The weights, or ``None`` where there are none. Typed ``Any`` because it
+      is handed on to the ``ArrayT``-parameterized `validate_weights`, which a
+      bare ``Array`` does not satisfy.
+  """
+  weights = getattr(controls, "weights", None)
+  if weights is None:
+    return None
+  return None if len(weights) == 0 else weights
+
+
+def check_var_types(var_types: list[str] | None, d: int) -> tuple[str, ...]:
+  """Normalize and validate a vine's per-variable types.
+
+  Parameters
+  ----------
+  var_types : list of str, or None, optional
+      Per-variable types, ``"c"`` or ``"d"``; ``None`` means all continuous.
+  d : int
+      Dimension the types must cover.
+
+  Returns
+  -------
+  tuple of str
+      The validated types, one per variable.
+
+  Raises
+  ------
+  ValueError
+      If the length is not ``d`` or an entry is outside ``{"c", "d"}``.
+  """
+  types = ("c",) * d if var_types is None else tuple(var_types)
+  if len(types) != d:
+    raise ValueError(f"var_types has {len(types)} entries, expected {d}")
+  bad = [t for t in types if t not in ("c", "d")]
+  if bad:
+    raise ValueError(f"var_types entries must be 'c' or 'd'; got {bad[0]!r}")
+  return types
 
 
 def validate_univariate(values: ArrayT, *, name: str = "y") -> ArrayT:
@@ -51,7 +107,7 @@ def validate_univariate(values: ArrayT, *, name: str = "y") -> ArrayT:
 
 
 def validate_covariates(
-  x: Optional[ArrayT], n_rows: int, *, name: str = "x"
+  x: ArrayT | None, n_rows: int, *, name: str = "x"
 ) -> None:
   """Require a two-dimensional covariate matrix row-aligned with the data.
 
@@ -99,8 +155,8 @@ def validate_covariates(
 
 
 def validate_weights(
-  weights: Optional[ArrayT], values: ArrayT, *, name: str = "weights"
-) -> Optional[ArrayT]:
+  weights: ArrayT | None, values: ArrayT, *, name: str = "weights"
+) -> ArrayT | None:
   """Normalize and validate one real, finite, nonnegative weight per row.
 
   Parameters
@@ -206,7 +262,7 @@ def usable_observations(values: ArrayT, *, name: str = "y") -> ArrayT:
 
 
 def reject_covariates(
-  part: object, x: Optional[ArrayT], *, name: str = "x"
+  part: object, x: ArrayT | None, *, name: str = "x"
 ) -> None:
   """Raise if ``x`` was supplied to a part that fits unconditionally.
 
@@ -246,25 +302,22 @@ def reject_covariates(
     )
 
 
-def reject_array_controls(part: object, controls: object) -> None:
-  """Raise if an array landed in the ``controls`` slot.
+def reject_weights(part: object, controls: object) -> None:
+  """Raise if ``controls`` carries weights a part cannot honor.
 
-  Every estimator in the package takes the observations, then ``controls``.
-  ``Kde1d`` is the documented exception -- its second positional argument is
-  ``weights`` -- so ``kde.fit(x, w)`` is a spelling a reader carries over, and
-  on any other margin it binds the weights to ``controls``, where they are
-  ignored: an unweighted fit under a weighted-looking call.
-
-  Nothing in the library passes an array here, so refusing one costs nothing
-  and turns that typo into a message naming the keyword to use.
+  The weights counterpart of `reject_covariates`, and refused for the same
+  reason: every controls object can carry weights, so an estimator that does
+  not read them would return the *unweighted* fit under a weighted-looking
+  call. Whether it reads them is the declaration `supports_weights`, which is
+  what this asks.
 
   Parameters
   ----------
   part : object
-      The margin being fitted; named in the message. Either the instance or
-      the class, so a classmethod may pass ``cls``.
+      The margin, pair copula or vine being fitted; named in the message.
+      Either the instance or the class, so a classmethod may pass ``cls``.
   controls : object
-      Whatever arrived in the controls slot.
+      The controls the caller passed, or ``None``.
 
   Returns
   -------
@@ -273,18 +326,60 @@ def reject_array_controls(part: object, controls: object) -> None:
   Raises
   ------
   TypeError
-      If ``controls`` looks like an array rather than a configuration object.
+      If ``controls`` carries weights and ``part`` declares
+      ``supports_weights`` ``False``.
   """
-  if controls is None or hasattr(controls, "to_dict"):
+  if declared_weights(controls) is None:
     return
-  if not any(hasattr(controls, name) for name in ("shape", "__array__")):
+  if getattr(part, "supports_weights", False):
     return
   named = part if isinstance(part, type) else type(part)
   raise TypeError(
-    f"{named.__name__} received an array where `controls` goes. Observation "
-    "weights are the keyword-only `weights=`; `Kde1d` is the one class whose "
-    "second positional argument is `weights`."
+    f"{named.__name__} honors no observation weights, so controls.weights "
+    "would be fitted away; name a class that declares supports_weights, or "
+    "clear controls.weights."
   )
+
+
+def validate_declaration(
+  var_type: str | None,
+  support: tuple[float | None, float | None] | None,
+) -> tuple[str | None, tuple[float | None, float | None] | None]:
+  """Check and normalize what a caller declared about one variable.
+
+  The declaration a margin's ``fit`` / ``select`` / ``from_data`` takes
+  keyword-only, checked in one place so every margin refuses the same things
+  with the same message.
+
+  Parameters
+  ----------
+  var_type : {"c", "d", "zi"}, or None, optional
+      The variable's type, or ``None`` to leave it to the margin.
+  support : tuple of float, or None, optional
+      Declared bounds as ``(lo, hi)``, either end ``None`` for unbounded.
+
+  Returns
+  -------
+  tuple
+      The pair, with ``support`` normalized to a 2-tuple.
+
+  Raises
+  ------
+  ValueError
+      If ``var_type`` is not one of the accepted values, or ``support`` is not
+      an increasing pair.
+  """
+  if var_type is not None and var_type not in ("c", "d", "zi"):
+    raise ValueError(f"var_type={var_type!r} is not one of ['c', 'd', 'zi']")
+  if support is None:
+    return var_type, None
+  bounds = tuple(support)
+  if len(bounds) != 2:
+    raise ValueError(f"support must be a (lo, hi) pair; got {bounds!r}")
+  lo, hi = bounds
+  if lo is not None and hi is not None and not lo < hi:
+    raise ValueError(f"support={bounds!r} is not an increasing interval")
+  return var_type, (lo, hi)
 
 
 @contextlib.contextmanager

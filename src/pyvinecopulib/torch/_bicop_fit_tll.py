@@ -28,7 +28,8 @@ Only the ``constant`` method is supported here; the ``linear`` and
 from __future__ import annotations
 
 import math
-from typing import Callable, Optional, cast
+from collections.abc import Callable
+from typing import cast
 
 import torch
 from torch import Tensor
@@ -88,7 +89,7 @@ def _win_smoother(x: Tensor, wl: int) -> Tensor:
   caller has to check: on mean-shifted input the ratio grows.
   """
   n = x.shape[-1]
-  zero = torch.zeros(x.shape[:-1] + (1,), dtype=x.dtype, device=x.device)
+  zero = torch.zeros((*x.shape[:-1], 1), dtype=x.dtype, device=x.device)
   prefix = torch.cat([zero, x.cumsum(-1)], dim=-1)
   idx = torch.arange(n, device=x.device)
   hi = (idx + wl + 1).clamp(max=n)
@@ -135,7 +136,7 @@ def _ace_step(
   wl: int,
   iter_max: int,
   abs_tol: float,
-) -> "tuple[Tensor, Tensor, Tensor, Tensor, Tensor]":
+) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
   """One ACE pass, including the per-lane loop state it advances.
 
   Both of :func:`_ace`'s loops take this same step, differing in which score
@@ -198,7 +199,7 @@ _AceStep = Callable[..., "tuple[Tensor, Tensor, Tensor, Tensor, Tensor]"]
 
 #: The compiled :func:`_ace_step`, built on first use. Compiling costs seconds
 #: of Inductor, so it is not paid by a process that never asks for it.
-_COMPILED_ACE_STEP: Optional[_AceStep] = None
+_COMPILED_ACE_STEP: _AceStep | None = None
 
 
 def _compiled_ace_step() -> _AceStep:
@@ -217,7 +218,7 @@ def _compiled_ace_step() -> _AceStep:
   callable
       The compiled step, with :func:`_ace_step`'s signature.
   """
-  global _COMPILED_ACE_STEP
+  global _COMPILED_ACE_STEP  # noqa: PLW0603
   if _COMPILED_ACE_STEP is None:
     _COMPILED_ACE_STEP = torch.compile(_ace_step, dynamic=True)
   return _COMPILED_ACE_STEP
@@ -233,7 +234,7 @@ def _ace(
   # C++<->torch parity guard (tests/test_torch_tll_bicop.py) is unmoved; a lower
   # precision cannot resolve it, and would iterate to `outer_iter_max`
   # against its own rounding noise instead of converging.
-  outer_abs_tol: Optional[float] = None,
+  outer_abs_tol: float | None = None,
   inner_abs_tol: float = 1e-4,
   compile_step: bool = False,
 ) -> Tensor:
@@ -282,7 +283,7 @@ def _ace(
     outer_abs_tol = _ACE_OUTER_ABS_TOL * float(
       torch.finfo(dtype).eps / torch.finfo(torch.float64).eps
     )
-  wl = int(math.ceil(n / 5.0))
+  wl = math.ceil(n / 5.0)
   step = _compiled_ace_step() if compile_step else _ace_step
   # The outer loop has no condition beyond its own; the inner passes it.
   always = torch.ones(batch, dtype=torch.bool, device=device)
@@ -293,7 +294,7 @@ def _ace(
   # fewer and cheaper kernels. The pair is stacked back on return.
   ind0 = data[..., 0].argsort(dim=-1, stable=True)
   ind1 = data[..., 1].argsort(dim=-1, stable=True)
-  positions = torch.arange(n, device=device).expand(batch + (n,))
+  positions = torch.arange(n, device=device).expand((*batch, n))
   ranks0 = torch.empty_like(ind0).scatter_(-1, ind0, positions)
   ranks1 = torch.empty_like(ind1).scatter_(-1, ind1, positions)
 
@@ -516,8 +517,8 @@ def fit_tll_constant(
   grid_size: int = 30,
   mult: float = 1.0,
   grid_type: str = "normal",
-  pseudo_obs: Optional[Tensor] = None,
-  discrete_data: Optional[Tensor] = None,
+  pseudo_obs: Tensor | None = None,
+  discrete_data: Tensor | None = None,
   compile_fit: bool = False,
 ) -> tuple[Tensor, Tensor]:
   """Fit a TLL pair-copula via local-constant kernel density estimation.
@@ -635,7 +636,7 @@ def fit_tll_constant(
     * _SQRT_2PI_INV
   )
   c = f0 / phi_z
-  values = c.reshape(c.shape[:-1] + (grid_size, grid_size))
+  values = c.reshape((*c.shape[:-1], grid_size, grid_size))
 
   # The canonical TorchTllBicop builds an InterpolationGrid2D from
   # (grid_points, values) with norm_maxiter=25 — that's what matches C++

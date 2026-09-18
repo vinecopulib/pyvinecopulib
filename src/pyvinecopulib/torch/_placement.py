@@ -16,26 +16,32 @@ places every copula argument and every uniform draw at zero.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor
 
-__all__ = ["TensorPlacementMixin", "reference_tensor"]
+from ..core.protocols import Namespace, array_namespace
 
-# The mixin reads a module's registered tensors *when there are any*, so the
-# `nn.Module` declaration is for the type checker -- it lets `reference_tensor`
-# name the type it takes -- and costs nothing at run time, `class X(object)`
-# being `class X`. A real base here would put `nn.Module` ahead of the
-# canonical base in every subclass's MRO. A host that is not a module is
-# therefore fine, and resolves its placement from a declaration instead.
+__all__ = ["TENSOR_NS", "TensorPlacementMixin", "reference_tensor"]
+
+#: The array-API namespace for tensors, resolved once at import.
+#:
+#: Bare ``torch`` is **not** that namespace -- it has no ``matrix_transpose``,
+#: ``astype`` or ``isdtype`` -- so handing the module to something expecting a
+#: namespace works only for as long as the callee happens to avoid those three.
+TENSOR_NS: Namespace[Tensor] = array_namespace(torch.empty(0))
+
+# The `nn.Module` declaration is for the type checker only: a real base would
+# put it ahead of the canonical base in every subclass's MRO. A host that is
+# not a module resolves its placement from a declaration instead.
 if TYPE_CHECKING:
   _ModuleBase = torch.nn.Module
 else:
   _ModuleBase = object
 
 
-def reference_tensor(module: object) -> Optional[Tensor]:
+def reference_tensor(module: object) -> Tensor | None:
   """A floating-point tensor ``module`` holds, naming where its numerics run.
 
   ``parameters()`` and ``buffers()`` recurse, so a grid held by a submodule
@@ -126,14 +132,13 @@ class TensorPlacementMixin(_ModuleBase):
       ref = reference_tensor(self)
       if ref is not None:
         return ref
-    declared = torch.empty(
+    return torch.empty(
       0,
       dtype=getattr(self, "dtype", None) or torch.float64,
       device=getattr(self, "device", None) or "cpu",
     )
-    return declared
 
-  def _prep(self, a: Any) -> Tensor:  # noqa: ANN401 - any array type, placed
+  def _prep(self, a: object) -> Tensor:
     """Bring one input array onto this module's dtype and device.
 
     ``as_tensor`` rather than ``tensor`` or ``detach``, so a tensor that

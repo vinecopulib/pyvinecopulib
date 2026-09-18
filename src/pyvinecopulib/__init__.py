@@ -13,13 +13,13 @@ from typing import Any
 
 from ._cpu import require_x86_64_v3
 
-require_x86_64_v3()
+require_x86_64_v3()  # noqa: RUF067
 
-from . import core, families, margins, pyvinecopulib_ext, utils  # noqa: E402
+from . import core, families, margins, pyvinecopulib_ext, utils
 
 # The CPU check must run before importing the compiled extension.
-from ._deprecations import _DEPRECATED_TOP_LEVEL, _resolve_deprecated  # noqa: E402
-from .core import (  # noqa: E402
+from ._deprecations import _DEPRECATED_TOP_LEVEL, _resolve_deprecated
+from .core import (
   Bicop,
   BicopFamily,
   CVineStructure,
@@ -31,7 +31,7 @@ from .core import (  # noqa: E402
   Vinecop,
   Vinedist,
 )
-from .utils import to_pseudo_obs  # noqa: E402
+from .utils import to_pseudo_obs
 
 __version__ = pyvinecopulib_ext.__version__
 
@@ -46,12 +46,12 @@ __all__ = [
   "RVineStructure",
   "Vinecop",
   "Vinedist",
-  "to_pseudo_obs",
+  "__version__",
   "core",
   "families",
   "margins",
+  "to_pseudo_obs",
   "utils",
-  "__version__",
 ]
 
 #: Subpackages that need an optional dependency, reachable by attribute access
@@ -59,7 +59,7 @@ __all__ = [
 #: `__all__`, because `from pyvinecopulib import *` resolves every name in it
 #: and would then require every extra. `margins` is in `__all__` instead: it
 #: imports with no extra, deferring SciPy to the margin class that needs it.
-_LAZY_SUBPACKAGES = ("sklearn", "torch")
+_LAZY_SUBPACKAGES = ("sklearn", "torch")  # noqa: RUF067
 
 
 def __getattr__(name: str) -> Any:  # noqa: ANN401 - a name resolves to any

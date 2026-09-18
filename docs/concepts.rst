@@ -279,7 +279,7 @@ annotated with the pair controls: the narrower type is all `fit` reads, and a
 vine controls object satisfies it. The same holds for
 :class:`~pyvinecopulib.torch.FitControlsTorchVinecop`.
 
-The backend-neutral :class:`~pyvinecopulib.core.VinecopBase` can go
+The array-agnostic :class:`~pyvinecopulib.core.VinecopBase` can go
 further: a :class:`~pyvinecopulib.core.NonSimplifiedContext` lets each
 pair copula also depend on its conditioning-set value
 :math:`\mathbf u_{D_e}`, giving a actually **non-simplified** vine.
@@ -496,7 +496,7 @@ Vine fitting is a two-step procedure inherited from
    :class:`pyvinecopulib.core.Kde1d` (a boundary-corrected 1-d
    KDE) is the default both for the sklearn estimators and the
    notebook examples. ``Kde1d`` supports continuous, integer-discrete,
-   and zero-inflated numerical input via its ``type`` argument. Raw
+   and zero-inflated numerical input via its ``var_type`` argument. Raw
    categorical labels are not accepted; encode them before fitting only when
    an integer-valued model is appropriate.
 2. **Copula.** Given pseudo-observations
@@ -566,10 +566,10 @@ margin per variable, and evaluates on the scale of the data:
 
 .. code-block:: python
 
-   dist = pv.Vinedist.from_data(x)      # Kde1d margins by default
-   dist.logpdf(x)                       # log f(x), not log c(u)
-   dist.sample(1000, seeds=[1])         # draws on the x scale
-   dist.cdf(x)
+   dist = pv.Vinedist.from_data(y)      # Kde1d margins by default
+   dist.logpdf(y)                       # log f(y), not log c(u)
+   dist.sample(1000, seeds=[1])         # draws on the data scale
+   dist.cdf(y)
 
 Without it, using a fitted vine as a distribution means recomputing
 :math:`\hat F_j(x_j)` by hand, assembling the copula-scale matrix,
@@ -585,7 +585,7 @@ cdf). That is the whole required surface — the
 :class:`pyvinecopulib.core.MarginLike` protocol — and it is
 small, because every member added is one a foreign distribution object
 must happen to have. Structural implementations of the protocol and ``Kde1d``
-are accepted directly. ``scipy.stats`` distributions and OpenTURNS
+are accepted directly. ``scipy.stats`` distributions
 distributions are adapted automatically, as are continuous
 ``torch.distributions`` families that implement ``cdf`` (including ``Normal``,
 ``Gamma`` and ``LogNormal``). Torch distributions with atoms are rejected
@@ -626,11 +626,14 @@ distribution API ``pdf`` at an atom is :math:`+\infty`, and the mass is
 ``pmf``, so a discrete SciPy object must be routed through
 ``as_margin`` rather than passed straight through.
 
-Everything past ``pdf`` / ``cdf`` / ``icdf`` is optional and discovered
-at run time: ``var_type`` (``"c"``, ``"d"``, ``"zi"``), ``cdf_left``
-for :math:`F(y^-)`, ``logpdf``, ``sample``, ``support``, and
-``supports_covariates``. Each has a correct default, so a margin that
-declares none of them behaves as an unconditional continuous margin.
+Everything past ``pdf`` / ``cdf`` / ``icdf`` carries a default in the
+protocol: ``var_type`` (``"c"``, ``"d"``, ``"zi"``), ``cdf_left``
+for :math:`F(y^-)`, ``logpdf``, ``sample``, ``support``,
+``supports_covariates`` / ``supports_weights``, and the ``fit`` / ``select``
+/ ``controls_class`` a vine distribution calls. Each default is the fallback
+its consumer would otherwise apply, so a margin that inherits
+:class:`~pyvinecopulib.core.MarginLike` and defines only ``pdf`` / ``cdf`` /
+``icdf`` behaves as a *fixed*, unconditional, continuous margin.
 
 
 .. _concepts-exogenous-conditional:
@@ -641,7 +644,7 @@ Exogenous conditional distributions
 An exogenous conditional distribution :math:`Y \mid X=x` is distinct
 from both a non-simplified vine and
 :ref:`conditioning-set sampling <concepts-conditional>`. It applies the
-same row-aligned covariate matrix, shape :math:`(n, k)`, to the two
+same row-aligned covariate matrix, shape :math:`(n, p)`, to the two
 halves of Sklar's factorization:
 
 .. math::
@@ -680,28 +683,35 @@ sampling do accept row-aligned ``x``.
 Choosing margins
 ~~~~~~~~~~~~~~~~
 
-``margins=`` accepts a string alias, one margin broadcast across
-columns, a sequence of length :math:`d`, or a dict keyed by column;
-``margin_controls=`` accepts the same four shapes and says how each
-margin is fitted or selected:
+Which *class* each margin is comes from the distribution:
+``VinedistBase.margin_class``, beside the ``vinecop_class`` that names its
+copula half. ``pv.Vinedist`` names ``Kde1d``; naming another is a two-line
+subclass, and it is what the sklearn estimators' ``distribution=`` selects
+too. What varies per column is configuration and declaration, and they are
+separate arguments: ``margin_controls=`` says *how* a margin is fitted or
+selected, and ``var_types=`` / ``supports=`` say what the variable *is* --
+one entry per variable, exactly as ``var_types`` does on
+:meth:`pyvinecopulib.core.Bicop.from_data`.
 
 .. code-block:: python
 
-   pv.Vinedist.from_data(x)                       # "kde" (the default)
-   pv.Vinedist.from_data(x, margins="parametric")
-   pv.Vinedist.from_data(df, margins={"income": SciPyMargin(),
-                                      "score": st.norm(0, 1)})
-   pv.Vinedist.from_data(                         # bound one column only
-     df, margin_controls={"income": FitControlsMargin(support=(0.0, None))}
+   pv.Vinedist.from_data(y)                       # `Kde1d` per column
+
+   class ParametricVinedist(pv.Vinedist):         # a SciPy family per column
+     margin_class = SciPyMargin
+
+   ParametricVinedist.from_data(
+     df,
+     margin_controls={"income": FitControlsMargin(selection_criterion="bic")},
+     supports=[(0.0, None), None],                # bound one column only
    )
 
 Margins follow the same construct-then-``fit`` pattern as ``Bicop``,
 ``Vinecop`` and ``Kde1d``, with ``fit`` returning ``self``. One class is
-therefore both the specification and the fitted object, which is what
-lets a single ``margins=`` argument mix the two: ``from_data`` fits the
-margins that are not yet fitted and leaves the already-fitted ones
-alone. So ``st.norm(0, 1)`` above stays exactly :math:`N(0, 1)` while
-``SciPyMargin()`` chooses its family from the ``income`` column.
+therefore both the specification and the fitted object, which is what lets a
+distribution composed by construction mix the two: a margin with no ``fit`` of
+its own is *fixed*, so ``pv.Vinedist(copula, [frozen, Kde1d()]).fit(y)``
+re-estimates the second and leaves the first exactly as it was built.
 
 Choosing that family is :meth:`pyvinecopulib.margins.SciPyMargin.select`,
 a method on the margin rather than a separate class -- the shape
@@ -1003,7 +1013,7 @@ the tail, and two tools arrange that:
   to an equivalent one whose order tail equals a given set, without refitting.
   This is value-preserving: ``pdf`` and ``loglik`` are invariant.
 
-The same three tools exist backend-neutrally, so a custom or PyTorch vine
+The same three tools are array-agnostic, so a custom or PyTorch vine
 conditions the same way: :meth:`pyvinecopulib.core.VinecopBase.sample_conditional`,
 ``conditioning_set`` on its Rosenblatt transforms, and
 :meth:`pyvinecopulib.core.VinecopBase.select`'s own ``conditioning_set``.
@@ -1091,7 +1101,6 @@ Where to next
   ``examples/07_kde1d.ipynb``).
 * :mod:`pyvinecopulib.margins` — the marginal half of a vine distribution:
   :class:`~pyvinecopulib.margins.SciPyMargin` and
-  :class:`~pyvinecopulib.margins.OpenTURNSMargin` for a parametric family
   (named, or chosen from the data), and
   :class:`~pyvinecopulib.core.FitControlsMargin` to configure either
   (notebook ``examples/03_vine_distributions.ipynb``).
@@ -1104,14 +1113,12 @@ Where to next
   estimators :class:`~pyvinecopulib.sklearn.VineDensity` and
   :class:`~pyvinecopulib.sklearn.VineRegressor`. The notebook
   ``examples/08_sklearn_estimators.ipynb`` demonstrates them. Both
-  estimators accept a backend —
-  :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` by default,
-  :class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` for
-  PyTorch — from :mod:`pyvinecopulib.sklearn.backends`.
+  estimators fit a :class:`~pyvinecopulib.core.Vinedist` by default, and
+  ``distribution=TorchVinedist`` routes the same pipeline through PyTorch.
 * :mod:`pyvinecopulib.torch` — PyTorch evaluators
   :class:`~pyvinecopulib.torch.TorchTllBicop` and
   :class:`~pyvinecopulib.torch.TorchVinecop` for GPU placement and
-  autograd. Notebook ``examples/09_torch_backend.ipynb``.
+  autograd. Notebook ``examples/09_torch_evaluator.ipynb``.
 * :mod:`pyvinecopulib.utils` —
   :func:`~pyvinecopulib.utils.wdm` for weighted dependence
   measures (notebook ``examples/06_weighted_dependence_measures.ipynb``);
@@ -1131,7 +1138,7 @@ Nagler & Czado, 2025), which replaces the marginal CDF derivatives in
 :ref:`concepts-sklar` by finite differences (transparent to the
 user — pass ``var_types=["d", ...]`` to
 :meth:`pyvinecopulib.core.Vinecop.from_data` or set
-``type="d"`` on :class:`pyvinecopulib.core.Kde1d`).
+``var_type="d"`` on :class:`pyvinecopulib.core.Kde1d`).
 
 A discrete variable needs its left limit :math:`F(x^-)` alongside
 :math:`F(x)`, and there are two ways to supply them. The **expanded** layout is
@@ -1155,13 +1162,15 @@ The evaluators :class:`pyvinecopulib.core.Bicop` /
 :class:`~pyvinecopulib.core.Vinecop` and their PyTorch counterparts
 :class:`pyvinecopulib.torch.TorchTllBicop` /
 :class:`~pyvinecopulib.torch.TorchVinecop` are concrete implementations
-of two backend-neutral contracts, evaluated on either NumPy or PyTorch
+of two array-agnostic contracts, evaluated on either NumPy or PyTorch
 arrays:
 
 * :class:`~pyvinecopulib.core.BicopLike` — a pair copula, exposing
-  ``pdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample``
-  (``cdf`` and ``flip`` are optional capabilities, needed only on a discrete
-  edge and in structure selection respectively);
+  ``pdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample``,
+  plus what hosting it needs: ``cdf`` and ``with_var_types`` on a discrete
+  edge, ``flip`` in structure selection, and ``fit`` / ``select`` where it is
+  re-estimated. Those carry defaults that raise, naming the class, so
+  declining one is a clear refusal rather than a missing attribute;
 * :class:`~pyvinecopulib.core.VinecopLike` — a fitted vine, exposing
   ``pdf`` / ``cdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` /
   ``sample`` on an :class:`~pyvinecopulib.core.RVineStructure`;
@@ -1176,10 +1185,13 @@ contract — most easily by subclassing the canonical partial
 implementations :class:`~pyvinecopulib.core.BicopBase` /
 :class:`~pyvinecopulib.core.VinecopBase`, which fill in almost
 everything from a few primitives. A ``BicopBase`` subclass need only
-define ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherits numerical
-``hinv1`` / ``hinv2``, ``sample``, ``loglik``, and ``plot`` (``flip``
-and ``cdf`` are the two optional additions, needed to reuse the pair in
-structure selection and to host it on a discrete edge respectively); a
+define the *leaves* ``_pdf_raw`` / ``_hfunc1_raw`` / ``_hfunc2_raw`` and
+inherits numerical ``hinv1`` / ``hinv2``, ``sample``, ``loglik``, and
+``plot``. The public members are concrete dispatchers that apply the pair's
+``var_types`` before reaching a leaf, so overriding one of *those* orphans
+the leaf beneath it (``_flip_raw`` and ``_cdf_raw`` are the two optional
+additions, needed to reuse the pair in structure selection and to host it on
+a discrete edge respectively); a
 ``VinecopBase`` subclass need only return its pairs from
 ``get_pair_copula`` and inherits the whole tree-by-tree cascade. The
 bases are pure Python (no PyTorch), so custom pairs also work in a
@@ -1233,16 +1245,15 @@ is the hook for fitting either kind of custom vine edge by edge. See
 A custom pair copula reaches a :ref:`discrete <concepts-discrete>` edge
 too. The vine owns the discreteness: declare ``var_types`` when binding
 it, and :meth:`pyvinecopulib.core.VinecopBase.pair_var_types` says which
-of the pairs sees an argument with atoms. Wrapping such a pair in
-:class:`~pyvinecopulib.core.DiscreteBicop` builds the mixed-discrete
-density and h-functions out of its continuous ``pdf`` / ``cdf`` /
-``hfunc1`` / ``hfunc2``, so the only thing to add is a ``cdf``. A pair
-that can measure an atom more directly overrides
+of the pairs sees an argument with atoms. Declaring such a pair through
+``with_var_types`` builds the mixed-discrete density and h-functions out
+of its continuous primitives, so the only thing to add is a ``_cdf_raw``.
+A pair that can measure an atom more directly overrides
 :meth:`~pyvinecopulib.core.BicopBase.rect_prob` and
 :meth:`~pyvinecopulib.core.BicopBase.cond_interval_prob`, which is what
 :class:`~pyvinecopulib.torch.TorchTllBicop` does; one that models atoms
-itself is asked for its own variable types back, through
-``with_var_types``, and forwarded to.
+itself -- ``Bicop`` -- needs none of that: it is declared the same way
+and answers for the whole surface.
 :meth:`~pyvinecopulib.core.VinecopBase.fit` and
 :meth:`~pyvinecopulib.core.VinecopBase.select` take ``var_types`` as
 well, and hand each edge's types to the ``fit_edge`` callback.

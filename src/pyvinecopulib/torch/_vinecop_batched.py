@@ -13,20 +13,21 @@ unbatched operations in :mod:`._interp` — plus :class:`BatchedTreeLevel`,
 grids and wire-up tensors.
 
 Intentionally side-by-side with :mod:`._interp` rather than rewriting it:
-the legacy / lazy backends stay untouched so any regression is bisectable
+the legacy / lazy paths stay untouched so any regression is bisectable
 to this file.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 import torch
 from torch import Tensor
 
-from ..pyvinecopulib_ext import RVineStructure
 from ..core._trim import trim
-from ..core.vinecop_base import NotBatchable
+from ..core.extend import NotBatchable
+from ..pyvinecopulib_ext import RVineStructure
+from ._placement import TENSOR_NS
 
 if TYPE_CHECKING:
   from .vinecop import TorchVinecop
@@ -126,7 +127,7 @@ def interpolate_batched(
   # `trim` applies to a copula argument. Every `.clamp(0.0, 1.0)` in this
   # module is one of these, and the kernels apply `trim` on the way out.
   u = u.clamp(0.0, 1.0)
-  N, n, _ = u.shape
+  _N, _n, _ = u.shape
 
   i, wx, _ = _locate(grid_points, u[..., 0], is_linear)
   j, wy, _ = _locate(grid_points, u[..., 1], is_linear)
@@ -197,7 +198,7 @@ def integrate_1d_batched(
   if cond_var not in (1, 2):
     raise ValueError(f"cond_var must be 1 or 2; got {cond_var}")
   u = u.clamp(0.0, 1.0)
-  N, n, _ = u.shape
+  _N, _n, _ = u.shape
   m = grid_points.shape[0]
 
   if cond_var == 1:
@@ -227,7 +228,7 @@ def integrate_1d_batched(
   )  # (N, n)
   # Without the floor a grid line can carry no mass at all, so the
   # division needs its own guard.
-  return trim(number / denom.clamp_min(_MIN_MASS), torch)
+  return trim(number / denom.clamp_min(_MIN_MASS), TENSOR_NS)
 
 
 def _cond_strip(
@@ -268,7 +269,7 @@ def inverse_integrate_1d_batched(
   u: Tensor,
   cond_var: int,
   is_linear: bool = False,
-  cum: Optional[Tensor] = None,
+  cum: Tensor | None = None,
 ) -> Tensor:
   """Batched closed-form inverse of :func:`integrate_1d_batched`.
 
@@ -316,7 +317,7 @@ def inverse_integrate_1d_batched(
   cond, p = (u[..., 0], u[..., 1]) if cond_var == 1 else (u[..., 1], u[..., 0])
   nan_mask = torch.isnan(cond) | torch.isnan(p)
   cond = cond.nan_to_num(0.5).clamp(0.0, 1.0)
-  p = trim(p.nan_to_num(0.5), torch)
+  p = trim(p.nan_to_num(0.5), TENSOR_NS)
 
   fixed_axis = 1 if cond_var == 1 else 2
   cell = _batched_cell_index(grid_points, cond, is_linear)
@@ -351,8 +352,15 @@ def inverse_integrate_1d_batched(
   b = v_k
   c = below - target.squeeze(-1)
   denom = b + (b * b - 4.0 * a * c).clamp_min(0.0).sqrt()
-  safe_b = torch.where(b == 0.0, torch.ones_like(b), b)
-  safe_d = torch.where(denom == 0.0, torch.ones_like(denom), denom)
+  # Exact: these two guard a division, so what matters is whether the
+  # denominator is the value that cannot be divided by, not whether it is
+  # near it. A tolerance here would substitute 1.0 for a small real divisor.
+  safe_b = torch.where(b == 0.0, torch.ones_like(b), b)  # noqa: RUF069
+  safe_d = torch.where(
+    denom == 0.0,  # noqa: RUF069
+    torch.ones_like(denom),
+    denom,
+  )
   s = torch.where(
     denom <= 0.0,
     torch.zeros_like(denom),
@@ -404,7 +412,7 @@ def integrate_2d_batched(
     tmpint * u2 / tmpint1.clamp_min(_MIN_MASS),
     torch.zeros_like(tmpint),
   )
-  return trim(out, torch)
+  return trim(out, TENSOR_NS)
 
 
 # --------------------------------------------------------------------------- #
@@ -471,7 +479,7 @@ def _hfunc_from_cells(
   den = torch.lerp(
     flat_s.gather(1, base_lo + last), flat_s.gather(1, base_hi + last), w
   )
-  return trim(num / den.clamp_min(_MIN_MASS), torch)
+  return trim(num / den.clamp_min(_MIN_MASS), TENSOR_NS)
 
 
 class BatchedTreeLevel(torch.nn.Module):
@@ -568,8 +576,7 @@ class BatchedTreeLevel(torch.nn.Module):
     col1_h1 = hfunc1_prev.index_select(dim=1, index=self.col1_src)
     col1 = torch.where(self.col1_use_h1[None, :], col1_h1, col1_h2)
     # Stack into (N, n, 2): permute (n, N) -> (N, n) then stack on last dim.
-    u_e = torch.stack([col0.t(), col1.t()], dim=-1)
-    return u_e
+    return torch.stack([col0.t(), col1.t()], dim=-1)
 
   def _locate_both(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, ...]:
     """Grid location of both arguments: ``(i, wx, dx, j, wy, dy)``.
@@ -621,7 +628,7 @@ class BatchedTreeLevel(torch.nn.Module):
     # `hfunc1`, argument 1 for `hfunc2` -- which is the same swap again.
     both = torch.where(
       self.is_indep.repeat(2)[:, None],
-      trim(torch.cat([u[..., 1], u[..., 0]], 0), torch),
+      trim(torch.cat([u[..., 1], u[..., 0]], 0), TENSOR_NS),
       raw,
     )
     return both[: self.n_pairs], both[self.n_pairs :]
@@ -690,7 +697,7 @@ def inverse_waves(
         pred.add((m - 1, tree))
       elif tree - 1 >= 0:
         pred.add((m - 1, tree - 1))
-      deps[(var, tree)] = pred
+      deps[var, tree] = pred
   for cell in deps:
     deps[cell] &= deps.keys()
 
@@ -713,8 +720,8 @@ class BatchedWave(torch.nn.Module):
   """
 
   values: Tensor
-  sy: Optional[Tensor]
-  sx: Optional[Tensor]
+  sy: Tensor | None
+  sx: Tensor | None
   is_indep: Tensor
   col0_src: Tensor
   col1_src: Tensor
@@ -726,8 +733,8 @@ class BatchedWave(torch.nn.Module):
   def __init__(
     self,
     values: Tensor,
-    sy: Optional[Tensor],
-    sx: Optional[Tensor],
+    sy: Tensor | None,
+    sx: Tensor | None,
     is_indep: Tensor,
     col0_src: Tensor,
     col1_src: Tensor,
@@ -778,7 +785,7 @@ class BatchedWave(torch.nn.Module):
     raw = inverse_integrate_1d_batched(
       grid_points, self.values, u_e, 2, self._is_linear, self.sx
     )
-    inv = torch.where(self.is_indep[:, None], trim(col0, torch), raw)
+    inv = torch.where(self.is_indep[:, None], trim(col0, TENSOR_NS), raw)
     hinv2.index_copy_(0, self.out_hinv2, inv)
 
     if self.h1_rows.numel() == 0:
@@ -799,7 +806,7 @@ class BatchedWave(torch.nn.Module):
       h = integrate_1d_batched(grid_points, vals, u_after, 1, self._is_linear)
     h = torch.where(
       self.is_indep.index_select(0, rows)[:, None],
-      trim(u_after[..., 1], torch),
+      trim(u_after[..., 1], TENSOR_NS),
       h,
     )
     hfunc1.index_copy_(0, self.out_hfunc1, h)
@@ -915,9 +922,10 @@ class BatchedVine(torch.nn.Module):
     inverse_order: list[int],
     d: int,
     trunc_lvl: int,
-    waves: "list[BatchedWave]" = [],
+    waves: list[BatchedWave] | None = None,
   ) -> None:
     super().__init__()
+    waves = waves or []
     self.register_buffer("grid_points", grid_points)
     self.levels = torch.nn.ModuleList(levels)
     self.waves = torch.nn.ModuleList(waves)
@@ -943,7 +951,7 @@ class BatchedVine(torch.nn.Module):
     return cast("BatchedTreeLevel", self.levels[t])
 
   @classmethod
-  def from_torch_vinecop(cls, tvc: TorchVinecop) -> "BatchedVine":
+  def from_torch_vinecop(cls, tvc: TorchVinecop) -> BatchedVine:
     """Build a ``BatchedVine`` from a fitted :class:`TorchVinecop`.
 
     Walks ``tvc.pair_copulas`` and ``tvc.structure`` once; precomputes per-pair

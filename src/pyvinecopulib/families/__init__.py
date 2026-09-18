@@ -1,4 +1,4 @@
-"""Bivariate copula families.
+r"""Bivariate copula families.
 
 Every bivariate copula model in pyvinecopulib (and every pair-copula
 inside a vine) belongs to one of the families documented below. The
@@ -73,7 +73,10 @@ dependence, and closed-form Kendall's :math:`\\tau`.
 
 from ..pyvinecopulib_ext import (
   BicopFamily,
-  all,
+  # `pyvinecopulib.families.all` is the public name for the group of every
+  # family, and is read qualified. The shadowing is local to this module,
+  # which uses no builtin `all`.
+  all,  # noqa: A004
   analytic_derivs,
   archimedean,
   bb,
@@ -105,34 +108,34 @@ from ..pyvinecopulib_ext import (
 
 __all__ = [
   "BicopFamily",
-  # Individual families
-  "indep",
-  "gaussian",
-  "student",
-  "clayton",
-  "gumbel",
-  "frank",
-  "joe",
+  # Family groups
+  "all",
+  "analytic_derivs",
+  "archimedean",
+  "bb",
   "bb1",
   "bb6",
   "bb7",
   "bb8",
-  "tawn",
-  "tll",
-  # Family groups
-  "all",
-  "parametric",
+  "clayton",
+  "elliptical",
+  "extreme_value",
+  "frank",
+  "gaussian",
+  "gumbel",
+  # Individual families
+  "indep",
+  "itau",
+  "joe",
+  "lt",
   "nonparametric",
   "one_par",
-  "two_par",
-  "three_par",
-  "elliptical",
-  "archimedean",
-  "extreme_value",
-  "bb",
+  "parametric",
   "rotationless",
-  "lt",
+  "student",
+  "tawn",
+  "three_par",
+  "tll",
+  "two_par",
   "ut",
-  "itau",
-  "analytic_derivs",
 ]

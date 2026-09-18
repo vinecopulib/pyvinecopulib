@@ -6,65 +6,20 @@ same selected structure (identical R-vine matrix encoding) and same reused
 pair copulas (identical density, no re-fit).
 """
 
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
-
-import pyvinecopulib as pv
-from pyvinecopulib.core import BicopBase, BicopLike, NonSimplifiedContext
 
 # Internal C++ primitive backing Python structure selection (boost prim /
 # kruskal / Wilson). Imported from the extension directly as it has no public
 # wrapper; it is an implementation detail of ``VinecopBase.select``.
 from pyvinecopulib.pyvinecopulib_ext import _select_spanning_tree
 
+import pyvinecopulib as pv
+from pyvinecopulib.core import BicopBase, BicopLike, NonSimplifiedContext
+
 from .conftest import HostedVinecop, MinimalBicop, position_weighted_mean
-
-
-class _CppBicopLike:
-  """Adapt a ``Bicop`` to the ``(u, x)`` :class:`BicopLike` signature.
-
-  ``VinecopBase.select`` / ``fit`` call ``hfunc1(u, x_e)``; the
-  ``Bicop`` methods take ``(u, num_threads)`` instead, so wrap it (delegating
-  the full ``BicopLike`` surface, including ``flip``). Used only to drive the
-  array-agnostic selector from a NumPy backend in these tests.
-  """
-
-  def __init__(self, bicop: pv.Bicop) -> None:
-    self._b = bicop
-
-  def pdf(self, u: Any, x: Any = None) -> Any:
-    return self._b.pdf(np.asarray(u))
-
-  def cdf(self, u: Any, x: Any = None) -> Any:
-    return self._b.cdf(np.asarray(u))
-
-  def hfunc1(self, u: Any, x: Any = None) -> Any:
-    return self._b.hfunc1(np.asarray(u))
-
-  def hfunc2(self, u: Any, x: Any = None) -> Any:
-    return self._b.hfunc2(np.asarray(u))
-
-  def hinv1(self, u: Any, x: Any = None) -> Any:
-    return self._b.hinv1(np.asarray(u))
-
-  def hinv2(self, u: Any, x: Any = None) -> Any:
-    return self._b.hinv2(np.asarray(u))
-
-  def sample(
-    self,
-    n: int,
-    *,
-    x: Any = None,
-    qrng: bool = False,
-    seeds: Optional[list[int]] = None,
-  ) -> Any:
-    return self._b.sample(n, qrng=qrng, seeds=seeds or [])
-
-  def flip(self) -> "_CppBicopLike":
-    return _CppBicopLike(self._b.flip())
-
 
 _GAUSSIAN = pv.FitControlsBicop(family_set=[pv.families.gaussian])
 _TLL = pv.FitControlsBicop(family_set=[pv.families.tll])
@@ -72,14 +27,12 @@ _TLL = pv.FitControlsBicop(family_set=[pv.families.tll])
 
 def _gaussian_fit_edge(
   tree: int, edge: int, u_e: object, x_e: object
-) -> _CppBicopLike:
-  return _CppBicopLike(pv.Bicop.from_data(np.asarray(u_e), controls=_GAUSSIAN))
+) -> pv.Bicop:
+  return pv.Bicop.from_data(np.asarray(u_e), controls=_GAUSSIAN)
 
 
-def _tll_fit_edge(
-  tree: int, edge: int, u_e: object, x_e: object
-) -> _CppBicopLike:
-  return _CppBicopLike(pv.Bicop.from_data(np.asarray(u_e), controls=_TLL))
+def _tll_fit_edge(tree: int, edge: int, u_e: object, x_e: object) -> pv.Bicop:
+  return pv.Bicop.from_data(np.asarray(u_e), controls=_TLL)
 
 
 def _vine_controls(
@@ -284,14 +237,37 @@ def test_select_rejects_unknown_tree_algorithm() -> None:
 def test_select_skips_hfunctions_after_final_tree() -> None:
   calls = {"hfunc1": 0, "hfunc2": 0}
 
-  class CountingPair(_CppBicopLike):
-    def hfunc1(self, u: Any, x: Any = None) -> Any:
-      calls["hfunc1"] += 1
-      return super().hfunc1(u, x)
+  class CountingPair(BicopLike[Any]):
+    """A ``BicopLike`` that records which h-functions the cascade asks for.
 
-    def hfunc2(self, u: Any, x: Any = None) -> Any:
+    Inherits the contract rather than duck-typing it, which is how a pair
+    that serves only part of the surface gets the rest: `cdf` and
+    `with_var_types` raise from the protocol's own defaults, and this pair
+    never reaches either.
+    """
+
+    def __init__(self, bicop: pv.Bicop) -> None:
+      self._b = bicop
+
+    def pdf(self, u: Any) -> Any:
+      return self._b.pdf(u)
+
+    def hfunc1(self, u: Any) -> Any:
+      calls["hfunc1"] += 1
+      return self._b.hfunc1(u)
+
+    def hfunc2(self, u: Any) -> Any:
       calls["hfunc2"] += 1
-      return super().hfunc2(u, x)
+      return self._b.hfunc2(u)
+
+    def hinv1(self, u: Any) -> Any:
+      return self._b.hinv1(u)
+
+    def hinv2(self, u: Any) -> Any:
+      return self._b.hinv2(u)
+
+    def sample(self, n: int, **kwargs: Any) -> Any:
+      return self._b.sample(n)
 
     def flip(self) -> "CountingPair":
       return self
@@ -317,10 +293,9 @@ def test_bicop_base_flip_default_raises() -> None:
 
 
 def test_compiled_bicop_hosted_unwrapped_matches_vinecop() -> None:
-  # A simplified vine may host the compiled ``Bicop`` directly: it satisfies
-  # ``BicopLike`` nominally and takes no conditioning argument, so the cascade
-  # must not hand it one. Every other pair here goes through ``_CppBicopLike``,
-  # which accepts (and drops) ``x``; this pins the unwrapped case.
+  # A simplified vine hosts the compiled ``Bicop`` directly: it satisfies
+  # ``BicopLike`` structurally and takes no conditioning argument, so the
+  # cascade must not hand it one.
   d = 4
   pairs = [
     [
@@ -487,13 +462,13 @@ def test_a_thresholded_edge_does_not_consume_the_flip_probe() -> None:
   assert seen and min(seen) > 0
 
   class _NoFlipPair(pv.core.BicopBase[Any]):
-    def pdf(self, u: Any, *, x: Any = None) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       return np.ones(u.shape[0])
 
-    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 1]
 
-    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 0]
 
   def fit_edge(tree: int, edge: int, u_e: Any, x_e: Any) -> Any:
@@ -663,12 +638,15 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
   differ in exactly one thing.
   """
 
+  #: Its leaves take `x`, so `pair_eval` may forward one.
+  supports_covariates: bool = True
+
   def __init__(
     self,
     *,
     slope: float = 0.0,
     rho_max: float = 0.95,
-    bicop: Optional[pv.Bicop] = None,
+    bicop: pv.Bicop | None = None,
   ) -> None:
     self._slope = float(slope)
     self._rho_max = float(rho_max)
@@ -679,15 +657,15 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
     u: np.ndarray,
     /,
     controls: Any = None,
-    var_types: Optional[list[str]] = None,
+    var_types: list[str] | None = None,
     *,
-    x: Optional[np.ndarray] = None,
+    x: np.ndarray | None = None,
   ) -> "_ConditionalGaussian":
     del controls, var_types, x
     self._bicop = pv.Bicop.from_data(np.asarray(u), controls=_GAUSSIAN)
     return self
 
-  def _per_row(self, x: Optional[np.ndarray]) -> Optional[np.ndarray]:
+  def _per_row(self, x: np.ndarray | None) -> np.ndarray | None:
     """Per-row correlations, or ``None`` to take the scalar path."""
     if x is None or self._slope == 0.0:
       return None
@@ -702,22 +680,22 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
     z = anchor + shift
     return (self._rho_max * np.tanh(z)).reshape(-1, 1)
 
-  def _call(self, name: str, u: np.ndarray, x: Optional[np.ndarray]) -> Any:
+  def _call(self, name: str, u: np.ndarray, x: np.ndarray | None) -> Any:
     assert self._bicop is not None, "fit the pair first"
     method = getattr(self._bicop, name)
     per_row = self._per_row(x)
-    return method(u) if per_row is None else method(u, per_row)
+    return method(u) if per_row is None else method(u, parameters=per_row)
 
-  def pdf(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+  def _pdf_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
     return self._call("pdf", u, x)
 
-  def hfunc1(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+  def _hfunc1_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
     return self._call("hfunc1", u, x)
 
-  def hfunc2(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+  def _hfunc2_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
     return self._call("hfunc2", u, x)
 
-  def flip(self) -> "_ConditionalGaussian":
+  def _flip_raw(self) -> "_ConditionalGaussian":
     assert self._bicop is not None
     return _ConditionalGaussian(
       slope=self._slope, rho_max=self._rho_max, bicop=self._bicop.flip()
@@ -753,9 +731,9 @@ def test_a_conditional_pair_with_no_x_dependence_recovers_the_cpp_structure(
   )
   mine.select(
     u,
-    fit_edge=lambda t, e, u_e, x_e, var_types=("c", "c"): (
-      _ConditionalGaussian(slope=0.0).fit(u_e)
-    ),
+    fit_edge=lambda t, e, u_e, x_e, var_types=("c", "c"): _ConditionalGaussian(
+      slope=0.0
+    ).fit(u_e),
   )
   theirs = pv.Vinecop.from_data(
     u, controls=_vine_controls(pv.families.gaussian)
@@ -791,7 +769,7 @@ def test_the_same_pair_with_x_dependence_on_is_a_different_model() -> None:
     )
     for slope in (0.0, 1.5)
   ]
-  for vine, slope in zip(fitted, (0.0, 1.5)):
+  for vine, slope in zip(fitted, (0.0, 1.5), strict=False):
     vine.fit(
       u,
       fit_edge=lambda t, e, u_e, x_e, var_types=("c", "c"), s=slope: (
@@ -823,13 +801,13 @@ def test_select_fits_the_model_it_then_evaluates(seed: int, d: int) -> None:
   """
   slope = 0.6
   u = _correlated_pseudo_obs(seed, d, n=600)
-  fitted: list[tuple[Any, np.ndarray, Optional[np.ndarray]]] = []
+  fitted: list[tuple[Any, np.ndarray, np.ndarray | None]] = []
 
   def fit_edge(
     t: int,
     e: int,
     u_e: np.ndarray,
-    x_e: Optional[np.ndarray],
+    x_e: np.ndarray | None,
     var_types: tuple[str, str] = ("c", "c"),
   ) -> Any:
     pair = _ConditionalGaussian(slope=slope).fit(u_e)

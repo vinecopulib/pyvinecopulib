@@ -7,6 +7,10 @@ import numpy as np
 import pytest
 
 pytest.importorskip("sklearn")
+pytest.importorskip("pandas")
+
+import pandas as pd
+from sklearn.exceptions import NotFittedError
 
 from pyvinecopulib.sklearn import VineRegressor
 
@@ -36,7 +40,7 @@ def regression_setup(
   regression_data: _RegressionData,
 ) -> _Setup:
   """Setup regression data and split."""
-  X, y, true_coef, noise_std = regression_data
+  X, y, true_coef, _noise_std = regression_data
   X_train, X_test = X[:200], X[200:]
   y_train, y_test = y[:200], y[200:]
 
@@ -51,7 +55,7 @@ def fitted_regressor(
   regression_setup: _Setup,
 ) -> _Fitted:
   """Fitted VineRegressor for testing."""
-  X_train, X_test, y_train, y_test, true_mean, true_coef = regression_setup
+  X_train, X_test, y_train, y_test, true_mean, _true_coef = regression_setup
   regressor = VineRegressor(
     mean=True
   )  # Only mean, no quantiles for simpler testing
@@ -74,7 +78,7 @@ def test_predict_mean_only(
   regression_setup: _Setup,
 ) -> None:
   """Test prediction with mean only."""
-  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  X_train, X_test, y_train, _y_test, _, _ = regression_setup
   regressor = VineRegressor(mean=True)
   regressor.fit(X_train, y_train)
   pred_mean = regressor.predict(X_test)
@@ -88,7 +92,7 @@ def test_predict_quantiles_only(
   regression_setup: _Setup,
 ) -> None:
   """Test prediction with quantiles only."""
-  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  X_train, X_test, y_train, _y_test, _, _ = regression_setup
   regressor = VineRegressor(mean=False, quantiles=[0.1, 0.5, 0.9])
   regressor.fit(X_train, y_train)
   pred_quant = regressor.predict(X_test)
@@ -115,7 +119,7 @@ def test_predict_mean_and_quantiles(
   regression_setup: _Setup,
 ) -> None:
   """Test prediction with both mean and quantiles."""
-  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  X_train, X_test, y_train, _y_test, _, _ = regression_setup
   regressor = VineRegressor(mean=True, quantiles=[0.1, 0.9])
   regressor.fit(X_train, y_train)
   pred_both = regressor.predict(X_test)
@@ -127,7 +131,7 @@ def test_prediction_accuracy(
   fitted_regressor: _Fitted,
 ) -> None:
   """Test prediction accuracy against true mean."""
-  regressor, _, X_test, _, y_test, true_mean = fitted_regressor
+  regressor, _, X_test, _, _y_test, true_mean = fitted_regressor
 
   pred_mean = regressor.predict(X_test)
   true_mean_test = true_mean(X_test)
@@ -145,7 +149,7 @@ def test_quantile_predictions(
   regression_setup: _Setup,
 ) -> None:
   """Test quantile prediction properties."""
-  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  X_train, X_test, y_train, _y_test, _, _ = regression_setup
 
   regressor_quant = VineRegressor(mean=False, quantiles=[0.1, 0.5, 0.9])
   regressor_quant.fit(X_train, y_train)
@@ -165,7 +169,7 @@ def test_wrong_dimensions(
   fitted_regressor: _Fitted,
 ) -> None:
   """Test error handling for wrong dimensions."""
-  regressor, _, X_test, _, y_test, _ = fitted_regressor
+  regressor, _, X_test, _, _y_test, _ = fitted_regressor
 
   # Wrong number of features
   X_wrong = X_test[:, :1]  # Only 1 feature instead of 2
@@ -243,21 +247,21 @@ def test_normalize_weights_parameter(
   pred_raw = reg_raw.predict(X_test)
 
   # The conditional mean is `sum(w y) / sum(w)`, so it does not depend on the
-  # weights' scale: the flag changes what `_weights_for_batch` returns -- the
-  # hook a caller combining several vines normalizes across -- not the
-  # prediction. This test used to assert the opposite, pinning a mean that was
-  # scaled by the weight total.
+  # weights' scale: the flag changes what `conditional_weights` returns -- what
+  # a caller combining several vines normalizes across -- not the prediction.
+  # This test used to assert the opposite, pinning a mean that was scaled by
+  # the weight total.
   np.testing.assert_allclose(pred_default, pred_raw, rtol=1e-10, atol=1e-10)
-  w_default = reg_default._weights_for_batch(X_test[:3])
-  w_raw = reg_raw._weights_for_batch(X_test[:3])
+  w_default = reg_default.conditional_weights(X_test[:3])
+  w_raw = reg_raw.conditional_weights(X_test[:3])
   np.testing.assert_allclose(w_default.sum(axis=1), 1.0)
   assert not np.allclose(w_default, w_raw)
 
 
-def test_copula_marginal_density_single_covariate(
+def testcopula_marginal_density_single_covariate(
   regression_setup: _Setup,
 ) -> None:
-  """``_copula_marginal_density`` recovers :math:`c_X \\equiv 1` in 2-d.
+  r"""``copula_marginal_density`` recovers :math:`c_X \\equiv 1` in 2-d.
 
   Integrating a bivariate copula density over one of its arguments is
   exactly one, so a fit with a single covariate pins the Simpson
@@ -268,7 +272,7 @@ def test_copula_marginal_density_single_covariate(
   X_train, X_test, y_train, _, _, _ = regression_setup
   reg = VineRegressor(mean=True, batch_size=7).fit(X_train[:, :1], y_train)
 
-  c_x = reg._copula_marginal_density(X_test[:20, :1], n_grid=200)
+  c_x = reg.copula_marginal_density(X_test[:20, :1], n_grid=200)
   assert c_x.shape == (20,)
   assert np.all(c_x > 0)
   assert np.all(np.isfinite(c_x))
@@ -278,8 +282,25 @@ def test_copula_marginal_density_single_covariate(
   assert abs(np.median(c_x) - 1.0) < 1e-2
   assert np.allclose(c_x, 1.0, atol=0.25)
 
-  log_c = reg._copula_marginal_density(X_test[:20, :1], n_grid=200, log=True)
+  log_c = reg.copula_marginal_density(X_test[:20, :1], n_grid=200, log=True)
   assert np.allclose(log_c, np.log(c_x))
+
+
+def test_regressor_dataframe_inputs_are_validated(
+  regression_setup: _Setup,
+) -> None:
+  """The regressor accepts DataFrames at fit and marginal-density time."""
+  X_train, X_test, y_train, _, _, _ = regression_setup
+  train = pd.DataFrame({"x": X_train[:, 0]})
+  query = pd.DataFrame({"x": X_test[:20, 0]})
+  reg = VineRegressor(mean=True, batch_size=7).fit(train, y_train.tolist())
+
+  density = reg.copula_marginal_density(query, n_grid=200)
+  assert density.shape == (len(query),)
+  assert np.all(np.isfinite(density))
+
+  with pytest.raises(ValueError, match="Column names/order do not match"):
+    reg.copula_marginal_density(query.rename(columns={"x": "other"}))
 
 
 def test_vine_regressor_is_a_regressor_to_sklearn() -> None:
@@ -339,62 +360,39 @@ def test_normalize_weights_does_not_move_the_conditional_mean(
   assert np.std(preds[0]) < 5.0 * np.std(y)
 
 
-def test_predict_from_iter_honors_a_foreign_generator(
+def test_conditional_weights_are_the_estimator_before_it_is_summarized(
   regression_data: _RegressionData,
 ) -> None:
-  """The injection contract, which only a foreign `iter_weights` exercises.
+  """`predict` is `conditional_weights` against `y_nodes_`, and says so.
 
-  `_predict_from_iter` takes the weight source as an argument so an
-  ensembling wrapper can average several vines' weights and reuse one
-  prediction step. In-library there is exactly one caller and it always passes
-  `self._iter_weights`, so nothing here pinned the part a foreign generator
-  depends on: that the triple is `(weights, start, end)` with `start`/`end`
-  row offsets into the `X` handed in, written straight to `y_pred[start:end]`
-  rather than re-derived from a batch counter.
-
-  Two batches of a non-default size is what makes the test bite -- a single
-  batch starts at zero and covers everything, so it hides every offset bug.
+  The weights are what a caller combining several fitted vines works with, so
+  they are reachable and the response nodes they are attached to are a fitted
+  attribute. Batching is internal: a query longer than `batch_size` comes back
+  as one matrix, in the order it was asked in.
   """
   X, y, _, _ = regression_data
-  est = VineRegressor(mean=True, quantiles=[0.25, 0.75]).fit(X, y)
+  est = VineRegressor(mean=True, batch_size=3).fit(X, y)
   X_test = X[:7]
-  expected = est.predict(X_test)
 
-  # The same weights the built-in generator would yield, rebatched: equality
-  # with `predict` is a claim about the offsets, so the weights must not vary.
-  n_nodes = est._y_nodes.shape[0]
-  splits = [(0, 3), (3, 7)]
-
-  def foreign(X_: np.ndarray) -> Any:
-    for start, end in splits:
-      w = est._weights_for_batch(X_[start:end])
-      assert w.shape == (end - start, n_nodes)
-      yield w, start, end
-
+  w = est.conditional_weights(X_test)
+  assert w.shape == (7, est.y_nodes_.shape[0])
   np.testing.assert_allclose(
-    est._predict_from_iter(X_test, foreign), expected, rtol=1e-12, atol=0.0
-  )
-
-  # Row-normalized weights are what an averaging wrapper hands over, and the
-  # mean is a ratio, so normalizing must not move the answer.
-  def normalized(X_: np.ndarray) -> Any:
-    for start, end in splits:
-      w = est._weights_for_batch(X_[start:end])
-      yield w / w.sum(axis=1, keepdims=True), start, end
-
-  np.testing.assert_allclose(
-    est._predict_from_iter(X_test, normalized), expected, rtol=1e-10, atol=0.0
-  )
-
-  # The offsets are read, not inferred: descending batches land where they say
-  # they do, which a batch counter would get wrong.
-  def reversed_order(X_: np.ndarray) -> Any:
-    for start, end in reversed(splits):
-      yield est._weights_for_batch(X_[start:end]), start, end
-
-  np.testing.assert_allclose(
-    est._predict_from_iter(X_test, reversed_order),
-    expected,
+    w @ est.y_nodes_ / w.sum(axis=1),
+    est.predict(X_test),
     rtol=1e-12,
     atol=0.0,
   )
+  # Row 0 of a seven-row query is row 0 of a one-row one: a batch is written
+  # at the offset it was read at, not at a batch counter.
+  np.testing.assert_allclose(
+    est.conditional_weights(X_test[:1])[0], w[0], rtol=0.0, atol=0.0
+  )
+
+
+def test_conditional_weights_needs_a_fit(
+  regression_data: _RegressionData,
+) -> None:
+  """Every post-fit method checks first, and this is one."""
+  X, _, _, _ = regression_data
+  with pytest.raises(NotFittedError):
+    VineRegressor().conditional_weights(X[:2])

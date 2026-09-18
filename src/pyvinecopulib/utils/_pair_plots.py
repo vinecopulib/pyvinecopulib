@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,10 +15,43 @@ from ..pyvinecopulib_ext import (
 )
 
 
+def _zspace_density(
+  cop: Bicop,
+  grid_u: np.ndarray,
+  grid_size: int,
+  z1: np.ndarray,
+  z2: np.ndarray,
+) -> np.ndarray:
+  """Copula density carried to the normal scale by the change of variables.
+
+  Parameters
+  ----------
+  cop : Bicop
+      The fitted pair copula.
+  grid_u : ndarray, shape (grid_size ** 2, 2), dtype float
+      Evaluation grid on the copula scale.
+  grid_size : int
+      Side length of the grid.
+  z1, z2 : ndarray, shape (grid_size, grid_size), dtype float
+      Normal-scale coordinates of the same grid.
+
+  Returns
+  -------
+  ndarray, shape (grid_size, grid_size), dtype float
+      Density values, nudged off perfectly flat -- which ``contour`` refuses.
+  """
+  cvals = cop.pdf(grid_u).reshape(grid_size, grid_size)
+  dens = cvals * norm_pdf(z1) * norm_pdf(z2)
+  if np.allclose(dens.min(), dens.max()):
+    dens = dens.copy()
+    dens.flat[0] *= 1.000001
+  return dens
+
+
 def pairs_copula_data(
   data: ArrayLike,
   main: str = "",
-  cols: Optional[list[str]] = None,
+  cols: list[str] | None = None,
   grid_size: int = 50,
   bins: int = 20,
   scatter_size: float = 6.0,
@@ -61,7 +94,7 @@ def pairs_copula_data(
   try:
     U = np.asarray(data, dtype=float)
   except (ValueError, TypeError) as e:
-    raise ValueError(f"Could not convert `data` to numeric array: {e}")
+    raise ValueError(f"Could not convert `data` to numeric array: {e}") from e
 
   if U.ndim != 2:
     raise ValueError("`data` must be a 2D array-like (n,d).")
@@ -147,7 +180,9 @@ def pairs_copula_data(
           tau = wdm(x, y, "kendall")
           tau_text = f"τ = {tau:.2f}"
           fontsize = 10 + 8 * abs(tau)
-        except Exception:
+        # `wdm` refuses a degenerate column; the panel then carries no
+        # coefficient rather than failing the whole figure.
+        except Exception:  # noqa: BLE001
           tau_text = "τ = N/A"
           fontsize = 10
 
@@ -173,35 +208,14 @@ def pairs_copula_data(
         y = U[:, i].flatten()
         uv = np.column_stack([x, y])
 
+        # Two guards, not one: the figure survives either failure, but the
+        # panel says which happened. One `try` over both reported a contour
+        # error as "Fit failed", naming a step that had succeeded.
         try:
-          controls = FitControlsBicop(family_set=[BicopFamily.tll])
-          cop = Bicop.from_data(uv, controls=controls)
-
-          # Temporarily enforce continuous var-types for pdf evaluation
-          vt = cop.var_types
-          cop.var_types = ["c", "c"]
-          cvals = cop.pdf(grid_u).reshape(grid_size, grid_size)
-          cop.var_types = vt
-
-          dens = (
-            cvals * norm_pdf(Z1) * norm_pdf(Z2)
-          )  # z-space density via Jacobian
-
-          # Safeguard for flat fields (to avoid contour errors)
-          if np.allclose(dens.min(), dens.max()):
-            dens = dens.copy()
-            dens.flat[0] *= 1.000001
-
-          # Contours in z-space
-          ax.contour(
-            Z1,
-            Z2,
-            dens,
-            levels=[0.01, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5],
-            linewidths=0.8,
+          cop = Bicop.from_data(
+            uv, controls=FitControlsBicop(family_set=[BicopFamily.tll])
           )
-        except Exception as e:
-          # If copula fitting or plotting fails, show a simple message
+        except Exception as e:  # noqa: BLE001 - any family may refuse a panel
           ax.text(
             0.5,
             0.5,
@@ -212,6 +226,27 @@ def pairs_copula_data(
             fontsize=10,
             weight="bold",
           )
+        else:
+          try:
+            dens = _zspace_density(cop, grid_u, grid_size, Z1, Z2)
+            ax.contour(
+              Z1,
+              Z2,
+              dens,
+              levels=[0.01, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5],
+              linewidths=0.8,
+            )
+          except Exception as e:  # noqa: BLE001 - as the fit above
+            ax.text(
+              0.5,
+              0.5,
+              f"Draw failed:\n{type(e).__name__}",
+              transform=ax.transAxes,
+              ha="center",
+              va="center",
+              fontsize=10,
+              weight="bold",
+            )
 
         set_zspace(ax)
 

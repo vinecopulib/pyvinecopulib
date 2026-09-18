@@ -67,8 +67,7 @@ inline Vinecop vc_from_structure(
 }
 
 inline Vinecop vc_from_data(
-    const Eigen::MatrixXd& data,
-    const FitControlsVinecop* controls_ptr = nullptr,
+    const Eigen::MatrixXd& u, const FitControlsVinecop* controls_ptr = nullptr,
     std::optional<RVineStructure> structure = std::nullopt,
     std::optional<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>>
         matrix = std::nullopt,
@@ -80,13 +79,13 @@ inline Vinecop vc_from_data(
         "Only one of 'structure' or 'matrix' can be provided, not both.");
   } else if (structure) {
     // Use the structure-based constructor
-    return Vinecop(data, *structure, var_types, controls);
+    return Vinecop(u, *structure, var_types, controls);
   } else if (matrix) {
     // Use the matrix-based constructor
-    return Vinecop(data, *matrix, var_types, controls);
+    return Vinecop(u, *matrix, var_types, controls);
   } else {
     // Use the default constructor
-    return Vinecop(data, RVineStructure(), var_types, controls);
+    return Vinecop(u, RVineStructure(), var_types, controls);
   }
 }
 
@@ -135,12 +134,58 @@ are:
 - ``Vinecop.from_json()``: Instantiate from a JSON string.
 )""";
 
+  // Written here rather than lifted: the binding drops the C++ `num_threads`
+  // argument (#326), reading the count off the controls instead, so the
+  // upstream text documents a parameter this signature does not have.
+  const char* fit_doc = R"""(
+  Fits the pair copulas of a pre-specified vine copula model.
+
+  The structure and the pair-copula families are taken as given, so this is
+  ``Bicop.fit()`` on each pair copula in turn. ``Vinecop.select()`` with
+  ``select_families=False`` on its controls does the same thing.
+
+  Parameters
+  ----------
+  u : array, shape (n, d) or (n, d + k), dtype float
+      Input data matrix. With ``k`` discrete variables their left limits are
+      required too; see ``Vinecop.select`` on the layouts.
+
+  controls : FitControlsBicop, or None, optional
+      The controls for each bivariate fit, whose ``num_threads`` is the thread
+      count the fit runs at. Defaults to the default constructor.
+
+  Returns
+  -------
+  Vinecop
+      The fitted model, which is this object.
+  )""";
+
+  const char* from_json_doc = R"""(
+  Instantiates a ``Vinecop`` from a JSON string.
+
+  Takes the JSON text ``Vinecop.to_json()`` writes, not a decoded object.
+
+  Parameters
+  ----------
+  json : str
+      The JSON text to read, as ``Vinecop.to_json()`` writes it.
+
+  check : bool, default=True
+      Whether to check that the ``"structure"`` node is a valid R-vine
+      structure.
+
+  Returns
+  -------
+  Vinecop
+      The vine copula the text describes.
+  )""";
+
   const char* from_data_doc = R"""(
   Factory function to create a Vinecop from data.
 
   Parameters
   ----------
-  data : array, shape (n, d) or (n, d + k), dtype float
+  u : array, shape (n, d) or (n, d + k), dtype float
       Input data matrix. With ``k`` discrete variables their left limits are
       required too; see ``Vinecop.select`` on the layouts.
 
@@ -380,7 +425,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       // fifth, behind `structure`, so `from_data(u, controls)` bound the
       // controls object as a structure. The three declarations are
       // keyword-only for the same reason.
-      .def_static("from_data", &vc_from_data, "data"_a,
+      .def_static("from_data", &vc_from_data, "u"_a,
                   "controls"_a.sig("FitControlsVinecop()") = nb::none(),
                   nb::kw_only(), "structure"_a = std::nullopt,
                   "matrix"_a = std::nullopt,
@@ -390,8 +435,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
                   vinecop_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_json", &vc_from_json, "json"_a, "check"_a = true,
-                  vinecop_doc.ctor.doc_2args_input_check,
-                  nb::call_guard<nb::gil_scoped_release>())
+                  from_json_doc, nb::call_guard<nb::gil_scoped_release>())
       .def("to_file", &Vinecop::to_file, "filename"_a, vinecop_doc.to_file.doc,
            nb::call_guard<nb::gil_scoped_release>())
       .def(
@@ -495,31 +539,30 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       // disagree with it.
       .def(
           "select",
-          [](Vinecop& self, const Eigen::MatrixXd& data,
+          [](Vinecop& self, const Eigen::MatrixXd& u,
              const FitControlsVinecop* controls) -> Vinecop& {
             {
               nb::gil_scoped_release release;
-              self.select(data,
-                          controls ? *controls : default_vinecop_controls());
+              self.select(u, controls ? *controls : default_vinecop_controls());
             }
             return self;
           },
-          "data"_a, "controls"_a.sig("FitControlsVinecop()") = nb::none(),
+          "u"_a, "controls"_a.sig("FitControlsVinecop()") = nb::none(),
           vinecop_doc.select.doc, nb::rv_policy::reference_internal)
       .def(
           "fit",
-          [](Vinecop& self, const Eigen::MatrixXd& data,
+          [](Vinecop& self, const Eigen::MatrixXd& u,
              const FitControlsBicop* controls) -> Vinecop& {
             {
               nb::gil_scoped_release release;
               const FitControlsBicop& resolved =
                   controls ? *controls : default_bicop_controls();
-              self.fit(data, resolved, resolved.get_num_threads());
+              self.fit(u, resolved, resolved.get_num_threads());
             }
             return self;
           },
-          "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
-          vinecop_doc.fit.doc, nb::rv_policy::reference_internal)
+          "u"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(), fit_doc,
+          nb::rv_policy::reference_internal)
       // `parameters` (optional) selects the per-observation-parameter overload:
       // an n x npars matrix, one full-vine parameter vector per row, columns in
       // the (tree, edge, parameter) order of `scores()`. Continuous,
@@ -534,8 +577,9 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
               return cop.pdf(std::move(u), *parameters, num_threads);
             return cop.pdf(std::move(u), num_threads);
           },
-          "u"_a, "num_threads"_a = 1, "parameters"_a = nb::none(),
-          pdf_perobs_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
+          "u"_a, nb::kw_only(), "num_threads"_a = 1,
+          "parameters"_a = nb::none(), pdf_perobs_doc.c_str(),
+          nb::call_guard<nb::gil_scoped_release>())
       .def(
           "logpdf",
           [](const Vinecop& cop, Eigen::MatrixXd u, size_t num_threads,
@@ -545,8 +589,9 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
               return cop.logpdf(std::move(u), *parameters, num_threads);
             return cop.logpdf(std::move(u), num_threads);
           },
-          "u"_a, "num_threads"_a = 1, "parameters"_a = nb::none(),
-          logpdf_perobs_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
+          "u"_a, nb::kw_only(), "num_threads"_a = 1,
+          "parameters"_a = nb::none(), logpdf_perobs_doc.c_str(),
+          nb::call_guard<nb::gil_scoped_release>())
       .def(
           "pdf_full",
           [](const Vinecop& cop, Eigen::MatrixXd u, size_t num_threads,
@@ -574,50 +619,67 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             }
             return out;
           },
-          "u"_a, "num_threads"_a = 1, "keep_all"_a = true,
+          "u"_a, nb::kw_only(), "num_threads"_a = 1, "keep_all"_a = true,
           "parameters"_a = nb::none(), pdf_full_doc)
-      .def("cdf", &Vinecop::cdf, "u"_a, "N"_a = 10000, "num_threads"_a = 1,
-           "seeds"_a = std::vector<int>(), vinecop_doc.cdf.doc,
-           nb::call_guard<nb::gil_scoped_release>())
-      .def("sample", &Vinecop::simulate, "n"_a, "qrng"_a = false,
-           "num_threads"_a = 1, "seeds"_a = std::vector<int>(),
-           vinecop_doc.simulate.doc, nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "cdf",
+          [](const Vinecop& self, const Eigen::MatrixXd& u, size_t N,
+             size_t num_threads, const std::optional<std::vector<int>>& seeds) {
+            nb::gil_scoped_release release;
+            return self.cdf(u, N, num_threads,
+                            seeds.value_or(std::vector<int>{}));
+          },
+          "u"_a, "N"_a = 10000, nb::kw_only(), "num_threads"_a = 1,
+          "seeds"_a = nb::none(), vinecop_doc.cdf.doc)
+      .def(
+          "sample",
+          [](const Vinecop& self, size_t n, bool qrng, size_t num_threads,
+             const std::optional<std::vector<int>>& seeds) {
+            nb::gil_scoped_release release;
+            return self.simulate(n, qrng, num_threads,
+                                 seeds.value_or(std::vector<int>{}));
+          },
+          "n"_a, "qrng"_a = false, nb::kw_only(), "num_threads"_a = 1,
+          "seeds"_a = nb::none(), vinecop_doc.simulate.doc)
       .def(
           "sample_conditional",
           [](const Vinecop& self, const Eigen::MatrixXd& u_cond, bool qrng,
-             size_t num_threads, const std::vector<int>& seeds,
+             size_t num_threads, const std::optional<std::vector<int>>& seeds,
              const std::optional<std::vector<size_t>>& conditioning_set)
               -> Eigen::MatrixXd {
             nb::gil_scoped_release release;
             if (conditioning_set) {
-              return self.simulate_conditional(u_cond, *conditioning_set, qrng,
-                                               num_threads, seeds);
+              return self.simulate_conditional(
+                  u_cond, *conditioning_set, qrng, num_threads,
+                  seeds.value_or(std::vector<int>{}));
             }
-            return self.simulate_conditional(u_cond, qrng, num_threads, seeds);
+            return self.simulate_conditional(
+                u_cond, qrng, num_threads, seeds.value_or(std::vector<int>{}));
           },
-          "u_cond"_a, "qrng"_a = false, "num_threads"_a = 1,
-          "seeds"_a = std::vector<int>(), nb::kw_only(),
-          "conditioning_set"_a = nb::none(), sample_conditional_doc.c_str())
-      // `u` is taken by value and moved: the implementation uses it as a
-      // working buffer, and a const reference would force an n x d copy.
+          "u_cond"_a, "qrng"_a = false, nb::kw_only(), "num_threads"_a = 1,
+          "seeds"_a = nb::none(), "conditioning_set"_a = nb::none(),
+          sample_conditional_doc.c_str())
       // `u` is taken by value and moved: the implementation uses it as a
       // working buffer, and a const reference would force an n x d copy.
       .def(
           "rosenblatt",
           [](const Vinecop& self, Eigen::MatrixXd u, size_t num_threads,
-             bool randomize_discrete, const std::vector<int>& seeds,
+             bool randomize_discrete,
+             const std::optional<std::vector<int>>& seeds,
              const std::optional<std::vector<size_t>>& conditioning_set)
               -> Eigen::MatrixXd {
             nb::gil_scoped_release release;
             if (conditioning_set) {
               return self.rosenblatt(std::move(u), *conditioning_set,
-                                     num_threads, randomize_discrete, seeds);
+                                     num_threads, randomize_discrete,
+                                     seeds.value_or(std::vector<int>{}));
             }
             return self.rosenblatt(std::move(u), num_threads,
-                                   randomize_discrete, seeds);
+                                   randomize_discrete,
+                                   seeds.value_or(std::vector<int>{}));
           },
-          "u"_a, "num_threads"_a = 1, "randomize_discrete"_a = true,
-          "seeds"_a = std::vector<int>(), nb::kw_only(),
+          "u"_a, nb::kw_only(), "num_threads"_a = 1,
+          "randomize_discrete"_a = true, "seeds"_a = nb::none(),
           "conditioning_set"_a = nb::none(), rosenblatt_doc.c_str())
       .def(
           "inverse_rosenblatt",
@@ -630,7 +692,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             }
             return self.inverse_rosenblatt(u, num_threads);
           },
-          "u"_a, "num_threads"_a = 1, nb::kw_only(),
+          "u"_a, nb::kw_only(), "num_threads"_a = 1,
           "conditioning_set"_a = nb::none(), inverse_rosenblatt_doc.c_str())
       .def("reorient", &Vinecop::reorient, "conditioning_set"_a,
            vinecop_doc.reorient.doc, nb::call_guard<nb::gil_scoped_release>())
@@ -641,7 +703,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             if (parameters) return cop.loglik(u, *parameters, num_threads);
             return cop.loglik(u, num_threads);
           },
-          "u"_a = Eigen::MatrixXd(), "num_threads"_a = 1,
+          "u"_a = Eigen::MatrixXd(), nb::kw_only(), "num_threads"_a = 1,
           "parameters"_a = nb::none(), loglik_perobs_doc.c_str(),
           nb::call_guard<nb::gil_scoped_release>())
       .def(
@@ -650,31 +712,32 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
              size_t num_threads) {
             return u ? cop.aic(*u, num_threads) : cop.get_aic();
           },
-          "u"_a = nb::none(), "num_threads"_a = 1, vinecop_doc.aic.doc,
-          nb::call_guard<nb::gil_scoped_release>())
+          "u"_a = nb::none(), nb::kw_only(), "num_threads"_a = 1,
+          vinecop_doc.aic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def(
           "bic",
           [](const Vinecop& cop, const std::optional<Eigen::MatrixXd>& u,
              size_t num_threads) {
             return u ? cop.bic(*u, num_threads) : cop.get_bic();
           },
-          "u"_a = nb::none(), "num_threads"_a = 1, vinecop_doc.bic.doc,
-          nb::call_guard<nb::gil_scoped_release>())
+          "u"_a = nb::none(), nb::kw_only(), "num_threads"_a = 1,
+          vinecop_doc.bic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def(
           "mbicv",
           [](const Vinecop& cop, const std::optional<Eigen::MatrixXd>& u,
              double psi0, size_t num_threads) {
             return u ? cop.mbicv(*u, psi0, num_threads) : cop.get_mbicv(psi0);
           },
-          "u"_a = nb::none(), "psi0"_a = 0.9, "num_threads"_a = 1,
-          vinecop_doc.mbicv.doc, nb::call_guard<nb::gil_scoped_release>())
+          "u"_a = nb::none(), "psi0"_a = 0.9, nb::kw_only(),
+          "num_threads"_a = 1, vinecop_doc.mbicv.doc,
+          nb::call_guard<nb::gil_scoped_release>())
       .def("scores", make_step_dispatch(&Vinecop::scores, &Vinecop::scores),
-           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+           "u"_a, "step_wise"_a = true, nb::kw_only(), "num_threads"_a = 1,
            "parameters"_a = nb::none(), scores_perobs_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("gradient",
            make_step_dispatch(&Vinecop::gradient, &Vinecop::gradient), "u"_a,
-           "step_wise"_a = true, "num_threads"_a = 1,
+           "step_wise"_a = true, nb::kw_only(), "num_threads"_a = 1,
            "parameters"_a = nb::none(), gradient_perobs_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def(
@@ -710,15 +773,15 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             }
             return out;
           },
-          "u"_a, "step_wise"_a = true, "num_threads"_a = 1, "keep_all"_a = true,
-          "parameters"_a = nb::none(), scores_full_doc)
+          "u"_a, "step_wise"_a = true, nb::kw_only(), "num_threads"_a = 1,
+          "keep_all"_a = true, "parameters"_a = nb::none(), scores_full_doc)
       .def("hessian", make_step_dispatch(&Vinecop::hessian, &Vinecop::hessian),
-           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+           "u"_a, "step_wise"_a = true, nb::kw_only(), "num_threads"_a = 1,
            "parameters"_a = nb::none(), hessian_perobs_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("scores_cov",
            make_step_dispatch(&Vinecop::scores_cov, &Vinecop::scores_cov),
-           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+           "u"_a, "step_wise"_a = true, nb::kw_only(), "num_threads"_a = 1,
            "parameters"_a = nb::none(), scores_cov_perobs_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def(
@@ -738,7 +801,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             }
             return triangular_to_list(hess);
           },
-          "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+          "u"_a, "step_wise"_a = true, nb::kw_only(), "num_threads"_a = 1,
           "parameters"_a = nb::none(), vinecop_doc.hessian_full.doc_3args)
       .def(
           "__repr__",
@@ -793,4 +856,15 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             nb::cast<std::vector<std::vector<Bicop>>>(state["pair_copulas"]),
             nb::cast<std::vector<std::string>>(state["var_types"]));
       });
+  // The controls class this estimator reads, declared where `bicop_class` /
+  // `vinecop_class` / `margin_class` declare the parts: it is the one place
+  // that answers "what does `controls=None` mean here", so the Python layers
+  // read it instead of each naming FitControlsVinecop again.
+  module.attr("Vinecop").attr("controls_class") =
+      module.attr("FitControlsVinecop");
+  // Declared, not inferred: nanobind reports every bound signature as
+  // `(*args, **kwargs)`, so nothing can read off this class whether it takes
+  // covariates or honors weights. A consumer asks the declaration.
+  module.attr("Vinecop").attr("supports_covariates") = false;
+  module.attr("Vinecop").attr("supports_weights") = true;
 }

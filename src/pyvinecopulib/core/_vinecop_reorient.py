@@ -146,5 +146,5 @@ def reorientation(
       old_edge, old_diag = index[tree][key]
       # Flipped exactly when the diagonal variable is no longer the pair's
       # first argument -- the rule the selector's finalization also applies.
-      locations[(tree, edge)] = (old_edge, old_diag != diag)
+      locations[tree, edge] = (old_edge, old_diag != diag)
   return Reorientation(relabeled, locations, False)

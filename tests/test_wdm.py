@@ -10,21 +10,21 @@ class TestWdm:
 
   def setup_method(self) -> None:
     """Set up test data for each test method"""
-    np.random.seed(42)
+    rng = np.random.RandomState(42)
     self.n = 100
 
     # Create test data with known correlations
-    self.x_independent = np.random.normal(0, 1, self.n)
-    self.y_independent = np.random.normal(0, 1, self.n)
+    self.x_independent = rng.normal(0, 1, self.n)
+    self.y_independent = rng.normal(0, 1, self.n)
 
     # Create positively correlated data
-    z = np.random.normal(0, 1, self.n)
-    self.x_positive = z + np.random.normal(0, 0.5, self.n)
-    self.y_positive = z + np.random.normal(0, 0.5, self.n)
+    z = rng.normal(0, 1, self.n)
+    self.x_positive = z + rng.normal(0, 0.5, self.n)
+    self.y_positive = z + rng.normal(0, 0.5, self.n)
 
     # Create negatively correlated data
-    self.x_negative = z + np.random.normal(0, 0.5, self.n)
-    self.y_negative = -z + np.random.normal(0, 0.5, self.n)
+    self.x_negative = z + rng.normal(0, 0.5, self.n)
+    self.y_negative = -z + rng.normal(0, 0.5, self.n)
 
     # Perfect positive correlation
     self.x_perfect = np.linspace(0, 10, self.n)
@@ -309,8 +309,8 @@ class TestWdm:
     assert not np.isnan(result_exp)
 
     # Random weights
-    np.random.seed(123)
-    weights_random = np.random.uniform(0.1, 2.0, n)
+    rng = np.random.RandomState(123)
+    weights_random = rng.uniform(0.1, 2.0, n)
     result_random = pv.utils.wdm(x, y, "pearson", weights_random)
     assert isinstance(result_random, float)
     assert not np.isnan(result_random)
@@ -328,7 +328,7 @@ class TestWdm:
     # Single different value
     x_almost_const = np.ones(self.n)
     x_almost_const[-1] = 2.0
-    y_varied = np.random.normal(0, 1, self.n)
+    y_varied = np.random.RandomState(0).normal(0, 1, self.n)
 
     result = pv.utils.wdm(x_almost_const, y_varied, "pearson")
     assert isinstance(result, float)

@@ -29,7 +29,7 @@ _EXTRAS = ("torch", "sklearn", "scipy")
 def _run(source: str) -> subprocess.CompletedProcess[str]:
   """Run ``source`` in a fresh interpreter, so no import is already cached."""
   return subprocess.run(
-    [sys.executable, "-c", source], capture_output=True, text=True
+    [sys.executable, "-c", source], capture_output=True, text=True, check=False
   )
 
 
@@ -90,14 +90,12 @@ def test_core_owns_the_margin_internals_and_margins_re_exports_them() -> None:
   every use. They live in `core` and `margins` re-exports them, so the
   documented surface is unchanged.
   """
-  import pyvinecopulib.core as core
-  import pyvinecopulib.margins as margins
+  from pyvinecopulib import core, margins
 
   for name in (
     "FitControlsMargin",
     "as_margin",
     "register_margin_adapter",
-    "resolve_margins",
     "resolve_margin_controls",
   ):
     shared = getattr(margins, name)
@@ -109,20 +107,20 @@ def test_core_owns_the_margin_internals_and_margins_re_exports_them() -> None:
 
 
 def test_core_reaches_up_a_layer_only_where_it_must() -> None:
-  """`core` must not import `margins` at module scope, and barely at all.
+  """`core` must not import `margins`, at module scope or anywhere.
 
   Read statically rather than by watching `sys.modules`: importing
   `pyvinecopulib.core` runs the top-level `__init__`, which loads `margins`
   eagerly by design, so a runtime check would measure the wrong thing.
 
-  Exactly one function-local import is expected, and it is forced: the
-  ``"parametric"`` alias is a string ``core``'s own ``resolve_margins``
-  accepts, so ``core`` has to be able to resolve it to a class that lives
-  behind an extra. Everything else an extension point can carry does --
-  ``as_margin``'s adapters and ``margin_from_json``'s readers are registered
-  by the module that owns each class, through the same public hooks a third
-  party uses. Any more, or any at module scope, is the layer inversion coming
-  back.
+  **Zero** is the expected count. There used to be one, forced: the
+  ``"parametric"`` alias was a string ``core``'s own margin resolution
+  accepted, so ``core`` had to resolve it to a class living behind an extra.
+  Deleting the alias deleted the exception. Everything an extension point can
+  carry is registered by the module that owns each class, through the same
+  public hooks a third party uses -- ``as_margin``'s adapters and
+  ``margin_from_json``'s readers. Any import here is the layer inversion
+  coming back.
   """
   import ast
   import pathlib
@@ -158,9 +156,7 @@ def test_core_reaches_up_a_layer_only_where_it_must() -> None:
         where.append(f"{path.name}:{node.lineno} -> {target}")
 
   assert module_scope == [], module_scope
-  assert len(deferred) == 1, deferred
-  # And neither reaches a private module of the layer above.
-  assert not any("._" in d.split("-> ")[1] for d in deferred), deferred
+  assert deferred == [], deferred
 
 
 def test_the_fit_callback_aliases_resolve_from_any_module() -> None:
@@ -195,7 +191,9 @@ def test_agents_md_names_every_module_that_exists() -> None:
   if not spec.is_file() or not root.is_dir():
     pytest.skip("source tree not available")
 
-  tree = re.search(r"```text\n(.*?)```", spec.read_text(encoding="utf-8"), re.S)
+  tree = re.search(
+    r"```text\n(.*?)```", spec.read_text(encoding="utf-8"), re.DOTALL
+  )
   assert tree is not None, "AGENTS.md has no package-structure block"
   listed = {
     os.path.basename(token)
@@ -216,6 +214,7 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
   Two copies drift, and this one had: it placed `Kde1d` in `utils`, where it
   has never been.
   """
+  import importlib
   import pathlib
   import re
 
@@ -224,23 +223,50 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
     pytest.skip("source tree not available")
   text = spec.read_text(encoding="utf-8")
 
-  import pyvinecopulib.core as core
-  import pyvinecopulib.core.extend as extend
-  import pyvinecopulib.families as families
-  import pyvinecopulib.margins as margins
-  import pyvinecopulib.utils as utils
+  from pyvinecopulib import core, families, margins, utils
+  from pyvinecopulib.core import extend
 
-  subpackages = {"core", "families", "utils", "margins", "sklearn", "torch"}
-  section = text[text.index("## Public APIs") :]
-  for label, module in (
+  checked = [
     ("`pyvinecopulib.core`", core),
     ("`pyvinecopulib.core.extend`", extend),
     ("`pyvinecopulib.families`", families),
     ("`pyvinecopulib.utils`", utils),
     ("`pyvinecopulib.margins`", margins),
+  ]
+  # The two behind an extra are checked too, where the extra is installed.
+  # Leaving them out is what let the `torch` bullet drift to seven names
+  # against a nine-name `__all__`: the one list nothing compared.
+  #
+  # Not `importorskip`: these subpackages rewrite a missing extra into an
+  # `ImportError` naming it, and pytest re-raises that rather than skipping --
+  # it reads as a broken module, not an absent one. Skipping the *bullet* also
+  # beats skipping the test, which would drop the five that are checkable.
+  for label, name in (
+    ("`pyvinecopulib.sklearn`", "pyvinecopulib.sklearn"),
+    ("`pyvinecopulib.torch`", "pyvinecopulib.torch"),
   ):
+    try:
+      checked.append((label, importlib.import_module(name)))
+    except ImportError:
+      continue
+
+  subpackages = {"core", "families", "utils", "margins", "sklearn", "torch"}
+  section = text[text.index("## Public APIs") :]
+  for label, module in checked:
     start = section.index(f"- **{label}**")
-    entry = section[start : section.index("\n- **", start + 1)]
+    # A bullet runs to the next one, or -- for the last in the list -- to the
+    # blank line that ends the list. Without the second bound the final bullet
+    # swallows the prose after it, whose backticked class names then read as
+    # names that bullet claims.
+    bounds = [
+      i
+      for i in (
+        section.find("\n- **", start + 1),
+        section.find("\n\n", start + 1),
+      )
+      if i != -1
+    ]
+    entry = section[start : min(bounds)] if bounds else section[start:]
     named = set(re.findall(r"`([A-Za-z_][A-Za-z_0-9]*)`", entry))
     exported = {
       name
@@ -288,21 +314,19 @@ _LAYER_EDGES: dict[tuple[str, str], bool] = {
   (_TOP, "pyvinecopulib_ext"): False,
   (_TOP, "_cpu"): False,
   (_TOP, "_deprecations"): False,
-  # Tier 2 -> tier 1, plus the two edges within tier 2. Constructing
-  # `TorchVinecopBackend` is the opt-in signal that PyTorch is required, so
-  # that one import has to stay inside the constructor.
+  # Tier 2 -> tier 1, plus the one edge within tier 2. `sklearn` reaches
+  # `torch` at all: the PyTorch lane is opted into by handing an estimator
+  # `distribution=TorchVinedist`, so the caller's own import is the signal
+  # and the estimators name no torch class.
   ("margins", "core"): False,
   ("torch", "core"): False,
   ("torch", "utils"): False,
   ("torch", "pyvinecopulib_ext"): False,
   ("sklearn", "core"): False,
-  ("sklearn", "margins"): False,
-  ("sklearn", "torch"): True,
   # Tier 1, and its one deferred hop: up into `margins` for `SciPyMargin`
   # (see `test_core_reaches_up_a_layer_only_where_it_must`).
   ("core", "pyvinecopulib_ext"): False,
   ("core", "_deprecations"): False,
-  ("core", "margins"): True,
   ("families", "pyvinecopulib_ext"): False,
   ("utils", "pyvinecopulib_ext"): False,
   ("utils", "core"): False,
@@ -467,3 +491,66 @@ def test_no_module_declares_a_name_twice() -> None:
   # Without this the test passes by reading nothing: a broken glob and a
   # package with no duplicates report the same empty result.
   assert seen > 1, f"only {seen} `__all__` lists found; the walk is not walking"
+
+
+#: Third-party internals this repository reaches for outside `src/`, each with
+#: the reason no public spelling exists. `PLC2701` is off under `tests/` and
+#: `scripts/` because it cannot tell this package's internals from another's;
+#: this table is what keeps that exemption from covering the latter. An entry
+#: is a maintenance obligation: the name may move in any release of its
+#: package, and nothing but this test says where to look.
+_THIRD_PARTY_PRIVATES: dict[str, str] = {
+  # `TorchDispatchMode` is exported from nowhere else, checked against torch
+  # 2.13. Reached only on CUDA, so a move breaks a helper and nothing shipped.
+  "torch.utils._python_dispatch": "tests/helpers.py",
+}
+
+
+def _private_imports(path: pathlib.Path) -> set[str]:
+  """Every module an `import` in ``path`` names whose path has a private part."""
+  tree = ast.parse(path.read_text(encoding="utf-8"))
+  found: set[str] = set()
+  for node in ast.walk(tree):
+    if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+      parts = node.module.split(".")
+      names = [a.name for a in node.names]
+    elif isinstance(node, ast.Import):
+      for alias in node.names:
+        if any(p.startswith("_") for p in alias.name.split(".")):
+          found.add(alias.name)
+      continue
+    else:
+      continue
+    if any(p.startswith("_") for p in parts):
+      found.add(node.module)
+    else:
+      found.update(f"{node.module}.{n}" for n in names if n.startswith("_"))
+  return found
+
+
+def test_a_private_import_outside_src_names_this_package() -> None:
+  """Only `pyvinecopulib`'s own internals, or an allowlisted third-party name.
+
+  AGENTS.md keeps tests on public namespaces with two carve-outs, and ruff's
+  `PLC2701` would say the same -- except it reads `pyvinecopulib.core._json`
+  and `torch.utils._python_dispatch` alike, so the per-file exemption the
+  first needs would hand the second a free pass. This is the line between
+  them, drawn where it can be read.
+  """
+  root = pathlib.Path(__file__).resolve().parent.parent
+  foreign: dict[str, str] = {}
+  for folder in ("tests", "scripts"):
+    for path in sorted((root / folder).rglob("*.py")):
+      for module in _private_imports(path):
+        if module.split(".")[0] in {"pyvinecopulib", "helpers", "conftest"}:
+          continue
+        if module.startswith("__"):
+          continue
+        # `as_posix`, not `str`: the allowlist keys are written with
+        # forward slashes and Windows would report `tests\helpers.py`.
+        foreign[module] = path.relative_to(root).as_posix()
+  assert foreign == _THIRD_PARTY_PRIVATES, (
+    "a private import of another package appeared outside `src/`; add it to "
+    "`_THIRD_PARTY_PRIVATES` with the reason no public name exists, or use "
+    f"the public spelling: {foreign}"
+  )

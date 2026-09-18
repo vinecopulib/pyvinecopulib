@@ -34,7 +34,7 @@ data enters in the expanded ``(n, 2d)`` or compact ``(n, d + k)`` layout that
 ``var_types`` too, handing each edge's types to the ``fit_edge`` callback so it
 can fit the pair copula the edge actually needs. A pair copula that reads only
 two columns is hosted on a discrete edge by wrapping it in
-:class:`~pyvinecopulib.core.DiscreteBicop`, which supplies the difference
+``BicopBase.with_var_types``, which supplies the difference
 quotients from its continuous ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2``.
 
 Two structural notes about what lives here rather than in a subclass. The
@@ -56,26 +56,25 @@ generic ``ArrayT`` lives on the public signatures.
 from __future__ import annotations
 
 import contextlib
+import math
 from abc import ABC, abstractmethod
-from types import ModuleType
+from collections.abc import Callable, Mapping, Sequence
 from typing import (
   Any,
-  Callable,
   ClassVar,
-  Mapping,
-  Optional,
   Self,
-  Sequence,
-  Union,
   cast,
 )
 
 import numpy as np
-from array_api_compat import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
+from ._covariates import pair_eval, prepare_covariates
+from ._loglik import safe_log, sum_loglik
+from ._placement import PlacementMixin, QrngUniformMixin, to_numpy
+from ._trim import trim
+from ._validation import check_var_types
 from ._vinecop_discrete import (
-  check_var_types,
   collapse_data,
   disc_cols,
   edge_columns,
@@ -83,33 +82,30 @@ from ._vinecop_discrete import (
   seed_left_limits,
   stack_edge,
 )
-from ._vinecop_reorient import Reorientation, reorientation
-from ._vinecop_plot import (
-  VINECOP_PLOT_PARAMS,
-  VINECOP_PLOT_SUMMARY,
-  vinecop_plot,
-)
-from ._covariates import pair_eval, prepare_covariates
-from ._loglik import safe_log, sum_loglik
 from ._vinecop_fit_engines import (
   FitEdge,
   FitLevel,
   fit_parts,
   select_parts,
 )
-from .bicop_base import BicopBase, flip_of
-from .bicop_discrete import continuous_view
-from .vinecop_context import ConditioningContext, SimplifiedContext
+from ._vinecop_plot import (
+  VINECOP_PLOT_PARAMS,
+  VINECOP_PLOT_SUMMARY,
+  vinecop_plot,
+)
+from ._vinecop_reorient import Reorientation, reorientation
+from .bicop_base import BicopBase
+from .margin_base import criteria
 from .protocols import (
+  _VINECOP_EXAMPLE,
   ArrayT,
   BicopLike,
   ControlsLike,
+  Namespace,
   VinecopLike,
-  _VINECOP_EXAMPLE,
+  array_namespace,
 )
-from ._placement import PlacementMixin, QrngUniformMixin
-from ._trim import trim
-
+from .vinecop_context import ConditioningContext, SimplifiedContext
 
 __all__ = ["NotBatchable", "VinecopBase"]
 
@@ -119,7 +115,7 @@ __all__ = ["NotBatchable", "VinecopBase"]
 _NO_TRUNCATION = 2**63
 
 
-def _selection_options(controls: Optional[ControlsLike]) -> dict[str, Any]:
+def _selection_options(controls: ControlsLike | None) -> dict[str, Any]:
   """Read the structure-selection settings a controls object carries.
 
   Only the settings the array-agnostic engines own are read. The rest belong to
@@ -277,7 +273,22 @@ class VinecopBase(
   """
 
   # --- layout installed by _bind_vine (hooks / state) ------------------- #
-  structure: RVineStructure
+
+  @property
+  def structure(self) -> RVineStructure:
+    """The R-vine structure this vine is bound to.
+
+    Returns
+    -------
+    RVineStructure
+        The structure the pair copulas are indexed by.
+    """
+    return self._structure
+
+  @structure.setter
+  def structure(self, value: RVineStructure) -> None:
+    self._structure = value
+
   d: int
   trunc_lvl: int
   order: tuple[int, ...]
@@ -291,11 +302,23 @@ class VinecopBase(
   #: whose pairs are conditional.
   supports_covariates: bool = False
 
+  #: Whether a fit of this vine honors `controls.weights`. ``True`` because
+  #: `fit` and `select` read them off the controls and hand them to the
+  #: engines; a lane whose pair fitter or tree criterion is unweighted
+  #: declares ``False``, as `TorchVinecop` does. A plain class attribute, not
+  #: the contract's property: a consumer asks the *class*, where a property
+  #: object reads as truthy whatever it would answer on an instance.
+  supports_weights: bool = True
+
   # The pair-copula class this vine fits; see the class docstring. A plain
   # comment, not a `#:` one: autosummary cannot generate a page for an
   # attribute whose value is a class, so a subclass that sets this would leave
   # the inherited entry dangling and fail the nitpicky docs build.
-  bicop_class: ClassVar[Optional[type]] = None
+  bicop_class: ClassVar[type[BicopLike[Any]] | None] = None
+  # The controls class this vine's fitter reads, or `None` where it reads none.
+  # The one place that answers what `controls=None` means here, so `from_data`
+  # and the lanes above read it instead of each naming a class of their own.
+  controls_class: ClassVar[type[ControlsLike] | None] = None
   _context: ConditioningContext[ArrayT]
   _cond_pos_cache: dict[tuple[int, int], tuple[int, ...]]
   #: Slot -> the 1-based labels of its conditioning set in the order the pair
@@ -307,9 +330,9 @@ class VinecopBase(
   #: the first batched call. Subclasses invalidate it on device moves.
   _batched: Any
   #: Array namespace of this vine's working arrays; ``None`` until resolved.
-  _xp: Optional[ModuleType]
+  _xp: Namespace[ArrayT] | None
   #: Array type ``_xp`` was resolved from; the memo is only good for that type.
-  _xp_type: Optional[type]
+  _xp_type: type | None
   _var_types: tuple[str, ...]
   _n_discrete: int
   #: Variable index -> its offset within the compact layout's left-limit block;
@@ -320,8 +343,8 @@ class VinecopBase(
   def _bind_vine(
     self,
     structure: RVineStructure,
-    context: Optional[ConditioningContext[ArrayT]] = None,
-    var_types: Optional[list[str]] = None,
+    context: ConditioningContext[ArrayT] | None = None,
+    var_types: list[str] | None = None,
   ) -> None:
     """Install the vine structure + context and derive the order arrays.
 
@@ -405,7 +428,7 @@ class VinecopBase(
     self._cond_order = dict(cond_order)
     self._cond_pos_cache = {}
 
-  def _bind_var_types(self, var_types: Optional[list[str]]) -> None:
+  def _bind_var_types(self, var_types: list[str] | None) -> None:
     """Store the variable types and derive the per-edge type table."""
     types = check_var_types(var_types, self.d)
     self._var_types = types
@@ -557,7 +580,7 @@ class VinecopBase(
       # child, so a derived cache would leak into `state_dict()` and a
       # checkpoint taken after a batched call would not load into a fresh
       # model. It is a memo of the pair copulas, not part of the model.
-      object.__setattr__(self, "_batched", self._build_batched())
+      object.__setattr__(self, "_batched", self._build_batched())  # noqa: PLC2801
     return self._batched
 
   def _invalidate_batched(self) -> None:
@@ -616,10 +639,10 @@ class VinecopBase(
     self,
     tree: int,
     edge: int,
-    x: Optional[ArrayT],
-    u_nat: Optional[ArrayT],
-    hinv2_final: Optional[ArrayT],
-  ) -> Optional[ArrayT]:
+    x: ArrayT | None,
+    u_nat: ArrayT | None,
+    hinv2_final: ArrayT | None,
+  ) -> ArrayT | None:
     """Assemble the per-edge conditioning context ``x_e`` = context(``u_D``, ``x``).
 
     ``u_D`` is gathered in the C1 column order (see ``_cond_positions``),
@@ -653,7 +676,7 @@ class VinecopBase(
     # Simplified + unconditional: skip the gather entirely (zero cost).
     if not ctx.assembles_conditioning and x is None:
       return None
-    u_D: Optional[ArrayT] = None
+    u_D: ArrayT | None = None
     if ctx.assembles_conditioning:
       cols = list(self._cond_positions(tree, edge))
       if cols:
@@ -670,7 +693,7 @@ class VinecopBase(
   # `device`, does arithmetic -- so it holds it as `Any`, per `protocols.py`
   # on what an unbounded `ArrayT` can type. Every one receives an
   # already-prepped array from a public method typed `ArrayT`.
-  def _pdf(self, u: Any, x: Optional[ArrayT]) -> ArrayT:  # noqa: ANN401
+  def _pdf(self, u: ArrayT, x: ArrayT | None) -> ArrayT:
     """Vine density, the exponential of :meth:`_logpdf` (``Vinecop::pdf``).
 
     Parameters
@@ -683,7 +706,7 @@ class VinecopBase(
     out: Any = self._logpdf(u, x)
     return cast("ArrayT", array_namespace(out).exp(out))
 
-  def _logpdf(self, u: Any, x: Optional[ArrayT]) -> ArrayT:  # noqa: ANN401
+  def _logpdf(self, u: ArrayT, x: ArrayT | None) -> ArrayT:
     """Vine log-density as a sum of per-edge log-densities (``Vinecop::logpdf``).
 
     Parameters
@@ -754,10 +777,10 @@ class VinecopBase(
 
   def _rosenblatt(
     self,
-    u: Any,  # noqa: ANN401 - computed on, as `_pdf`
-    x: Optional[ArrayT],
+    u: ArrayT,
+    x: ArrayT | None,
     randomize_discrete: bool = True,
-    seeds: Optional[list[int]] = None,
+    seeds: list[int] | None = None,
   ) -> ArrayT:
     """Rosenblatt transform (``Vinecop::rosenblatt``).
 
@@ -835,8 +858,8 @@ class VinecopBase(
 
   def _inverse_rosenblatt(
     self,
-    u: Any,  # noqa: ANN401 - computed on, as `_pdf`
-    x: Optional[ArrayT],
+    u: ArrayT,
+    x: ArrayT | None,
   ) -> ArrayT:
     """Inverse Rosenblatt transform (``Vinecop::inverse_rosenblatt``).
 
@@ -879,7 +902,7 @@ class VinecopBase(
           # The inverse cascade *produces* the values a left limit would be
           # taken of, so it evaluates every pair as continuous -- exactly as
           # ``Vinecop::inverse_rosenblatt`` does.
-          edge_copula = continuous_view(edge_copula)
+          edge_copula = edge_copula.with_var_types()
         # Same m / on-diagonal rule as the forward cascades (class.ipp:1026),
         # but the inputs are rows of the transposed hinv2 / hfunc1 scratch.
         m = int(s.min_array(tree, var))
@@ -907,11 +930,9 @@ class VinecopBase(
   # --- batched cascades (grid fast path; array-agnostic loops) ---------- #
   #
   # Numerically equivalent to the non-batched cascades on a simplified vine,
-  # but each tree level fires one stacked pair-copula call over its edges
-  # instead of a Python loop. Only the grid state `_build_batched` returns is
-  # subclass-specific; the loops below are array-agnostic, and receive `u`
-  # already prepped by the public method that dispatched.
-  def _pdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
+  # with one stacked call per tree level instead of a Python loop. Only the
+  # state `_build_batched` returns is subclass-specific.
+  def _pdf_batched(self, u: ArrayT) -> ArrayT:
     """Batched vine pdf, the exponential of :meth:`_logpdf_batched`.
 
     Parameters
@@ -920,9 +941,9 @@ class VinecopBase(
         Prepared pseudo-observations.
     """
     out: Any = self._logpdf_batched(u)
-    return cast("ArrayT", self._namespace(out).exp(out))
+    return self._namespace(out).exp(out)
 
-  def _logpdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
+  def _logpdf_batched(self, u: ArrayT) -> ArrayT:
     """Batched vine log-density: a sum over per-tree-level stacked densities.
 
     Numerically equivalent to ``_logpdf`` on a simplified vine, but each tree
@@ -937,7 +958,7 @@ class VinecopBase(
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     if trunc_lvl == 0:
-      return cast("ArrayT", xp.zeros(n, dtype=u.dtype, device=u.device))
+      return xp.zeros(n, dtype=u.dtype, device=u.device)
     bv = self._ensure_batched()
     hfunc1 = xp.zeros((n, d), dtype=u.dtype, device=u.device)
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
@@ -965,9 +986,9 @@ class VinecopBase(
       hfunc2[:, :n_pairs] = xp.where(
         lvl.needs_h2[None, :], h2_new, hfunc2[:, :n_pairs]
       )
-    return cast("ArrayT", logpdf)
+    return logpdf
 
-  def _inverse_rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401
+  def _inverse_rosenblatt_batched(self, u: ArrayT) -> ArrayT:
     """Batched inverse Rosenblatt: one stacked call per dependency wave.
 
     Bit-identical to ``_inverse_rosenblatt`` on a simplified vine: the
@@ -992,7 +1013,7 @@ class VinecopBase(
       out = xp.empty((n, d), dtype=u.dtype, device=u.device)
       for j in range(d):
         out[:, j] = u[:, order[inv[j]] - 1]
-      return cast("ArrayT", out)
+      return out
     bv = self._ensure_batched()
     rows = (trunc_lvl + 1) * d
     hinv2 = xp.empty((rows, n), dtype=u.dtype, device=u.device)
@@ -1005,9 +1026,9 @@ class VinecopBase(
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hinv2[inv[j], :]
-    return cast("ArrayT", trim(out, xp))
+    return trim(out, xp)
 
-  def _rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
+  def _rosenblatt_batched(self, u: ArrayT) -> ArrayT:
     """Batched Rosenblatt transform (per-tree-level stacked h-functions).
 
     Numerically equivalent to ``_rosenblatt`` on a simplified vine.
@@ -1042,10 +1063,10 @@ class VinecopBase(
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hfunc2[:, inv[j]]
-    return cast("ArrayT", trim(out, xp))
+    return trim(out, xp)
 
   # --- batched dispatch ------------------------------------------------- #
-  def _namespace(self, a: object) -> ModuleType:
+  def _namespace(self, a: ArrayT) -> Namespace[ArrayT]:
     """The array namespace of this vine's working arrays, resolved once.
 
     Resolving it per call would put a type-dispatch table walk inside each
@@ -1065,8 +1086,12 @@ class VinecopBase(
     xp = self._xp
     if xp is None or self._xp_type is not type(a):
       xp = array_namespace(a)
-      object.__setattr__(self, "_xp", xp)
-      object.__setattr__(self, "_xp_type", type(a))
+      # `object.__setattr__` on purpose: a torch subclass installs
+      # `nn.Module.__setattr__`, which refuses a plain attribute.
+      object.__setattr__(self, "_xp", xp)  # noqa: PLC2801
+      # `object.__setattr__` on purpose: a torch subclass installs
+      # `nn.Module.__setattr__`, which refuses a plain attribute.
+      object.__setattr__(self, "_xp_type", type(a))  # noqa: PLC2801
     return xp
 
   def __getstate__(self) -> dict[str, Any]:
@@ -1089,9 +1114,7 @@ class VinecopBase(
     state["_xp_type"] = None
     return state
 
-  def _resolve_batched(
-    self, requested: Optional[bool], x: Optional[ArrayT]
-  ) -> bool:
+  def _resolve_batched(self, requested: bool | None, x: ArrayT | None) -> bool:
     """Resolve the ``batched`` flag; force ``False`` for conditional or discrete.
 
     Covariates count as conditional here: any non-``None`` ``x`` forces the
@@ -1121,8 +1144,8 @@ class VinecopBase(
   )
 
   def _reoriented(
-    self, conditioning_set: Optional[list[int]]
-  ) -> "VinecopBase[ArrayT]":
+    self, conditioning_set: list[int] | None
+  ) -> VinecopBase[ArrayT]:
     """The vine to evaluate for ``conditioning_set`` (``self`` if none needed)."""
     if conditioning_set is None:
       return self
@@ -1140,7 +1163,7 @@ class VinecopBase(
 
   def reorient(
     self, conditioning_set: list[int]
-  ) -> tuple["RVineStructure", list[list[BicopLike[ArrayT]]]]:
+  ) -> tuple[RVineStructure, list[list[BicopLike[ArrayT]]]]:
     """Relabel to an equivalent vine whose order tail is ``conditioning_set``.
 
     Value-preserving: the relabeled vine has the same density and
@@ -1192,9 +1215,9 @@ class VinecopBase(
     for tree in range(self.trunc_lvl):
       row: list[BicopLike[ArrayT]] = []
       for edge in range(self.d - 1 - tree):
-        old_edge, flipped = r.locations[(tree, edge)]
+        old_edge, flipped = r.locations[tree, edge]
         pair = self.get_pair_copula(tree, old_edge)
-        row.append(flip_of(pair) if flipped else pair)
+        row.append(pair.flip() if flipped else pair)
       pairs.append(row)
     return r.structure, pairs
 
@@ -1204,8 +1227,8 @@ class VinecopBase(
     u: ArrayT,
     *,
     num_threads: int = 1,
-    x: Optional[ArrayT] = None,
-    batched: Optional[bool] = None,
+    x: ArrayT | None = None,
+    batched: bool | None = None,
   ) -> ArrayT:
     """Evaluate the vine-copula density ``c(u_1, ..., u_d)``.
 
@@ -1249,8 +1272,8 @@ class VinecopBase(
     u: ArrayT,
     *,
     num_threads: int = 1,
-    x: Optional[ArrayT] = None,
-    batched: Optional[bool] = None,
+    x: ArrayT | None = None,
+    batched: bool | None = None,
   ) -> ArrayT:
     """Evaluate the vine-copula log-density ``log c(u_1, ..., u_d)``.
 
@@ -1297,10 +1320,10 @@ class VinecopBase(
     *,
     num_threads: int = 1,
     randomize_discrete: bool = True,
-    seeds: Optional[list[int]] = None,
-    x: Optional[ArrayT] = None,
-    batched: Optional[bool] = None,
-    conditioning_set: Optional[list[int]] = None,
+    seeds: list[int] | None = None,
+    x: ArrayT | None = None,
+    batched: bool | None = None,
+    conditioning_set: list[int] | None = None,
   ) -> ArrayT:
     """Rosenblatt transform: dependent uniforms to independent uniforms.
 
@@ -1365,9 +1388,9 @@ class VinecopBase(
     u: ArrayT,
     *,
     num_threads: int = 1,
-    x: Optional[ArrayT] = None,
-    batched: Optional[bool] = None,
-    conditioning_set: Optional[list[int]] = None,
+    x: ArrayT | None = None,
+    batched: bool | None = None,
+    conditioning_set: list[int] | None = None,
   ) -> ArrayT:
     """Inverse Rosenblatt transform: independent uniforms to dependent uniforms.
 
@@ -1423,9 +1446,9 @@ class VinecopBase(
     *,
     qrng: bool = False,
     num_threads: int = 1,
-    seeds: Optional[list[int]] = None,
-    x: Optional[ArrayT] = None,
-    batched: Optional[bool] = None,
+    seeds: list[int] | None = None,
+    x: ArrayT | None = None,
+    batched: bool | None = None,
   ) -> ArrayT:
     """Simulate ``n`` samples from the fitted copula.
 
@@ -1462,9 +1485,9 @@ class VinecopBase(
     *,
     qrng: bool = False,
     num_threads: int = 1,
-    seeds: Optional[list[int]] = None,
-    conditioning_set: Optional[list[int]] = None,
-    x: Optional[ArrayT] = None,
+    seeds: list[int] | None = None,
+    conditioning_set: list[int] | None = None,
+    x: ArrayT | None = None,
   ) -> ArrayT:
     """Sample from the conditional copula given fixed values of some variables.
 
@@ -1604,10 +1627,10 @@ class VinecopBase(
     N: int = 10000,
     qrng: bool = True,
     num_threads: int = 1,
-    seeds: Optional[list[int]] = None,
-    x: Optional[ArrayT] = None,
+    seeds: list[int] | None = None,
+    x: ArrayT | None = None,
     block_size: int = 4096,
-    batched: Optional[bool] = None,
+    batched: bool | None = None,
   ) -> ArrayT:
     """Evaluate the joint CDF at each query row via quasi-Monte-Carlo.
 
@@ -1669,7 +1692,7 @@ class VinecopBase(
       return cast("ArrayT", out)
 
   # --- convenience surface (loglik / plot / accessors) ------------------ #
-  def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def loglik(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Total log-likelihood ``sum(log c(u))`` of the vine at ``u``.
 
     Summed from :meth:`logpdf` rather than from the log of :meth:`pdf`, so it
@@ -1691,6 +1714,66 @@ class VinecopBase(
         PyTorch).
     """
     return sum_loglik(self.logpdf(u, x=x))
+
+  def aic(self, u: ArrayT, /) -> float:
+    """Akaike information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Observations to evaluate the log-likelihood on. Required, unlike on
+        ``Bicop`` / ``Vinecop``, which carry the value their own fit attained;
+        a vine may host parts it did not fit, so there is no such value here.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + 2 npars``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+
+    See Also
+    --------
+    bic : The same, penalizing by ``log n`` per parameter.
+    """
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
+    return criteria(float(to_numpy(self.loglik(u))), npars, None)["aic"]
+
+  def bic(self, u: ArrayT, /) -> float:
+    """Bayesian information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Observations to evaluate the log-likelihood on; their row count is the
+        ``n`` the penalty uses.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + npars log n``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+    """
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
+    rows = float(self._prep(u).shape[0])
+    return criteria(float(to_numpy(self.loglik(u))), npars, rows)["bic"]
 
   @property
   def dim(self) -> int:
@@ -1716,10 +1799,10 @@ class VinecopBase(
 
   def plot(
     self,
-    tree: Optional[list[int]] = None,
+    tree: list[int] | None = None,
     add_edge_labels: bool = True,
     layout: str = "graphviz",
-    vars_names: Optional[list[str]] = None,
+    vars_names: list[str] | None = None,
   ) -> None:
     vinecop_plot(self, tree, add_edge_labels, layout, vars_names)
 
@@ -1769,7 +1852,7 @@ class VinecopBase(
 
   @classmethod
   def _resolve_fit_edge(
-    cls, fit_edge: Optional[FitEdge], controls: Optional[ControlsLike]
+    cls, fit_edge: FitEdge | None, controls: ControlsLike | None
   ) -> FitEdge:
     """The pair-copula fitter to use.
 
@@ -1798,7 +1881,7 @@ class VinecopBase(
       tree: int,
       edge: int,
       u_e: ArrayT,
-      x_e: Optional[ArrayT] = None,
+      x_e: ArrayT | None = None,
       var_types: Sequence[str] = ("c", "c"),
     ) -> BicopLike[ArrayT]:
       del tree, edge
@@ -1825,7 +1908,7 @@ class VinecopBase(
   _select_parts = staticmethod(select_parts)
 
   @classmethod
-  def _check_selectable(cls, fit_edge: Optional[FitEdge]) -> None:
+  def _check_selectable(cls, fit_edge: FitEdge | None) -> None:
     """Refuse a pair copula that cannot be reoriented, before fitting anything.
 
     Selection finalizes by reorienting each pair onto its slot, so a pair
@@ -1841,8 +1924,16 @@ class VinecopBase(
     pair_cls = cls.bicop_class
     if fit_edge is not None or pair_cls is None:
       return
+    # Two shapes answer this. A class outside the base hierarchy -- the
+    # compiled `Bicop`, or a foreign pair -- carries its own `flip`. A
+    # `BicopBase` subclass inherits `flip`, which swaps the variable types on
+    # top of the copula's own swap, so there the question is whether the hook
+    # underneath it was overridden.
     flip = getattr(pair_cls, "flip", None)
-    if flip is None or flip is BicopBase.flip:
+    if flip is not None and flip is not BicopBase.flip:
+      return
+    flip_raw = getattr(pair_cls, "_flip_raw", None)
+    if flip_raw is None or flip_raw is BicopBase._flip_raw:
       raise NotImplementedError(
         f"{pair_cls.__name__} has no `flip`, which structure selection needs "
         "to reorient each pair onto its finalized slot. Implement it (return "
@@ -1851,14 +1942,14 @@ class VinecopBase(
 
   def fit(
     self,
-    u: Union[np.ndarray, ArrayT],
+    u: np.ndarray | ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_types: Optional[list[str]] = None,
-    x: Optional[ArrayT] = None,
-    fit_edge: Optional[FitEdge] = None,
-    fit_level: Optional[FitLevel] = None,
+    var_types: list[str] | None = None,
+    x: ArrayT | None = None,
+    fit_edge: FitEdge | None = None,
+    fit_level: FitLevel | None = None,
   ) -> Self:
     """Fit the pair copulas along this vine's own structure, in place.
 
@@ -1898,12 +1989,9 @@ class VinecopBase(
     self.set_pair_copulas(
       self._fit_parts(
         self.structure,
-        # Placed, not `_prep_args`-ed: the engines own the layout and read the
-        # discrete widths themselves, but they allocate their per-tree scratch
-        # in this array's namespace, so a vine whose pairs answer elsewhere
-        # then assigns across namespaces. `TorchVinecop.fit` on a CUDA vine
-        # raised `can't convert cuda:0 device type tensor to numpy` for a
-        # NumPy `u` before this.
+        # Placed, not `_prep_args`-ed: the engines own the layout, but they
+        # allocate their scratch in this array's namespace, so it has to be
+        # the one the pairs answer in.
         self._prep(u),
         self._resolve_fit_edge(fit_edge, controls),
         context=self._context,
@@ -1928,14 +2016,14 @@ class VinecopBase(
 
   def select(
     self,
-    u: Union[np.ndarray, ArrayT],
+    u: np.ndarray | ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_types: Optional[list[str]] = None,
-    x: Optional[ArrayT] = None,
-    fit_edge: Optional[FitEdge] = None,
-    fit_level: Optional[FitLevel] = None,
+    var_types: list[str] | None = None,
+    x: ArrayT | None = None,
+    fit_edge: FitEdge | None = None,
+    fit_level: FitLevel | None = None,
   ) -> Self:
     """Select a structure from data and fit its pairs, in place.
 
@@ -1988,15 +2076,15 @@ class VinecopBase(
   @classmethod
   def from_data(
     cls,
-    u: Union[np.ndarray, ArrayT],
+    u: np.ndarray | ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    structure: Optional[RVineStructure] = None,
-    var_types: Optional[list[str]] = None,
-    x: Optional[ArrayT] = None,
-    fit_edge: Optional[FitEdge] = None,
-    fit_level: Optional[FitLevel] = None,
+    structure: RVineStructure | None = None,
+    var_types: list[str] | None = None,
+    x: ArrayT | None = None,
+    fit_edge: FitEdge | None = None,
+    fit_level: FitLevel | None = None,
   ) -> Self:
     """Construct a vine fitted to data.
 
@@ -2113,7 +2201,7 @@ class _ReorientedVine(VinecopBase[ArrayT]):
     )
 
   def get_pair_copula(self, tree: int, edge: int) -> BicopLike[ArrayT]:
-    old_edge, flipped = self._locations[(tree, edge)]
+    old_edge, flipped = self._locations[tree, edge]
     if not flipped:
       return self._base.get_pair_copula(tree, old_edge)
     key = (tree, old_edge)
@@ -2123,7 +2211,7 @@ class _ReorientedVine(VinecopBase[ArrayT]):
       # integral caches -- and each slot is read once per cascade pass, of which
       # conditional sampling makes two. Callers relabeling repeatedly should use
       # `reorient()` once and host the pairs it returns.
-      pair = flip_of(self._base.get_pair_copula(tree, old_edge))
+      pair = self._base.get_pair_copula(tree, old_edge).flip()
       self._flipped[key] = pair
     return pair
 
@@ -2131,7 +2219,7 @@ class _ReorientedVine(VinecopBase[ArrayT]):
   # being viewed. `_default_batched` / `_build_batched` are *not*
   # delegated: the base's batched state is built against the base's structure and
   # edge order, so the view stays on the non-batched cascade.
-  def _prep(self, a: Any) -> ArrayT:  # noqa: ANN401 - any array type, placed
+  def _prep(self, a: object) -> ArrayT:
     return cast("ArrayT", self._base._prep(a))
 
   def _prep_args(
