@@ -4,9 +4,9 @@
 
 ### Build / packaging
 
-- Version an open release cycle as `X.Y.Z.devN`, so a build from `main` between two releases reports, e.g., `1.0.1.dev0` rather than the version it leads to; `scripts/check_version.py` enforces it (#PRNUM).
-- Find conda-forge's `libclang-<major>.dll` on Windows when generating the docstrings (#PRNUM).
-- Build and test against Eigen 5 in CI, beside the Eigen 3.4 every other job uses (#PRNUM).
+- Version an open release cycle as `X.Y.Z.devN`, so a build from `main` between two releases reports, e.g., `1.0.1.dev0` rather than the version it leads to; `scripts/check_version.py` enforces it (#352).
+- Find conda-forge's `libclang-<major>.dll` on Windows when generating the docstrings (#352).
+- Build and test against Eigen 5 in CI, beside the Eigen 3.4 every other job uses (#352).
 
 ## 1.0.0 (2026-09-18)
 
