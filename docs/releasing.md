@@ -3,8 +3,10 @@
 Maintainer checklist. This file is not part of the rendered user site.
 
 Releases are tags on `main`. In the steady state the top heading of
-`CHANGELOG.md` carries `(unreleased)`, so a released version is never
-indistinguishable from an unreleased one.
+`CHANGELOG.md` carries `(unreleased)` and the project version a `.devN`
+suffix, so neither a released version nor a build of one can be mistaken for
+an unreleased one: a build from `main` between 1.0.0 and 1.0.1 reports
+`pyvinecopulib.__version__ == "1.0.1.dev0"`.
 
 ## Checklist
 
@@ -14,9 +16,10 @@ indistinguishable from an unreleased one.
 2. **Open the release pull request.** In one commit:
    - retitle the top `CHANGELOG.md` heading from `(unreleased)` to the release
      date, e.g. `## 1.0.0 (2026-08-20)`;
-   - set the version in `pyproject.toml` (`[project].version`), which is the
-     single source of truth — CMake reads it through `SKBUILD_PROJECT_VERSION`
-     and it reaches users as `pyvinecopulib.__version__`;
+   - drop the `.devN` suffix from the version in `pyproject.toml`
+     (`[project].version`), which is the single source of truth — CMake reads
+     it through `SKBUILD_PROJECT_VERSION_FULL` and it reaches users as
+     `pyvinecopulib.__version__` — then run `uv lock`;
    - set `version` in `CITATION.cff` and restore its `date-released`, which
      the open cycle leaves out; and the `version` field in `.zenodo.json`, if
      one has been added by then.
@@ -67,10 +70,12 @@ indistinguishable from an unreleased one.
    next change has somewhere to go. `scripts/check_version.py` holds every
    version field to the top heading, so all of them move together:
    - add a fresh heading such as `## 1.0.1 (unreleased)` to `CHANGELOG.md`;
-   - set the same version in `pyproject.toml`, then run `uv lock` so the
-     tracked lockfile records it;
-   - set it in `CITATION.cff` and delete `date-released` there, since no
-     release of that version exists yet to have a date.
+   - set `1.0.1.dev0` in `pyproject.toml`, then run `uv lock` so the tracked
+     lockfile records it. The check refuses the bare `1.0.1` under an
+     `(unreleased)` heading;
+   - set `1.0.1` in `CITATION.cff`, without the suffix since it names the
+     release being prepared, and delete `date-released` there, since that
+     release has no date yet.
 
 9. **If the release surfaced a problem in the C++ library**, file it upstream
    rather than working around it here — the docstrings, signatures and CMake

@@ -263,8 +263,10 @@ nanobind_add_module(pyvinecopulib_ext STABLE_ABI LTO NOMINSIZE NB_STATIC
 
 add_dependencies(pyvinecopulib_ext generate_docstr)
 
-target_compile_definitions(pyvinecopulib_ext
-                           PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
+# The full PEP 440 version: `project(VERSION)` keeps only the numeric part, so
+# PROJECT_VERSION would report an open cycle's `1.0.1.dev0` as `1.0.1`.
+target_compile_definitions(
+  pyvinecopulib_ext PRIVATE VERSION_INFO=\"${SKBUILD_PROJECT_VERSION_FULL}\")
 
 # Generate per-subpackage __init__.pyi stubs. The sklearn stub is OPTIONAL (only
 # produced when scikit-learn is available at build time).
