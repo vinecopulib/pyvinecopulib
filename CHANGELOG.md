@@ -6,6 +6,9 @@
 
 - Evaluate a discrete or mixed `Bicop` or `Vinecop` read back from JSON, a file or a pickle with its variable types: it reported them, but evaluated every pair copula as continuous (#352, [vinecopulib#789](https://github.com/vinecopulib/vinecopulib/pull/789)).
 - Stop discrete fits and `find_latent_sample` from crashing when built against Eigen 5, whose `erf` returns `NaN` at an infinite argument (#352, [vinecopulib#792](https://github.com/vinecopulib/vinecopulib/pull/792)).
+- Keep a `Kde1d` density positive between the smallest and largest observation. A point in a wide gap, or next to a clump of ties at `degree=2`, had density exactly zero and so a log-likelihood of `-inf` (#350, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
+- Select the same `Kde1d` bandwidth on every build. On tied data with empty bins the plug-in bias estimate came out `NaN` on some builds only, which selected the normal-reference fallback there (#350, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
+- Make a `degree=1` `Kde1d` fit scale equivariant: its local-linear correction used `h` for `h²`, so every `degree=1` estimate changes (#350, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 
 ### Build / packaging
 
@@ -16,6 +19,7 @@
 ### Dependency changes
 
 - Bump `lib/vinecopulib` past `v1.0.0`, for the two fixes above (#352).
+- Bump `lib/kde1d` to `v1.2.3` (#350).
 
 ## 1.0.0 (2026-09-18)
 
