@@ -1,4 +1,5 @@
 import os
+import pickle
 from collections.abc import Callable
 
 import numpy as np
@@ -56,6 +57,28 @@ def test_it_round_trips_through_json_and_both_file_formats(
   same(pv.Bicop.from_file(cbor_filename))
   with open(cbor_filename, "rb") as f:
     assert f.read(1) != b"{"
+
+
+def test_a_discrete_pair_evaluates_the_same_after_a_round_trip() -> None:
+  """The stored variable types reach the evaluation, not only the report.
+
+  A reloaded model used to report `["d", "c"]` and evaluate as if both
+  variables were continuous (vinecopulib#789); pickling goes through the same
+  JSON, so both routes are checked on values.
+  """
+  cop = pv.Bicop.from_family(pv.families.clayton, parameters=np.array([[3.0]]))
+  u = cop.sample(200, seeds=[1])
+  cop = cop.with_var_types(["d", "c"])
+  atoms = np.ceil(u[:, 0] * 5)
+  ud = np.column_stack([atoms / 5, u[:, 1], (atoms - 1) / 5, u[:, 1]])
+
+  for back in (
+    pv.Bicop.from_json(cop.to_json()),
+    pickle.loads(pickle.dumps(cop)),
+  ):
+    assert back.var_types == ["d", "c"]
+    np.testing.assert_array_equal(back.pdf(ud), cop.pdf(ud))
+    np.testing.assert_array_equal(back.hfunc1(ud), cop.hfunc1(ud))
 
 
 def test_the_writable_properties_refuse_what_they_cannot_hold(

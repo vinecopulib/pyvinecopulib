@@ -2,11 +2,20 @@
 
 ## 1.0.1 (unreleased)
 
+### Bug fixes in `pyvinecopulib`
+
+- Evaluate a discrete or mixed `Bicop` or `Vinecop` read back from JSON, a file or a pickle with its variable types: it reported them, but evaluated every pair copula as continuous (#352, [vinecopulib#789](https://github.com/vinecopulib/vinecopulib/pull/789)).
+- Stop discrete fits and `find_latent_sample` from crashing when built against Eigen 5, whose `erf` returns `NaN` at an infinite argument (#352, [vinecopulib#792](https://github.com/vinecopulib/vinecopulib/pull/792)).
+
 ### Build / packaging
 
 - Version an open release cycle as `X.Y.Z.devN`, so a build from `main` between two releases reports, e.g., `1.0.1.dev0` rather than the version it leads to; `scripts/check_version.py` enforces it (#352).
 - Find conda-forge's `libclang-<major>.dll` on Windows when generating the docstrings (#352).
 - Build and test against Eigen 5 in CI, beside the Eigen 3.4 every other job uses (#352).
+
+### Dependency changes
+
+- Bump `lib/vinecopulib` past `v1.0.0`, for the two fixes above (#352).
 
 ## 1.0.0 (2026-09-18)
 

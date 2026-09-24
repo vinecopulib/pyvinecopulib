@@ -132,6 +132,35 @@ def test_it_round_trips_through_json_and_both_file_formats(
     assert f.read(1) != b"{"
 
 
+def test_a_mixed_vine_evaluates_the_same_after_a_round_trip() -> None:
+  """Each pair copula reloads with its variable types applied (vinecopulib#789).
+
+  Checked on values: a reloaded mixed vine reported its types correctly while
+  evaluating its discrete pairs as continuous.
+  """
+  rng = np.random.RandomState(11)
+  n = 400
+  x = rng.binomial(4, 0.5, size=n)
+  cdf = np.cumsum(np.array([1.0, 4.0, 6.0, 4.0, 1.0]) / 16.0)
+  cont = pv.to_pseudo_obs(rng.normal(size=(n, 2)) + x[:, None])
+  data = np.column_stack([cdf[x], cont, np.where(x > 0, cdf[x - 1], 0.0)])
+  cop = pv.Vinecop.from_data(
+    data,
+    pv.FitControlsVinecop(family_set=[pv.families.clayton, pv.families.frank]),
+    var_types=["d", "c", "c"],
+  )
+
+  for back in (
+    pv.Vinecop.from_json(cop.to_json()),
+    pickle.loads(pickle.dumps(cop)),
+  ):
+    np.testing.assert_array_equal(back.pdf(data), cop.pdf(data))
+    np.testing.assert_array_equal(
+      back.rosenblatt(data, seeds=[1, 2, 3]),
+      cop.rosenblatt(data, seeds=[1, 2, 3]),
+    )
+
+
 def test_custom_criterion_matches_builtin_tau() -> None:
   # A custom function returning signed Kendall's tau must reproduce the
   # structure selected by the built-in "tau" criterion exactly.
