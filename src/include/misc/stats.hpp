@@ -102,6 +102,29 @@ inline void init_stats(nb::module_& m) {
         tools_stat_doc.find_latent_sample.doc, "u"_a, "b"_a, "niter"_a = 3,
         nb::call_guard<nb::gil_scoped_release>());
 
+  // Internal: what the torch TLL fit needs to rank tied data on its own
+  // device. It sorts there and hands over only the tie groups' sizes.
+  m.def(
+      "_tie_order",
+      [](const Eigen::Matrix<int64_t, Eigen::Dynamic, 1>& group_sizes,
+         std::vector<int> seeds) {
+        std::vector<size_t> sizes(group_sizes.size());
+        for (Eigen::Index i = 0; i < group_sizes.size(); ++i) {
+          if (group_sizes(i) < 1)
+            throw std::invalid_argument("tie group sizes must be positive.");
+          sizes[i] = static_cast<size_t>(group_sizes(i));
+        }
+        auto ord = wdm::impl::tie_order(sizes, seeds);
+        Eigen::Matrix<int64_t, Eigen::Dynamic, 1> out(ord.size());
+        for (size_t i = 0; i < ord.size(); ++i)
+          out(i) = static_cast<int64_t>(ord[i]);
+        return out;
+      },
+      "group_sizes"_a, "seeds"_a = std::vector<int>(),
+      "Order in which ``to_pseudo_obs(..., ties_method=\"random\", "
+      "seeds=seeds)`` breaks ties, from the tie groups' sizes alone.",
+      nb::call_guard<nb::gil_scoped_release>());
+
   m.def("wdm",
         static_cast<double (*)(const Eigen::VectorXd&, const Eigen::VectorXd&,
                                std::string, Eigen::VectorXd, bool,
