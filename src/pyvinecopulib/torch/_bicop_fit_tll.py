@@ -7,9 +7,8 @@ precision after :meth:`InterpolationGrid2D.normalize_margins(25)`.
 
 Three pieces:
 
-* :func:`_to_pseudo_obs_continuous` — empirical CDF on continuous data
-  (rank/(n+1); no tie handling, mirrors C++ ``wdm`` ranks for
-  jitter-free input).
+* :func:`_to_pseudo_obs` — empirical CDF ``rank/(n+1)``, with ties broken
+  the way ``TllBicop::fit`` breaks them.
 * :func:`_ace` — alternating conditional expectations for the maximal-
   correlation coefficient. Outer/inner convergence loop matches the C++
   tolerances (``2e-15`` / ``1e-4``); the moving-average window smoother is
@@ -31,6 +30,7 @@ import math
 from collections.abc import Callable
 from typing import cast
 
+import numpy as np
 import torch
 from torch import Tensor
 
@@ -49,23 +49,52 @@ def _qnorm(p: Tensor) -> Tensor:
   return cast("Tensor", torch.special.ndtri(p))
 
 
-def _to_pseudo_obs_continuous(x: Tensor) -> Tensor:
-  """Empirical CDF on continuous data: ``rank/(n+1)``.
+def _to_pseudo_obs(x: Tensor) -> Tensor:
+  """Empirical CDF ``rank/(n+1)`` of each column, per lane.
 
-  Mirrors ``tools_stats::to_pseudo_obs`` with no ties (continuous input,
-  no jittering needed). C++ uses ``wdm`` ranks; for unique data those are
-  the same as :func:`torch.argsort` ranks.
+  ``TllBicop::fit`` ranks with ``to_pseudo_obs(u, "random", {}, {5})``: ties
+  broken at random, each column from a generator seeded with 5, starting from
+  the ties' order of appearance. The sort happens here, on the data's own
+  device; what the compiled draw needs is only the sizes of the tie groups,
+  so those are all that go to the host, and the order it draws for them is
+  all that comes back. A column without ties never leaves the device.
 
-  Both sorts are stable, so tied inputs get a defined order rather than
-  whichever one the sort happens to produce for the shape it was handed --
-  a leading pair axis otherwise makes the tie-break shape-dependent. Ties
-  reach here even on continuous data: callers trim to
-  ``(1e-10, 1 - 1e-10)`` first, which collapses everything beyond the clamp
-  into one group.
+  Ties are not limited to discrete margins: a continuous column with few
+  distinct values has them, and so does any sample after the trim to
+  ``(1e-10, 1 - 1e-10)``, which collapses everything beyond the clamp into one
+  group. Broken by row order instead, the tied blocks of the two columns line
+  up and add dependence the data does not have.
   """
   n = x.shape[-2]
-  ranks = x.argsort(dim=-2, stable=True).argsort(dim=-2, stable=True)
-  return (ranks + 1).to(x.dtype) / (n + 1)
+  # One row per (lane, column), each ranked on its own.
+  lines = x.movedim(-1, -2).reshape(-1, n)
+  order = lines.argsort(dim=-1, stable=True)
+  srt = lines.gather(-1, order)
+  starts = torch.ones_like(srt, dtype=torch.bool)
+  starts[:, 1:] = srt[:, 1:] != srt[:, :-1]
+  position = torch.arange(n, device=x.device)
+  ranks = (position + 1).expand_as(lines).clone()
+
+  tied = torch.nonzero(~starts.all(dim=-1)).flatten()
+  if tied.numel() > 0:
+    from ..core.extend import to_numpy
+    from ..pyvinecopulib_ext import _tie_order
+
+    # The value at sorted position `o + ord[o + k]` of the group starting at
+    # `o` receives the group's `(k + 1)`-th rank, `o + k + 1`.
+    target = np.empty((tied.numel(), n), dtype=np.int32)
+    for i, line in enumerate(to_numpy(starts[tied])):
+      first = np.flatnonzero(line)
+      sizes = np.diff(np.append(first, n))
+      target[i] = np.repeat(first, sizes) + _tie_order(sizes, [5])
+    target_t = torch.as_tensor(target, device=x.device).long()
+    ranks[tied] = torch.empty_like(target_t).scatter_(-1, target_t, ranks[tied])
+
+  psobs = torch.empty_like(lines).scatter_(
+    -1, order, ranks.to(x.dtype) / (n + 1)
+  )
+  moved = x.movedim(-1, -2).shape
+  return psobs.reshape(moved).movedim(-2, -1)
 
 
 def _win_smoother(x: Tensor, wl: int) -> Tensor:
@@ -517,7 +546,6 @@ def fit_tll_constant(
   grid_size: int = 30,
   mult: float = 1.0,
   grid_type: str = "normal",
-  pseudo_obs: Tensor | None = None,
   discrete_data: Tensor | None = None,
   compile_fit: bool = False,
 ) -> tuple[Tensor, Tensor]:
@@ -532,11 +560,6 @@ def fit_tll_constant(
     grid_size: number of grid points per axis (default 30; matches C++).
     mult: bandwidth multiplier passed through to ``select_bandwidth``;
       the C++ default is 1.
-    pseudo_obs: ranks to fit on, overriding the ones derived from ``u``. C++
-      ranks with ``ties_method="random"``, which differs from the argsort ranks
-      only when the data has ties — i.e. when a margin has atoms, where the
-      caller supplies them. On a discrete edge these ranks only seed the
-      bandwidth; see ``discrete_data``.
     discrete_data: the ``(n, 4)`` layout ``[u1, u2, u1^-, u2^-]`` of a discrete
       or mixed edge. When given, the fit runs on the *latent* sample recovered
       from it rather than on the ranks, which is what ``TllBicop::fit`` does:
@@ -580,8 +603,9 @@ def fit_tll_constant(
   dtype, device = u.dtype, u.device
 
   # Pseudo-observations + qnorm to z-space.
-  psobs = _to_pseudo_obs_continuous(u) if pseudo_obs is None else pseudo_obs
-  z_data = _qnorm(psobs)
+  # On a discrete edge these ranks only select the bandwidth; see
+  # ``discrete_data``.
+  z_data = _qnorm(_to_pseudo_obs(u))
 
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data, compile_step=compile_fit) * mult
@@ -600,8 +624,10 @@ def fit_tll_constant(
         "index with a fixed-seed generator, so it has no batch axis to "
         "give. Fit discrete edges one at a time."
       )
+    from ..core.extend import to_numpy
+
     latent = find_latent_sample(
-      discrete_data.detach().cpu().numpy(),
+      to_numpy(discrete_data),
       float((B[0, 0] * B[1, 1]).item() ** 0.25),
     )
     z_data = _qnorm(torch.as_tensor(latent, dtype=dtype, device=device))
