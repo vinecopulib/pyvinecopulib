@@ -145,15 +145,32 @@ def test_from_bicop_rejects_rotated() -> None:
 # --------------------------------------------------------------------------- #
 
 
+def _with_ties(u: np.ndarray) -> np.ndarray:
+  """Round the normal scores to halves and re-rank, averaging over ties.
+
+  What a continuous column with few distinct values looks like on the copula
+  scale: a dozen or so tied blocks per column, and no declared atom.
+  """
+  z = np.round(2 * torch.special.ndtri(torch.from_numpy(u)).numpy()) / 2
+  return pv.to_pseudo_obs(z, ties_method="average")
+
+
+@pytest.mark.parametrize("ties", [False, True])
 @pytest.mark.parametrize("n", [500, 2000])
 @pytest.mark.parametrize("rho", [0.3, 0.6, 0.9])
-def test_from_data_matches_cpp(n: int, rho: float) -> None:
+def test_from_data_matches_cpp(n: int, rho: float, ties: bool) -> None:
   """The pure-torch TLL constant fit produces the same density grid as
   ``pv.Bicop.from_data`` to machine precision after the standard
   margin normalization in :class:`InterpolationGrid2D`.
+
+  With ties too: ``TllBicop::fit`` breaks them at random from a fixed seed, and
+  breaking them by row order instead lines up the tied blocks of the two
+  columns, which moves the grid far beyond any tolerance.
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[rho]]))
   u_np = cop.sample(n, seeds=[1, 2, 3])
+  if ties:
+    u_np = _with_ties(u_np)
   cop_cpp = pv.Bicop.from_data(
     u_np,
     controls=pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1),
@@ -1066,6 +1083,8 @@ def test_from_data_batched_matches_cpp() -> None:
     )
     for r in rhos
   ]
+  # One lane with ties among lanes without: the tie-break is per lane.
+  us[1] = _with_ties(us[1])
   batched = TorchTllBicop.from_data_batched(torch.from_numpy(np.stack(us)))
   for got, u in zip(batched, us, strict=False):
     np.testing.assert_allclose(
