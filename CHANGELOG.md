@@ -4,22 +4,21 @@
 
 ### Bug fixes in `pyvinecopulib`
 
-- Evaluate a discrete or mixed `Bicop` or `Vinecop` read back from JSON, a file or a pickle with its variable types: it reported them, but evaluated every pair copula as continuous (#352, [vinecopulib#789](https://github.com/vinecopulib/vinecopulib/pull/789)).
-- Stop discrete fits and `find_latent_sample` from crashing when built against Eigen 5, whose `erf` returns `NaN` at an infinite argument (#352, [vinecopulib#792](https://github.com/vinecopulib/vinecopulib/pull/792)).
-- Keep a `Kde1d` density positive between the smallest and largest observation. A point in a wide gap, or next to a clump of ties at `degree=2`, had density exactly zero and so a log-likelihood of `-inf` (#350, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
-- Select the same `Kde1d` bandwidth on every build. On tied data with empty bins the plug-in bias estimate came out `NaN` on some builds only, which selected the normal-reference fallback there (#350, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
-- Make a `degree=1` `Kde1d` fit scale equivariant: its local-linear correction used `h` for `h²`, so every `degree=1` estimate changes (#350, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
+- Evaluate a discrete or mixed `Bicop` or `Vinecop` read from JSON, a file or a pickle with its variable types, not as continuous (#352, [vinecopulib#789](https://github.com/vinecopulib/vinecopulib/pull/789)).
+- Fix a crash in discrete fits and `find_latent_sample` when built against Eigen 5 (#352, [vinecopulib#792](https://github.com/vinecopulib/vinecopulib/pull/792)).
+- Keep a `Kde1d` density positive between the smallest and largest observation; a wide gap, or ties at `degree=2`, gave exactly zero (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
+- Select the same `Kde1d` bandwidth on every build; on tied data the plug-in estimate was `NaN` on some builds only (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
+- Make a `degree=1` `Kde1d` fit scale equivariant, which changes every `degree=1` estimate (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 
 ### Build / packaging
 
-- Version an open release cycle as `X.Y.Z.devN`, so a build from `main` between two releases reports, e.g., `1.0.1.dev0` rather than the version it leads to; `scripts/check_version.py` enforces it (#352).
-- Find conda-forge's `libclang-<major>.dll` on Windows when generating the docstrings (#352).
-- Build and test against Eigen 5 in CI, beside the Eigen 3.4 every other job uses (#352).
+- Version an open cycle as `X.Y.Z.devN`, enforced by `scripts/check_version.py` (#352).
+- Find conda-forge's `libclang-<major>.dll` on Windows (#352).
+- Test against Eigen 5 in CI (#352).
 
 ### Dependency changes
 
-- Bump `lib/vinecopulib` past `v1.0.0`, for the two fixes above (#352).
-- Bump `lib/kde1d` to `v1.2.3` (#350).
+- Bump `lib/vinecopulib` past `v1.0.0` and `lib/kde1d` to `v1.2.3` (#352).
 
 ## 1.0.0 (2026-09-18)
 
