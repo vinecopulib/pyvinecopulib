@@ -11,6 +11,7 @@
 - Make a `degree=1` `Kde1d` fit scale equivariant, which changes every `degree=1` estimate (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Break ties the same way on every platform in `to_pseudo_obs(..., "random")`, Chatterjee's xi and every `tll` fit, and keep input order for `"first"`; tied-data results change once (#352, [wdm#28](https://github.com/tnagler/wdm/pull/28)).
 - Compute Hoeffding's D correctly on tied data, in `wdm(..., "hoeffding")` and the `"hoeffd"` tree criterion; it could leave the unit interval (#352, [wdm#28](https://github.com/tnagler/wdm/pull/28)).
+- Break ties in `TorchTllBicop.from_data` and `from_data_batched` as `Bicop.from_data` does, at random from a fixed seed rather than by row order (#351).
 
 ### Build / packaging
 

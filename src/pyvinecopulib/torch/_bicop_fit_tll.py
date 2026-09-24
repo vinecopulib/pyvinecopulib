@@ -7,9 +7,8 @@ precision after :meth:`InterpolationGrid2D.normalize_margins(25)`.
 
 Three pieces:
 
-* :func:`_to_pseudo_obs_continuous` — empirical CDF on continuous data
-  (rank/(n+1); no tie handling, mirrors C++ ``wdm`` ranks for
-  jitter-free input).
+* :func:`_to_pseudo_obs` — empirical CDF ``rank/(n+1)``, with ties broken
+  the way ``TllBicop::fit`` breaks them.
 * :func:`_ace` — alternating conditional expectations for the maximal-
   correlation coefficient. Outer/inner convergence loop matches the C++
   tolerances (``2e-15`` / ``1e-4``); the moving-average window smoother is
@@ -49,23 +48,41 @@ def _qnorm(p: Tensor) -> Tensor:
   return cast("Tensor", torch.special.ndtri(p))
 
 
-def _to_pseudo_obs_continuous(x: Tensor) -> Tensor:
-  """Empirical CDF on continuous data: ``rank/(n+1)``.
+def _to_pseudo_obs(x: Tensor) -> Tensor:
+  """Empirical CDF ``rank/(n+1)`` of each column, per lane.
 
-  Mirrors ``tools_stats::to_pseudo_obs`` with no ties (continuous input,
-  no jittering needed). C++ uses ``wdm`` ranks; for unique data those are
-  the same as :func:`torch.argsort` ranks.
+  ``TllBicop::fit`` ranks with ``to_pseudo_obs(u, "random", {}, {5})``: ties
+  broken at random, each column from a generator seeded with 5. Without ties
+  every tie method gives the same ranks, so a lane without them is ranked here
+  on its own device. A lane with ties is ranked by that same compiled call, so
+  the tie order is the one the C++ fit draws rather than a reimplementation of
+  it.
 
-  Both sorts are stable, so tied inputs get a defined order rather than
-  whichever one the sort happens to produce for the shape it was handed --
-  a leading pair axis otherwise makes the tie-break shape-dependent. Ties
-  reach here even on continuous data: callers trim to
-  ``(1e-10, 1 - 1e-10)`` first, which collapses everything beyond the clamp
-  into one group.
+  Ties are not limited to discrete margins: a continuous column with few
+  distinct values has them, and so does any sample after the trim to
+  ``(1e-10, 1 - 1e-10)``, which collapses everything beyond the clamp into one
+  group. Broken by row order instead, the tied blocks of the two columns line
+  up and add dependence the data does not have.
   """
-  n = x.shape[-2]
+  n, cols = x.shape[-2], x.shape[-1]
   ranks = x.argsort(dim=-2, stable=True).argsort(dim=-2, stable=True)
-  return (ranks + 1).to(x.dtype) / (n + 1)
+  psobs = (ranks + 1).to(x.dtype) / (n + 1)
+  srt = x.sort(dim=-2).values
+  tied = (srt[..., 1:, :] == srt[..., :-1, :]).any(dim=-2).any(dim=-1)
+  if not bool(tied.any()):
+    return psobs
+
+  from ..utils import to_pseudo_obs
+
+  lanes = psobs.reshape(-1, n, cols).clone()
+  host = x.detach().cpu().numpy().reshape(-1, n, cols)
+  for i in torch.nonzero(tied.reshape(-1)).flatten().tolist():
+    lanes[i] = torch.as_tensor(
+      to_pseudo_obs(host[i], ties_method="random", seeds=[5]),
+      dtype=x.dtype,
+      device=x.device,
+    )
+  return lanes.reshape(x.shape)
 
 
 def _win_smoother(x: Tensor, wl: int) -> Tensor:
@@ -517,7 +534,6 @@ def fit_tll_constant(
   grid_size: int = 30,
   mult: float = 1.0,
   grid_type: str = "normal",
-  pseudo_obs: Tensor | None = None,
   discrete_data: Tensor | None = None,
   compile_fit: bool = False,
 ) -> tuple[Tensor, Tensor]:
@@ -532,11 +548,6 @@ def fit_tll_constant(
     grid_size: number of grid points per axis (default 30; matches C++).
     mult: bandwidth multiplier passed through to ``select_bandwidth``;
       the C++ default is 1.
-    pseudo_obs: ranks to fit on, overriding the ones derived from ``u``. C++
-      ranks with ``ties_method="random"``, which differs from the argsort ranks
-      only when the data has ties — i.e. when a margin has atoms, where the
-      caller supplies them. On a discrete edge these ranks only seed the
-      bandwidth; see ``discrete_data``.
     discrete_data: the ``(n, 4)`` layout ``[u1, u2, u1^-, u2^-]`` of a discrete
       or mixed edge. When given, the fit runs on the *latent* sample recovered
       from it rather than on the ranks, which is what ``TllBicop::fit`` does:
@@ -580,8 +591,9 @@ def fit_tll_constant(
   dtype, device = u.dtype, u.device
 
   # Pseudo-observations + qnorm to z-space.
-  psobs = _to_pseudo_obs_continuous(u) if pseudo_obs is None else pseudo_obs
-  z_data = _qnorm(psobs)
+  # On a discrete edge these ranks only select the bandwidth; see
+  # ``discrete_data``.
+  z_data = _qnorm(_to_pseudo_obs(u))
 
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data, compile_step=compile_fit) * mult
