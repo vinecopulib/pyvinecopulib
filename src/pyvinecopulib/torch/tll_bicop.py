@@ -544,24 +544,6 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     # ``1 - 1e-10`` are one tie group there and would be two here.
     u_t = trim(u_t, TENSOR_NS)
     values_only = u_t[:, :2]
-    # An atom repeats its distribution-function value, so the ranks have ties.
-    # ``TllBicop::fit`` breaks them at random from a fixed seed; reuse that draw
-    # rather than reimplementing it, as structure selection reuses ``wdm``. On a
-    # discrete edge those ranks only select the bandwidth: the fit itself runs on
-    # the latent sample drawn with it, which ``fit_tll_constant`` handles.
-    pseudo_obs = None
-    if discrete:
-      from ..utils import to_pseudo_obs
-
-      pseudo_obs = torch.as_tensor(
-        to_pseudo_obs(
-          values_only.detach().cpu().numpy(),
-          ties_method="random",
-          seeds=[5],
-        ),
-        dtype=u_t.dtype,
-        device=u_t.device,
-      )
 
     # ``method`` is validated to be "tll" by FitControlsTorchBicop; it is
     # kept as the dispatch hook for future torch fitters.
@@ -573,7 +555,6 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       mult=controls.mult,
       grid_type=controls.grid_type,
       compile_fit=controls.compile_fit,
-      pseudo_obs=pseudo_obs,
       discrete_data=u_t if discrete else None,
     )
     return cls(
