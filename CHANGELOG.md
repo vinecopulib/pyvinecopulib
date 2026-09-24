@@ -9,6 +9,7 @@
 - Keep a `Kde1d` density positive between the smallest and largest observation; a wide gap, or ties at `degree=2`, gave exactly zero (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Select the same `Kde1d` bandwidth on every build; on tied data the plug-in estimate was `NaN` on some builds only (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Make a `degree=1` `Kde1d` fit scale equivariant, which changes every `degree=1` estimate (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
+- Break ties the same way on every platform in `to_pseudo_obs(..., "random")`, Chatterjee's xi and every `tll` fit, and keep input order for `"first"`; tied-data results change once (#352, [wdm#28](https://github.com/tnagler/wdm/pull/28)).
 
 ### Build / packaging
 
@@ -18,7 +19,7 @@
 
 ### Dependency changes
 
-- Bump `lib/vinecopulib` past `v1.0.0` and `lib/kde1d` to `v1.2.3` (#352).
+- Bump `lib/vinecopulib` past `v1.0.0`, `lib/kde1d` to `v1.2.3` and `lib/wdm` past `v0.3.0` (#352).
 
 ## 1.0.0 (2026-09-18)
 
