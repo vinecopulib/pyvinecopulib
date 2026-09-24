@@ -30,6 +30,7 @@ import math
 from collections.abc import Callable
 from typing import cast
 
+import numpy as np
 import torch
 from torch import Tensor
 
@@ -52,11 +53,11 @@ def _to_pseudo_obs(x: Tensor) -> Tensor:
   """Empirical CDF ``rank/(n+1)`` of each column, per lane.
 
   ``TllBicop::fit`` ranks with ``to_pseudo_obs(u, "random", {}, {5})``: ties
-  broken at random, each column from a generator seeded with 5. Without ties
-  every tie method gives the same ranks, so a lane without them is ranked here
-  on its own device. A lane with ties is ranked by that same compiled call, so
-  the tie order is the one the C++ fit draws rather than a reimplementation of
-  it.
+  broken at random, each column from a generator seeded with 5, starting from
+  the ties' order of appearance. The sort happens here, on the data's own
+  device; what the compiled draw needs is only the sizes of the tie groups,
+  so those are all that go to the host, and the order it draws for them is
+  all that comes back. A column without ties never leaves the device.
 
   Ties are not limited to discrete margins: a continuous column with few
   distinct values has them, and so does any sample after the trim to
@@ -64,26 +65,36 @@ def _to_pseudo_obs(x: Tensor) -> Tensor:
   group. Broken by row order instead, the tied blocks of the two columns line
   up and add dependence the data does not have.
   """
-  n, cols = x.shape[-2], x.shape[-1]
-  order = x.argsort(dim=-2, stable=True)
-  psobs = (order.argsort(dim=-2, stable=True) + 1).to(x.dtype) / (n + 1)
-  srt = x.gather(-2, order)
-  tied = (srt[..., 1:, :] == srt[..., :-1, :]).any(dim=-2).any(dim=-1)
-  if not bool(tied.any()):
-    return psobs
+  n = x.shape[-2]
+  # One row per (lane, column), each ranked on its own.
+  lines = x.movedim(-1, -2).reshape(-1, n)
+  order = lines.argsort(dim=-1, stable=True)
+  srt = lines.gather(-1, order)
+  starts = torch.ones_like(srt, dtype=torch.bool)
+  starts[:, 1:] = srt[:, 1:] != srt[:, :-1]
+  position = torch.arange(n, device=x.device)
+  ranks = (position + 1).expand_as(lines).clone()
 
-  from ..core.extend import to_numpy
-  from ..utils import to_pseudo_obs
+  tied = torch.nonzero(~starts.all(dim=-1)).flatten()
+  if tied.numel() > 0:
+    from ..core.extend import to_numpy
+    from ..pyvinecopulib_ext import _tie_order
 
-  lanes = psobs.reshape(-1, n, cols).clone()
-  host = to_numpy(x).reshape(-1, n, cols)
-  for i in torch.nonzero(tied.reshape(-1)).flatten().tolist():
-    lanes[i] = torch.as_tensor(
-      to_pseudo_obs(host[i], ties_method="random", seeds=[5]),
-      dtype=x.dtype,
-      device=x.device,
-    )
-  return lanes.reshape(x.shape)
+    # The value at sorted position `o + ord[o + k]` of the group starting at
+    # `o` receives the group's `(k + 1)`-th rank, `o + k + 1`.
+    target = np.empty((tied.numel(), n), dtype=np.int32)
+    for i, line in enumerate(to_numpy(starts[tied])):
+      first = np.flatnonzero(line)
+      sizes = np.diff(np.append(first, n))
+      target[i] = np.repeat(first, sizes) + _tie_order(sizes, [5])
+    target_t = torch.as_tensor(target, device=x.device).long()
+    ranks[tied] = torch.empty_like(target_t).scatter_(-1, target_t, ranks[tied])
+
+  psobs = torch.empty_like(lines).scatter_(
+    -1, order, ranks.to(x.dtype) / (n + 1)
+  )
+  moved = x.movedim(-1, -2).shape
+  return psobs.reshape(moved).movedim(-2, -1)
 
 
 def _win_smoother(x: Tensor, wl: int) -> Tensor:
