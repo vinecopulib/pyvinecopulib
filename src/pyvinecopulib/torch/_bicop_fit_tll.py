@@ -65,17 +65,18 @@ def _to_pseudo_obs(x: Tensor) -> Tensor:
   up and add dependence the data does not have.
   """
   n, cols = x.shape[-2], x.shape[-1]
-  ranks = x.argsort(dim=-2, stable=True).argsort(dim=-2, stable=True)
-  psobs = (ranks + 1).to(x.dtype) / (n + 1)
-  srt = x.sort(dim=-2).values
+  order = x.argsort(dim=-2, stable=True)
+  psobs = (order.argsort(dim=-2, stable=True) + 1).to(x.dtype) / (n + 1)
+  srt = x.gather(-2, order)
   tied = (srt[..., 1:, :] == srt[..., :-1, :]).any(dim=-2).any(dim=-1)
   if not bool(tied.any()):
     return psobs
 
+  from ..core.extend import to_numpy
   from ..utils import to_pseudo_obs
 
   lanes = psobs.reshape(-1, n, cols).clone()
-  host = x.detach().cpu().numpy().reshape(-1, n, cols)
+  host = to_numpy(x).reshape(-1, n, cols)
   for i in torch.nonzero(tied.reshape(-1)).flatten().tolist():
     lanes[i] = torch.as_tensor(
       to_pseudo_obs(host[i], ties_method="random", seeds=[5]),
@@ -612,8 +613,10 @@ def fit_tll_constant(
         "index with a fixed-seed generator, so it has no batch axis to "
         "give. Fit discrete edges one at a time."
       )
+    from ..core.extend import to_numpy
+
     latent = find_latent_sample(
-      discrete_data.detach().cpu().numpy(),
+      to_numpy(discrete_data),
       float((B[0, 0] * B[1, 1]).item() ** 0.25),
     )
     z_data = _qnorm(torch.as_tensor(latent, dtype=dtype, device=device))
