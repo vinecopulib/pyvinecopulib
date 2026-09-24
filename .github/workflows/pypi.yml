@@ -25,6 +25,8 @@ permissions:
 env:
   BOOST_VERSION: 1.84.0
   EIGEN_VERSION: 3.4.0
+  # The `eigen5` job builds against this one instead; conda-forge ships it.
+  EIGEN5_VERSION: 5.0.1
   # Pinned so `uvx` can serve it from cache: it is resolved from PyPI on each
   # of the ten wheel legs, and one timeout there failed a leg whose wheel had
   # already built.
@@ -204,6 +206,62 @@ jobs:
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           path: ./wheelhouse/*.whl
+
+  eigen5:
+    # Every other job builds against EIGEN_VERSION. These two legs build the
+    # same wheel against Eigen 5 and run the suite on it, without publishing
+    # anything: Eigen 5 changed numerics the library depends on (`erf` at an
+    # infinite argument), and only a test run on a build against it shows that.
+    needs: [lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        cfg:
+          - {
+              os: ubuntu-latest,
+              cibw_id: manylinux_x86_64,
+              platform: x64,
+              root_install_dir: "/home/runner/work",
+            }
+          - {
+              os: windows-latest,
+              cibw_id: win_amd64,
+              platform: x64,
+              root_install_dir: 'D:\',
+            }
+    name: Build and test against Eigen 5 on ${{ matrix.cfg.os }} for cp312-${{ matrix.cfg.cibw_id }}
+    runs-on: ${{ matrix.cfg.os }}
+    timeout-minutes: 45
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
+        with:
+          python-version: 3.11
+      - name: Install C++ dependencies
+        id: install-dependencies
+        # Same pin as the `build` job.
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@64b8e3864d513c22e72da6ac85a829f678b9e5d0
+        with:
+          os: ${{ matrix.cfg.os }}
+          platform: ${{ matrix.cfg.platform }}
+          boost_install_dir: ${{ matrix.cfg.root_install_dir }}
+          eigen_install_dir: ${{ matrix.cfg.root_install_dir }}
+          boost_version: ${{ env.BOOST_VERSION }}
+          eigen_version: ${{ env.EIGEN5_VERSION }}
+          wdm: "false"
+          lcov: "false"
+          update_compilers_ubuntu: "false"
+      - name: Build and test the wheel
+        uses: pypa/cibuildwheel@v4.2.1
+        env:
+          CIBW_BUILD: cp312-${{ matrix.cfg.cibw_id }}
+          CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='${{matrix.cfg.root_install_dir}}include\eigen3'
+          CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
+          CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
 
   check_wheels:
     needs: build

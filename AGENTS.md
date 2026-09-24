@@ -139,7 +139,10 @@ Note for anyone reasoning about branch topology: a shallow clone makes
 `CHANGELOG.md` is newest-first. The top heading carries `(unreleased)`
 while a cycle is open, is dated when the release ships, and a fresh
 `(unreleased)` heading is opened immediately after tagging — so a released
-version is never indistinguishable from an unreleased one.
+version is never indistinguishable from an unreleased one. The same holds for a
+build: while the heading reads `(unreleased)` the project version carries a
+`.devN` suffix (`1.0.1.dev0`), which `scripts/check_version.py` enforces, so
+nothing built from an open cycle reports the release's version string.
 
 Each change is **one bullet, one to three lines, four at the very most**:
 imperative present, identifiers in backticks, no bold, and a trailing

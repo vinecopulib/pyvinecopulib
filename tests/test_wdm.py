@@ -457,3 +457,13 @@ class TestWdm:
     assert pv.utils.wdm(xc, yc, "xi", seeds=[7]) == pv.utils.wdm(
       xc, yc, "xi", seeds=[99]
     )
+
+  def test_hoeffding_counts_ties_as_its_definition_does(self) -> None:
+    """With ties, Hoeffding's D stays the statistic of strict joint ranks.
+
+    It came out 4.02 on these points, outside the range `30 * D` can take; the
+    value is wdm's brute-force reference (tnagler/wdm#28).
+    """
+    x = np.array([1, 1, 2, 3, 3, 4, 5, 5], dtype=float)
+    y = np.array([3, 2, 2, 4, 1, 4, 5, 5], dtype=float)
+    assert_allclose(pv.utils.wdm(x, y, "hoeffding"), 15 / 56, rtol=1e-12)

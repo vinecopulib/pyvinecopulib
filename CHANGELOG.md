@@ -2,6 +2,26 @@
 
 ## 1.0.1 (unreleased)
 
+### Bug fixes in `pyvinecopulib`
+
+- Evaluate a discrete or mixed `Bicop` or `Vinecop` read from JSON, a file or a pickle with its variable types, not as continuous (#352, [vinecopulib#789](https://github.com/vinecopulib/vinecopulib/pull/789)).
+- Fix a crash in discrete fits and `find_latent_sample` when built against Eigen 5 (#352, [vinecopulib#792](https://github.com/vinecopulib/vinecopulib/pull/792)).
+- Keep a `Kde1d` density positive between the smallest and largest observation; a wide gap, or ties at `degree=2`, gave exactly zero (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
+- Select the same `Kde1d` bandwidth on every build; on tied data the plug-in estimate was `NaN` on some builds only (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
+- Make a `degree=1` `Kde1d` fit scale equivariant, which changes every `degree=1` estimate (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
+- Break ties the same way on every platform in `to_pseudo_obs(..., "random")`, Chatterjee's xi and every `tll` fit, and keep input order for `"first"`; tied-data results change once (#352, [wdm#28](https://github.com/tnagler/wdm/pull/28)).
+- Compute Hoeffding's D correctly on tied data, in `wdm(..., "hoeffding")` and the `"hoeffd"` tree criterion; it could leave the unit interval (#352, [wdm#28](https://github.com/tnagler/wdm/pull/28)).
+
+### Build / packaging
+
+- Version an open cycle as `X.Y.Z.devN`, enforced by `scripts/check_version.py` (#352).
+- Find conda-forge's `libclang-<major>.dll` on Windows (#352).
+- Test against Eigen 5 in CI (#352).
+
+### Dependency changes
+
+- Bump `lib/vinecopulib` past `v1.0.0`, `lib/kde1d` to `v1.2.3` and `lib/wdm` past `v0.3.0` (#352).
+
 ## 1.0.0 (2026-09-18)
 
 This release ships the whole vine-modeling stack rather than the copula half of
