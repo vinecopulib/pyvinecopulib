@@ -17,8 +17,9 @@ indistinguishable from an unreleased one.
    - set the version in `pyproject.toml` (`[project].version`), which is the
      single source of truth — CMake reads it through `SKBUILD_PROJECT_VERSION`
      and it reaches users as `pyvinecopulib.__version__`;
-   - if `CITATION.cff` or a `version` field in `.zenodo.json` has been added
-     by then, set the matching version there too.
+   - set `version` in `CITATION.cff` and restore its `date-released`, which
+     the open cycle leaves out; and the `version` field in `.zenodo.json`, if
+     one has been added by then.
 
 3. **Check the metadata agrees**: `uv run python scripts/check_version.py`.
    CI runs the same check on every pull request.
@@ -62,9 +63,14 @@ indistinguishable from an unreleased one.
    event is what Zenodo uses for its deposition when the repository is
    connected to Zenodo.
 
-8. **Open the next cycle immediately.** Add a fresh incremented version
-   heading such as `## 1.1.0 (unreleased)` to `CHANGELOG.md` in a follow-up
-   pull request, so the next change has somewhere to go.
+8. **Open the next cycle immediately**, in a follow-up pull request, so the
+   next change has somewhere to go. `scripts/check_version.py` holds every
+   version field to the top heading, so all of them move together:
+   - add a fresh heading such as `## 1.0.1 (unreleased)` to `CHANGELOG.md`;
+   - set the same version in `pyproject.toml`, then run `uv lock` so the
+     tracked lockfile records it;
+   - set it in `CITATION.cff` and delete `date-released` there, since no
+     release of that version exists yet to have a date.
 
 9. **If the release surfaced a problem in the C++ library**, file it upstream
    rather than working around it here — the docstrings, signatures and CMake
