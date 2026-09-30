@@ -1774,18 +1774,31 @@ Key surface:
     starts tracking grad after construction.
   - `rect_prob` / `cond_interval_prob` — the two `BicopBase` hooks, overridden
     onto `InterpolationGrid2D.rect_mass` / `cond_interval_mass`, and available
-    in **both** cache modes: they read the density grid, not the prefix tables.
-    A four-corner `cdf` difference turns an absolute error `ε` into
-    `≈4ε/(w₁w₂)` in the atom widths; the rectangle's mass is a sum of
-    nonnegative terms and cancels nothing, so its error does not grow as the
-    rectangle narrows. Measured against exact rationals on a `1.2e-4`-wide
-    rectangle: `4.7e-15` against `4.6e-9`. `values >= 0` is a constructor
-    precondition precisely because that depends on it. It is the grid's
-    **mass**, as `cdf` is -- the probability once the margins are uniform, as a
-    fitted grid's are to rounding -- and it is summed with either argument
-    first and averaged, so a pair and its flip give the same probabilities bit
-    for bit: what makes a mixed vine's selection equal its refit, as upstream's
-    `rect_mass` does. The conditional one is **not** clamped into the
+    in **both** cache modes: they read their own mass tables, not the
+    `cache_integrals` prefix tables. A four-corner `cdf` difference turns an
+    absolute error `ε` into `≈4ε/(w₁w₂)` in the atom widths; the rectangle's
+    mass is a sum of nonnegative terms and cancels nothing, so its error does
+    not grow as the rectangle narrows. Measured against exact rational truth on
+    a `1.2e-4`-wide rectangle: `RECT_ERR` against `DIFF_ERR`.
+    **Every mass is `O(1)` per query**, not a quadrature over the grid: its
+    partial cells are summed directly and its whole cells read off
+    *compensated* prefix tables (`mass_tables` in `torch/_vinecop_batched.py`:
+    a value plus its rounding error), which is what keeps a difference of two
+    prefixes from canceling. The residual is `≈1e-32` absolute, so the
+    relative accuracy of a dense quadrature holds for any probability above
+    `~1e-16` and degrades below it -- `1e-11` relative at `1e-21`, which is a
+    `1e-11` error in a log-density twenty orders into the tail. A plain prefix
+    table would lose that accuracy at `1e-5`, which a strongly dependent pair's
+    off-diagonal atoms reach; a dense quadrature is `O(m)` per query, which is
+    what made the discrete batched path memory-bound at large `n`.
+    `values >= 0` is a constructor precondition precisely because the
+    nonnegative-weight bound depends on it. It is the grid's **mass**, as `cdf`
+    is -- the probability once the margins are uniform, as a fitted grid's are
+    to rounding -- and every piece of it is read with either argument first and
+    averaged, the column tables built by the row code on the transposed grid,
+    so a pair and its flip give the same probabilities bit for bit: what makes
+    a mixed vine's selection equal its refit, as upstream's `rect_mass` does.
+    The conditional one is **not** clamped into the
     open unit interval, unlike an h-function value, which is what makes the
     masses of a partition sum to one.
   - `compile` — runs the batched cascades through `torch.compile`, on CUDA

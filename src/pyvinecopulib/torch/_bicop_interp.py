@@ -11,6 +11,7 @@ import math
 
 import torch
 from torch import Tensor
+from torch.utils.weak import WeakTensorKeyDictionary
 
 from ..core._trim import trim
 
@@ -29,9 +30,14 @@ from ._vinecop_batched import (
   integrate_2d_batched,
   interpolate_batched,
   inverse_integrate_1d_batched,
+  mass_tables,
   rect_mass_batched,
   trap_weights,
 )
+
+#: Each grid's mass tables, keyed weakly on its ``values`` tensor together with
+#: that tensor's version counter; see ``InterpolationGrid2D._mass``.
+_MASS_CACHE: WeakTensorKeyDictionary = WeakTensorKeyDictionary()
 
 #: Above this grid side the passes below stay on the device: the launch
 #: overhead they save no longer outweighs moving the grid to the host.
@@ -616,6 +622,32 @@ class InterpolationGrid2D(torch.nn.Module):
     )
     return trim(out, TENSOR_NS)
 
+  def _mass(self) -> Tensor:
+    """This grid's mass tables, rebuilt only when the grid has changed.
+
+    Held outside the module, keyed weakly on the grid tensor and checked
+    against its version counter, so an in-place edit, a replacement or a device
+    move each rebuild them, and they reach neither a pickle nor
+    ``state_dict``. Rebuilt in the graph, uncached, whenever a gradient in the
+    grid is being taken, as ``TorchTllBicop._tables`` is.
+
+    Returns
+    -------
+    Tensor, shape (1, m * m, 7), dtype float
+        From :func:`mass_tables`.
+    """
+    values = self.values
+    if torch.is_grad_enabled() and values.requires_grad:
+      return mass_tables(self.grid_points, values.unsqueeze(0))
+    hit: tuple[int, Tensor] | None = _MASS_CACHE.get(values)
+    if hit is None or hit[0] != values._version:
+      hit = (
+        values._version,
+        mass_tables(self.grid_points, values.unsqueeze(0)),
+      )
+      _MASS_CACHE[values] = hit
+    return hit[1]
+
   def cond_interval_mass(
     self, u_cond: Tensor, lo: Tensor, hi: Tensor, cond_var: int
   ) -> Tensor:
@@ -640,7 +672,7 @@ class InterpolationGrid2D(torch.nn.Module):
     """
     return cond_interval_mass_batched(
       self.grid_points,
-      self.values.unsqueeze(0),
+      self._mass(),
       u_cond.unsqueeze(0),
       lo.unsqueeze(0),
       hi.unsqueeze(0),
@@ -653,8 +685,8 @@ class InterpolationGrid2D(torch.nn.Module):
 
     A batch of one through :func:`rect_mass_batched`, where the arrangement
     that avoids the four-corner cancellation is written down. On a
-    ``1.2e-4``-wide rectangle it errs by ``2.9e-12`` against the difference's
-    ``8.7e-9``.
+    ``1.2e-4``-wide rectangle it errs by ``2.8e-15`` against exact truth,
+    where the difference errs by ``1.8e-8``.
 
     Parameters
     ----------
@@ -669,7 +701,7 @@ class InterpolationGrid2D(torch.nn.Module):
     """
     return rect_mass_batched(
       self.grid_points,
-      self.values.unsqueeze(0),
+      self._mass(),
       a1.unsqueeze(0),
       b1.unsqueeze(0),
       a2.unsqueeze(0),
