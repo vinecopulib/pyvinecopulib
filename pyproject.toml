@@ -149,7 +149,14 @@ sdist.include = [
   "scripts/*.json",
 ]
 sdist.exclude = [
-  "build*/**",
+  # At any depth: scikit-build-core anchors a pattern to the project root from
+  # 1.1 on, so a bare `build*/**` stops matching a vendored library's own
+  # build tree, or its CI's `.github/actions/build-site`.
+  "**/build*/**",
+  # The vendored libraries' CI configuration, and the compiled example
+  # executable wdm tracks; no source build reads either.
+  "lib/*/.github/**",
+  "**/bin/**",
   "**/__pycache__/**",
   "**/*.pyc",
   # The lockfile pins the development and CI environments; a source build
