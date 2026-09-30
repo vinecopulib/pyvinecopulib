@@ -1009,9 +1009,10 @@ def _many_level_data(n: int, seed: int) -> tuple[np.ndarray, list[str]]:
   """A mixed ``(n, d + k)`` sample shaped like the wind data set.
 
   Three discrete variables with 12, 31 and 10 levels, then five continuous
-  ones. Many-level atoms put a crowd of distinct h-function values just below
-  the upper bound from the second tree on, which is where the two lanes'
-  last bits used to reorder the fit's ranks.
+  ones, two of which repeat their values as rounded measurements do. From the
+  second tree on, the atoms put a crowd of h-function values within rounding
+  of each other, and the repeated values exact ties, which is where the two
+  lanes' last bits could reorder a discrete fit's ranks or latent draw.
   """
   rng = np.random.default_rng(seed)
   d = 8
@@ -1026,6 +1027,8 @@ def _many_level_data(n: int, seed: int) -> tuple[np.ndarray, list[str]]:
       k = np.floor(levels * p)
       values.append((k + 1) / levels)
       limits.append(k / levels)
+    elif j in (3, 4):
+      values.append((np.floor(200 * p) + 0.5) / 200)
     else:
       values.append(p)
   return np.column_stack(values + limits), ["d"] * 3 + ["c"] * 5
@@ -1073,21 +1076,29 @@ def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree(
   )
 
 
-def test_a_discrete_pair_fit_ignores_rounding_noise_within_an_atom() -> None:
-  """An atom's rows a few ulps apart fit the same pair as exact ones.
+@pytest.mark.parametrize("noisy_column", [0, 1])
+def test_a_discrete_pair_fit_ignores_rounding_noise_in_its_ties(
+  noisy_column: int,
+) -> None:
+  """Ties split by a few ulps fit the same pair as exact ones.
 
-  The mirror of vinecopulib's own test, against both the exact fit and the
-  compiled fit of the same noisy data.
+  The mirror of vinecopulib's own two tests: the noise splits either an
+  atom's rows or the repeated values of the continuous argument. Checked
+  against both the exact fit and the compiled fit of the same noisy data.
   """
   rng = np.random.default_rng(3)
   z = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=3000)
   u = pv.to_pseudo_obs(z)
   k = np.floor(31 * u[:, 0])
-  exact = np.column_stack([(k + 1) / 31, u[:, 1], k / 31, u[:, 1]])
+  c = (np.floor(200 * u[:, 1]) + 0.5) / 200 if noisy_column else u[:, 1]
+  exact = np.column_stack([(k + 1) / 31, c, k / 31, c])
   noisy = exact.copy()
   step = (np.arange(len(u)) % 9 - 4) * np.finfo(float).eps
-  noisy[:, 0] = np.minimum(exact[:, 0] * (1 + step), 1.0)
-  noisy[:, 2] = exact[:, 2] * (1 - step)
+  if noisy_column:
+    noisy[:, 1] = noisy[:, 3] = exact[:, 1] * (1 + step)
+  else:
+    noisy[:, 0] = np.minimum(exact[:, 0] * (1 + step), 1.0)
+    noisy[:, 2] = exact[:, 2] * (1 - step)
 
   def fit(x: np.ndarray) -> np.ndarray:
     pair = TorchTllBicop.from_data(
