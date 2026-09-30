@@ -5,6 +5,7 @@
 ### New features in `pyvinecopulib`
 
 - Rank partly as tied the distinct values closer than `scale` in `to_pseudo_obs(..., scale=...)`, so that pseudo-observations move continuously with the data; the default, `0`, ranks by value (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
+- Evaluate a `TorchVinecop` with discrete variables on the batched fast path: `pdf` / `logpdf` / `rosenblatt` carry the left-limit cascade one stacked tree level at a time, and `inverse_rosenblatt` / `sample` batch as on a continuous vine. A discrete vine declined `batched=True` and ran edge by edge, on CUDA too (#NNN).
 
 ### Bug fixes in `pyvinecopulib`
 
@@ -24,6 +25,7 @@
 - Fit a `TorchTllBicop` the same way whatever the memory layout of its data; a strided view selected a bandwidth a few ulps apart (#351).
 - Draw uniforms on a grid of `2^-53` in `sample_uniform` and every seeded simulation, quasi-random ones included, where a million draws repeated about 110 values per column; seeded draws change once (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
 - Order each column's ties by seeds of its own in `to_pseudo_obs(..., "random", seeds=...)`, so that columns tied in the same rows are no longer ordered alike (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
+- `TorchVinecop.inverse_rosenblatt(batched=True)` agrees bit for bit with `batched=False` where an intermediate quantile lands on 0 or 1: the batched waves skipped the clamp each pair applies to its input, and differed by up to `5e-8` (#NNN).
 
 ### Build / packaging
 

@@ -1725,12 +1725,19 @@ Key surface:
   slot copies nothing. `TorchTllBicop.from_data`
   takes the four-column layout and reuses the compiled `find_latent_sample`,
   which is what `TllBicop::fit` now consumes for a discrete edge; the jittered
-  ranks only seed the bandwidth. A discrete torch vine refuses the **batched
-  fast path**, whose stacked levels gather `(N, n, 2)` where a discrete edge
-  needs `(N, n, 4)` and the parallel left-limit cascade behind it, and whose
-  `DELTA_MIN` split is per row. It does *not* refuse the **integral cache**: the prefix tables
-  reconstruct the integral exactly, so a discrete edge can difference them and
-  `cache_integrals` resolves the same way it does for a continuous vine.
+  ranks only seed the bandwidth. A discrete torch vine takes the **batched
+  fast path** like a continuous one: the stacked levels gather `(N, n, 4)`
+  through the same wiring as the values, the batched loops carry the parallel
+  left-limit scratch, and each quotient is `BicopBase`'s own with the per-row
+  `DELTA_MIN` split taken as a `where` -- so the forward cascades agree with
+  the per-edge ones to rounding, and the inverse, which reads no left limit,
+  exactly. `rect_mass` / `cond_interval_mass` are a batch of one through the
+  stacked kernels the levels call, so the two cannot drift. Whether a vine's
+  batched state can host a discrete slot is its `_build_batched`'s to answer
+  through `NotBatchable`, not the dispatcher's. Nor does a discrete vine
+  refuse the **integral cache**: the prefix tables reconstruct the integral
+  exactly, so a discrete edge can difference them and `cache_integrals`
+  resolves the same way it does for a continuous vine.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
   - `compile_fit` — off by default; fuses the bandwidth search's per-pass

@@ -310,13 +310,17 @@ def test_thresholded_pairs_land_where_the_data_is(
   assert vine.pdf(ut).device.type == want
 
 
+@pytest.mark.parametrize("batched", [False, True])
 @pytest.mark.parametrize("var_types", [["d", "c", "c"], ["c", "d", "d"]])
-def test_discrete_vine_matches_cpu(device: str, var_types: list[str]) -> None:
-  """A vine with atoms evaluates identically on either device.
+def test_discrete_vine_matches_cpu(
+  device: str, var_types: list[str], batched: bool
+) -> None:
+  """A vine with atoms evaluates identically on either device, on either path.
 
   The discrete cascade differences the distribution function over an atom's
   width, which amplifies any absolute error by ``~4/(w1 w2)`` -- so this is
   the path where a device-dependent rounding difference would show first.
+  The reference is the per-edge cascade on the cpu.
   """
   rng = np.random.default_rng(19)
   d = len(var_types)
@@ -337,8 +341,8 @@ def test_discrete_vine_matches_cpu(device: str, var_types: list[str]) -> None:
   )
   ref = TorchVinecop.from_vinecop(cpp, device=torch.device("cpu"))
   got = TorchVinecop.from_vinecop(cpp, device=torch.device(device))
-  a = _np(ref.pdf(torch.as_tensor(u)))
-  b = _np(got.pdf(torch.as_tensor(u, device=device)))
+  a = _np(ref.pdf(torch.as_tensor(u), batched=False))
+  b = _np(got.pdf(torch.as_tensor(u, device=device), batched=batched))
   assert b.shape == a.shape
   np.testing.assert_allclose(b, a, rtol=1e-12, atol=1e-12)
 
