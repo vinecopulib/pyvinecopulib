@@ -610,10 +610,11 @@ def test_cached_integrals_carry_a_grid_gradient() -> None:
 def _exact_rect_prob(
   grid: list[Fraction], values: list[list[Fraction]], rect: tuple[Fraction, ...]
 ) -> Fraction:
-  """The four-corner difference of the renormalized distribution function.
+  """The four-corner difference of the rescaled distribution function.
 
   Exact rational arithmetic throughout, so it is the reference the float routes
-  are measured against. ``C(u1, u2) = M(u1, u2) * u2 / M(1, u2)``, the object
+  are measured against. ``C(u1, u2) = M(u1, u2) f(u1) g(u2) M(1, 1)``, with
+  ``f(x) = x / M(x, 1)`` and ``g(y) = y / M(1, y)``, the object
   ``integrate_2d`` computes.
   """
   m = len(grid)
@@ -659,12 +660,17 @@ def _exact_rect_prob(
       Fraction(0),
     )
 
+  zero, one = Fraction(0), Fraction(1)
+
   def cdf(u1: Fraction, u2: Fraction) -> Fraction:
-    total = mass(Fraction(0), Fraction(1), Fraction(0), u2)
+    if u1 == 0 or u2 == 0:
+      return zero
+    m_x, m_y = mass(zero, u1, zero, one), mass(zero, one, zero, u2)
     return (
-      Fraction(0)
-      if total == 0
-      else mass(Fraction(0), u1, Fraction(0), u2) * u2 / total
+      mass(zero, u1, zero, u2)
+      * (u1 / m_x)
+      * (u2 / m_y)
+      * mass(zero, one, zero, one)
     )
 
   a1, b1, a2, b2 = rect
@@ -674,8 +680,9 @@ def _exact_rect_prob(
 # Only the difference's bound moves with the width, which is the point:
 # differencing four distribution values amplifies any absolute error by
 # ~4 / (w1 w2), while `rect_mass` sums each mass as nonnegative partial cells
-# plus compensated whole-cell reads and holds ~1e-15 at every width -- its one
-# canceling term, the `lam` difference, multiplies a term of order w1.
+# plus compensated whole-cell reads and holds ~1e-15 at every width -- its only
+# canceling terms, the rescalings' increments, multiply masses no larger than
+# their strips.
 # Measuring both in one run is what shows the gap is the construction rather
 # than the test data: the two agree at 3/8 and are 6e6x apart at 1/8192.
 # Dyadic endpoints keep `float(x) == x`, so the comparison is against the

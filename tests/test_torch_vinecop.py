@@ -1034,45 +1034,86 @@ def _many_level_data(n: int, seed: int) -> tuple[np.ndarray, list[str]]:
   return np.column_stack(values + limits), ["d"] * 3 + ["c"] * 5
 
 
-@pytest.mark.parametrize("select", [True, False])
-def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree(
-  select: bool,
-) -> None:
-  """Both lanes fit the same mixed vine, edge by edge, past the first tree.
+def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree() -> None:
+  """Selected or refitted on its structure, in either lane, a mixed vine is one.
 
-  A ``tll`` fit breaks rank ties at random in value order, so h-function
-  values equal up to rounding must be merged into exact ties first, in both
-  lanes (vinecopulib#798). Selection is compared with selection and a fixed
-  structure with a fixed structure: a selected pair is fitted before it is
-  flipped into place, and a flipped ``tll`` pair's discrete h-functions agree
-  with the original's only to ~1e-10.
+  A ``tll`` fit breaks rank ties at random in value order, and a discrete one
+  then draws a latent sample that is discontinuous in its bandwidth, so the
+  fit agrees across evaluations only when its data agree up to near-ties
+  (vinecopulib#798) and when it does not depend on the orientation its pair
+  was fitted in (vinecopulib#799): selection fits a pair in the search's
+  orientation and stores it flipped, a refit fits it in place.
   """
   u, var_types = _many_level_data(n=2000, seed=8)
-  structure = pv.Vinecop.from_data(
-    u, var_types=var_types, controls=_TLL_CONTROLS
-  ).structure
-  fixed = None if select else structure
-  cop = pv.Vinecop.from_data(
-    u, _TLL_CONTROLS, structure=fixed, var_types=var_types
+  cop = pv.Vinecop.from_data(u, var_types=var_types, controls=_TLL_CONTROLS)
+  refit = pv.Vinecop.from_data(
+    u, _TLL_CONTROLS, structure=cop.structure, var_types=var_types
   )
-  vine = TorchVinecop.from_data(
-    torch.from_numpy(u),
-    structure=fixed,
-    var_types=var_types,
-    controls=FitControlsTorchVinecop(),
-  )
-  np.testing.assert_array_equal(vine.matrix, cop.matrix)
-  for tree in range(vine.trunc_lvl):
-    for edge in range(vine.d - tree - 1):
-      np.testing.assert_allclose(
-        vine._pair_module(tree, edge).interp_grid.values.numpy(),
-        np.asarray(cop.get_pair_copula(tree, edge).parameters),
-        rtol=1e-10,
-        atol=1e-10,
-        err_msg=f"tree {tree}, edge {edge}",
-      )
+  torch_fits = {
+    kind: TorchVinecop.from_data(
+      torch.from_numpy(u),
+      structure=structure,
+      var_types=var_types,
+      controls=FitControlsTorchVinecop(),
+    )
+    for kind, structure in [("selection", None), ("refit", cop.structure)]
+  }
+
+  def grid(fit: pv.Vinecop | TorchVinecop, tree: int, edge: int) -> np.ndarray:
+    if isinstance(fit, TorchVinecop):
+      return fit._pair_module(tree, edge).interp_grid.values.numpy()
+    return np.asarray(fit.get_pair_copula(tree, edge).parameters)
+
+  fits: dict[str, pv.Vinecop | TorchVinecop] = {
+    "compiled refit": refit,
+    **{f"torch {kind}": fit for kind, fit in torch_fits.items()},
+  }
+  for name, fit in fits.items():
+    np.testing.assert_array_equal(fit.matrix, cop.matrix, err_msg=name)
+    for tree in range(cop.trunc_lvl):
+      for edge in range(cop.dim - tree - 1):
+        np.testing.assert_allclose(
+          grid(fit, tree, edge),
+          grid(cop, tree, edge),
+          rtol=1e-10,
+          atol=1e-10,
+          err_msg=f"{name}: tree {tree}, edge {edge}",
+        )
   np.testing.assert_allclose(
-    vine.pdf(torch.from_numpy(u)).numpy(), cop.pdf(u), rtol=1e-10
+    torch_fits["selection"].pdf(torch.from_numpy(u)).numpy(),
+    cop.pdf(u),
+    rtol=1e-10,
+  )
+
+
+@pytest.mark.parametrize("seed", [7, 18, 30, 36])
+def test_a_discrete_pair_fit_does_not_depend_on_argument_order(
+  seed: int,
+) -> None:
+  """A pair fitted with its arguments swapped and then flipped is the same fit.
+
+  Near independence, where the maximal correlation behind the bandwidth used
+  to depend on which argument ACE updated first. Checked against the compiled
+  fit as well, which orders the pair the same way (vinecopulib#799).
+  """
+  u = np.random.default_rng(seed).uniform(size=(1000, 2))
+  k = np.ceil(12 * u[:, 0])
+  data = np.column_stack([k / 12, u[:, 1], (k - 1) / 12, u[:, 1]])
+  swapped = data[:, [1, 0, 3, 2]]
+
+  def fit(x: np.ndarray, types: list[str]) -> TorchTllBicop:
+    return TorchTllBicop.from_data(
+      torch.from_numpy(x), var_types=types, cache_integrals=False
+    )
+
+  direct = fit(data, ["d", "c"]).interp_grid.values.numpy()
+  reversed_ = fit(swapped, ["c", "d"]).interp_grid.values.numpy().T
+  np.testing.assert_allclose(reversed_, direct, rtol=1e-12, atol=1e-12)
+  compiled = pv.Bicop.from_data(
+    data[:, :3], controls=_TLL_BICOP, var_types=["d", "c"]
+  )
+  np.testing.assert_allclose(
+    direct, np.asarray(compiled.parameters), rtol=1e-10, atol=1e-10
   )
 
 

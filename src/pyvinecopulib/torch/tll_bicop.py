@@ -805,8 +805,9 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     Notes
     -----
-    Each grid line is rescaled by its own total, so ``C(1, u2) = u2`` holds
-    exactly.
+    The grid's mass is rescaled along both arguments, so both margins are
+    exactly uniform and a flipped pair gives the same values for swapped
+    arguments.
     """
     del x  # declared so the pair can sit in a conditional vine
     if self.is_indep:

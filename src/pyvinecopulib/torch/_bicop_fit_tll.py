@@ -445,9 +445,25 @@ def _pearson_cor(x: Tensor) -> Tensor:
   return (x0 * x1).sum(-1) / ((x0**2).sum(-1).sqrt() * (x1**2).sum(-1).sqrt())
 
 
+def _canonical_pair(x: Tensor) -> Tensor:
+  """``x: (..., n, 2)`` with each lane's columns ordered by its own values.
+
+  ``tools_stats::pairwise_mcor``'s rule: a lane is swapped where, at the first
+  row whose two values differ, the second is the smaller. ACE updates one
+  variable first, so this is what makes the maximal correlation a function of
+  the pair rather than of the order it was passed in.
+  """
+  differ = x[..., 0] != x[..., 1]
+  first = differ.to(torch.uint8).argmax(-1, keepdim=True)
+  a = x[..., 0].gather(-1, first)
+  b = x[..., 1].gather(-1, first)
+  swap = (b < a).unsqueeze(-1)
+  return torch.where(swap, x.flip(-1), x)
+
+
 def _pairwise_mcor(x: Tensor, *, compile_step: bool = False) -> Tensor:
   """Maximal correlation via ACE + Pearson, one value per leading lane."""
-  return _pearson_cor(_ace(x, compile_step=compile_step))
+  return _pearson_cor(_ace(_canonical_pair(x), compile_step=compile_step))
 
 
 def _chol22(B: Tensor) -> Tensor:
