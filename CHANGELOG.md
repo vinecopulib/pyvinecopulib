@@ -17,6 +17,7 @@
 - Version an open cycle as `X.Y.Z.devN`, enforced by `scripts/check_version.py` (#352).
 - Find conda-forge's `libclang-<major>.dll` on Windows (#352).
 - Test against Eigen 5 in CI (#352).
+- Ship the same sdist under scikit-build-core 1.1, which anchors `sdist.exclude` patterns to the project root: the vendored libraries' CI files and build trees, and a compiled example wdm tracks, no longer reach it (#352).
 
 ### Dependency changes
 
