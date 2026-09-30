@@ -447,9 +447,8 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """Fit ``P`` pair copulas from one stacked sample, in one call.
 
     What comes back is ``P`` ordinary ``TorchTllBicop`` objects; only the fit is
-    batched. Nothing here reads the pairs as related -- the leading axis is
-    ``P`` independent pairs on shared rows -- so one vine's tree level and
-    several vines' levels stack alike.
+    batched. Nothing here reads the pairs as related: the leading axis is
+    ``P`` independent pairs on shared rows.
 
     Parameters
     ----------

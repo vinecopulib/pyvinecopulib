@@ -419,8 +419,8 @@ class TestEstimatorWiring:
     est = VineDensity(controls=controls, batch_size=25, random_state=3)
     est2 = clone(est)
     # `clone` deep-copies a non-estimator parameter, so each clone gets
-    # controls of its own -- which is what makes it the ensembling idiom:
-    # writing to one member's controls cannot reach another's.
+    # controls of its own: writing to one clone's controls cannot reach
+    # another's.
     assert est2.controls is not controls
     assert est2.controls.num_threads == 2
     assert est2.batch_size == 25
