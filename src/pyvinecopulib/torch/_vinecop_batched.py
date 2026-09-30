@@ -43,6 +43,15 @@ if TYPE_CHECKING:
 #: vanishes too, so nothing moved; the constant was simply the wrong one.
 _MIN_MASS: float = 1e-20
 
+#: Peak a mixed level's evaluation aims to stay under, the budget the TLL
+#: fit's grid blocking uses too.
+_DISCRETE_MEM_BUDGET_BYTES: int = 256 * 1024 * 1024
+
+#: Values a mixed level's evaluation holds live per (pair, row) at its peak:
+#: measured 8.2 KB at float64 with the density, nearly all of it the stencil
+#: gathers of the stacked probability calls, and rounded up.
+_DISCRETE_VALUES_PER_QUERY: int = 1100
+
 
 # --------------------------------------------------------------------------- #
 # Batched bilinear interpolation                                               #
@@ -1239,7 +1248,32 @@ class BatchedTreeLevel(torch.nn.Module):
       else:
         pdf, (h1, h2) = None, self.h1_h2(grid_points, u2c)
       return pdf, h1, h2, h1, h2
+    # Every output is row-wise, so rows are evaluated in blocks: the stencil
+    # gathers hold ~1 KB per (pair, row) each, which on a wide level at a
+    # large sample is more than a card holds at once.
+    n_pairs, n = int(u.shape[0]), int(u.shape[1])
+    per_row = n_pairs * _DISCRETE_VALUES_PER_QUERY * u.element_size()
+    block = max(1, _DISCRETE_MEM_BUDGET_BYTES // per_row)
+    if n <= block:
+      return self._eval_discrete_rows(grid_points, u, with_pdf)
+    parts = [
+      self._eval_discrete_rows(grid_points, u[:, i : i + block], with_pdf)
+      for i in range(0, n, block)
+    ]
+    pdfs = [q[0] for q in parts]
+    pdf = None
+    if with_pdf:
+      pdf = torch.cat([q for q in pdfs if q is not None], 1)
+    h1 = torch.cat([q[1] for q in parts], 1)
+    h2 = torch.cat([q[2] for q in parts], 1)
+    h1_sub = torch.cat([q[3] for q in parts], 1)
+    h2_sub = torch.cat([q[4] for q in parts], 1)
+    return pdf, h1, h2, h1_sub, h2_sub
 
+  def _eval_discrete_rows(
+    self, grid_points: Tensor, u: Tensor, with_pdf: bool
+  ) -> tuple[Tensor | None, Tensor, Tensor, Tensor, Tensor]:
+    """:meth:`eval_discrete` on one block of rows, already clamped."""
     gp, lin = grid_points, self._is_linear
     u1, u2, u1m, u2m = u.unbind(-1)
     # A continuous argument's left limit is its own value, so its midpoint is
