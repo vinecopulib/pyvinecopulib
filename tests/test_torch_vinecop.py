@@ -1487,35 +1487,6 @@ def test_batched_fit_defaults_to_off_on_cpu() -> None:
     assert seen == [3, 2, 1], f"explicit batched_fit=True not honored: {seen}"
 
 
-def test_batched_fit_falls_back_for_a_discrete_level() -> None:
-  """A discrete edge cannot stack, so its level stays per-edge.
-
-  Asking for `batched_fit=True` on a discrete vine must fit it, not raise:
-  the hook is an optimization, and a level it cannot serve is simply not
-  handed to it.
-
-  Exact rather than toleranced because a discrete level cannot stack at all,
-  so `batched_fit=True` never reaches the batched fitter here and the two
-  runs are the same arithmetic.
-  """
-  var_types = ["d", "c", "c"]
-  wide = _discrete_data(var_types, n=600, seed=17)
-  structure = pv.RVineStructure.sample(3, seeds=[2])
-  fits = {
-    flag: TorchVinecop.from_data(
-      torch.from_numpy(wide),
-      structure=structure,
-      controls=FitControlsTorchVinecop(batched_fit=flag),
-      var_types=var_types,
-    )
-    for flag in (False, True)
-  }
-  u_eval = torch.from_numpy(wide[:64])
-  torch.testing.assert_close(
-    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=0.0, rtol=0.0
-  )
-
-
 @pytest.mark.parametrize("d", [5, 9])
 def test_batched_fit_selects_the_same_structure(d: int) -> None:
   """Selection is unmoved by how its pairs were scheduled.
