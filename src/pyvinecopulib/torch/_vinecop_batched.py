@@ -43,9 +43,10 @@ if TYPE_CHECKING:
 #: vanishes too, so nothing moved; the constant was simply the wrong one.
 _MIN_MASS: float = 1e-20
 
-#: Peak a mixed level's evaluation aims to stay under, the budget the TLL
-#: fit's grid blocking uses too.
-_DISCRETE_MEM_BUDGET_BYTES: int = 256 * 1024 * 1024
+#: Peak a mixed level's evaluation aims to stay under. Smaller blocks trade
+#: memory for kernel launches: at n = 100000 a quarter of this doubled the
+#: time of a 15-variable vine, and four times it bought nothing more.
+_DISCRETE_MEM_BUDGET_BYTES: int = 1024 * 1024 * 1024
 
 #: Values a mixed level's evaluation holds live per (pair, row) at its peak:
 #: measured 8.2 KB at float64 with the density, nearly all of it the stencil
@@ -933,6 +934,10 @@ class BatchedTreeLevel(torch.nn.Module):
   idx_dd: Tensor
   idx_dc: Tensor
   idx_cd: Tensor
+  idx_h1: Tensor
+  idx_h1s: Tensor
+  idx_h2: Tensor
+  idx_h2s: Tensor
   mass: Tensor | None
 
   def __init__(
@@ -987,6 +992,13 @@ class BatchedTreeLevel(torch.nn.Module):
       "idx_dd": disc1 & disc2,
       "idx_dc": disc1 & ~disc2,
       "idx_cd": ~disc1 & disc2,
+      # The quotients the next tree reads: `hfunc1` and its left limit where
+      # `needs_h1`, `hfunc2` and its left limit where `needs_h2`. Every other
+      # probability a discrete slot could have is left out of the stack.
+      "idx_h1": disc1 & needs_h1,
+      "idx_h1s": disc1 & disc2 & needs_h1,
+      "idx_h2": disc2 & needs_h2,
+      "idx_h2s": disc1 & disc2 & needs_h2,
     }
     self._group_sizes: dict[str, int] = {}
     for name, mask in groups.items():
@@ -1213,15 +1225,25 @@ class BatchedTreeLevel(torch.nn.Module):
     return torch.where(self.is_indep.index_select(0, idx)[:, None], indep, out)
 
   def eval_discrete(
-    self, grid_points: Tensor, u: Tensor, *, with_pdf: bool
+    self,
+    grid_points: Tensor,
+    u: Tensor,
+    *,
+    with_pdf: bool,
+    every_h2: bool = False,
   ) -> tuple[Tensor | None, Tensor, Tensor, Tensor, Tensor]:
     """``(pdf, hfunc1, hfunc2, hfunc1^-, hfunc2^-)`` on a four-column input.
 
     ``hfunc1^-`` is ``hfunc1`` with the second argument at its left limit and
     ``hfunc2^-`` is ``hfunc2`` with the first at its left limit -- the two
-    values the vine's left-limit scratch propagates. Both are computed for
-    every pair; the cascade writes each only where the slot's types make it
-    one.
+    values the vine's left-limit scratch propagates.
+
+    Only what the next tree reads is computed: ``hfunc1`` and ``hfunc1^-``
+    where ``needs_h1``, ``hfunc2`` and ``hfunc2^-`` where ``needs_h2`` or, with
+    ``every_h2``, at every pair -- the running transform of a Rosenblatt
+    cascade. Elsewhere a discrete argument's h-function holds its continuous
+    fallback, not the quotient, which is what the per-edge cascades would have
+    skipped computing; the cascade writes none of those entries.
 
     Parameters
     ----------
@@ -1232,6 +1254,9 @@ class BatchedTreeLevel(torch.nn.Module):
     with_pdf : bool
         Whether to evaluate the density as well; ``None`` in its place
         otherwise.
+    every_h2 : bool, default=False
+        Compute ``hfunc2`` and ``hfunc2^-`` at every pair, not only where the
+        next tree reads them.
 
     Returns
     -------
@@ -1255,9 +1280,11 @@ class BatchedTreeLevel(torch.nn.Module):
     per_row = n_pairs * _DISCRETE_VALUES_PER_QUERY * u.element_size()
     block = max(1, _DISCRETE_MEM_BUDGET_BYTES // per_row)
     if n <= block:
-      return self._eval_discrete_rows(grid_points, u, with_pdf)
+      return self._eval_discrete_rows(grid_points, u, with_pdf, every_h2)
     parts = [
-      self._eval_discrete_rows(grid_points, u[:, i : i + block], with_pdf)
+      self._eval_discrete_rows(
+        grid_points, u[:, i : i + block], with_pdf, every_h2
+      )
       for i in range(0, n, block)
     ]
     pdfs = [q[0] for q in parts]
@@ -1271,7 +1298,7 @@ class BatchedTreeLevel(torch.nn.Module):
     return pdf, h1, h2, h1_sub, h2_sub
 
   def _eval_discrete_rows(
-    self, grid_points: Tensor, u: Tensor, with_pdf: bool
+    self, grid_points: Tensor, u: Tensor, with_pdf: bool, every_h2: bool
   ) -> tuple[Tensor | None, Tensor, Tensor, Tensor, Tensor]:
     """:meth:`eval_discrete` on one block of rows, already clamped."""
     gp, lin = grid_points, self._is_linear
@@ -1311,18 +1338,22 @@ class BatchedTreeLevel(torch.nn.Module):
     zero = torch.zeros_like(u1)
     sizes = self._group_sizes
 
-    jobs: list[tuple[str, tuple[Tensor, Tensor, Tensor, Tensor]]] = []
-    if sizes["idx_d1"]:
-      jobs.append(("idx_d1", (u1m, u1, zero, u2)))
-    if sizes["idx_d2"]:
-      jobs.append(("idx_d2", (zero, u1, u2m, u2)))
-    if sizes["idx_dd"]:
-      jobs.extend(
-        [("idx_dd", (u1m, u1, zero, u2m)), ("idx_dd", (zero, u1m, u2m, u2))]
-      )
-      if with_pdf:
-        jobs.append(("idx_dd", (u1m, u1, u2m, u2)))
-    masses = iter(self._rects(gp, jobs))
+    g_h2, g_h2s = ("idx_d2", "idx_dd") if every_h2 else ("idx_h2", "idx_h2s")
+    wanted = [
+      ("idx_h1", (u1m, u1, zero, u2)),
+      (g_h2, (zero, u1, u2m, u2)),
+      ("idx_h1s", (u1m, u1, zero, u2m)),
+      (g_h2s, (zero, u1m, u2m, u2)),
+    ]
+    if with_pdf:
+      wanted.append(("idx_dd", (u1m, u1, u2m, u2)))
+    # One stacked call for every probability this level needs; a group with no
+    # pair in it launches nothing.
+    jobs = [job for job in wanted if sizes[job[0]]]
+    got = iter(self._rects(gp, jobs)) if jobs else iter(())
+    masses: list[Tensor | None] = [
+      next(got) if sizes[group] else None for group, _ in wanted
+    ]
 
     def replace(base: Tensor, group: str, value: Tensor) -> Tensor:
       return base.index_copy(0, getattr(self, group), value)
@@ -1337,27 +1368,19 @@ class BatchedTreeLevel(torch.nn.Module):
       safe = torch.where(wide, delta, torch.ones_like(delta))
       return torch.where(wide, num / safe, fallback).abs()
 
-    h1, h2, h1_sub, h2_sub = h1_a, h2_a, h1_b, h2_b
-    if sizes["idx_d1"]:
-      h1 = replace(
-        h1,
-        "idx_d1",
-        quotient(next(masses), take(delta1, "idx_d1"), take(h1_a, "idx_d1")),
+    def fill(base: Tensor, k: int, delta: Tensor, fallback: Tensor) -> Tensor:
+      mass = masses[k]
+      if mass is None:
+        return base
+      group = wanted[k][0]
+      return replace(
+        base, group, quotient(mass, take(delta, group), take(fallback, group))
       )
-    if sizes["idx_d2"]:
-      h2 = replace(
-        h2,
-        "idx_d2",
-        quotient(next(masses), take(delta2, "idx_d2"), take(h2_a, "idx_d2")),
-      )
-    if sizes["idx_dd"]:
-      d1, d2 = take(delta1, "idx_dd"), take(delta2, "idx_dd")
-      h1_sub = replace(
-        h1_sub, "idx_dd", quotient(next(masses), d1, take(h1_b, "idx_dd"))
-      )
-      h2_sub = replace(
-        h2_sub, "idx_dd", quotient(next(masses), d2, take(h2_b, "idx_dd"))
-      )
+
+    h1 = fill(h1_a, 0, delta1, h1_a)
+    h2 = fill(h2_a, 1, delta2, h2_a)
+    h1_sub = fill(h1_b, 2, delta1, h1_b)
+    h2_sub = fill(h2_b, 3, delta2, h2_b)
     if not with_pdf:
       return None, h1, h2, h1_sub, h2_sub
 
@@ -1379,7 +1402,8 @@ class BatchedTreeLevel(torch.nn.Module):
         pdf, group, torch.where(wide, num / safe, take(base, group)).abs()
       )
     if sizes["idx_dd"]:
-      rect = next(masses)
+      rect = masses[4]
+      assert rect is not None
       d1, d2 = take(delta1, "idx_dd"), take(delta2, "idx_dd")
       # `BicopBase._pdf_d_d`: the four regimes, which are disjoint.
       both = torch.where(d1 > d2, d1, d2) < DELTA_MIN
