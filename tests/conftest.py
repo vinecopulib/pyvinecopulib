@@ -312,6 +312,43 @@ def unique_json_path(tmp_path: Path, request: pytest.FixtureRequest) -> Path:
   return tmp_path / f"{request.node.name}-{uuid.uuid4().hex}.json"
 
 
+def _bound_instances(value: object) -> list[object]:
+  """Every instance of a bound class inside a parametrize value."""
+  if type(type(value)).__module__ == "nanobind":
+    return [value]
+  if isinstance(value, dict):
+    return [b for v in value.values() for b in _bound_instances(v)]
+  if isinstance(value, (list, tuple, set, frozenset)):
+    return [b for v in value for b in _bound_instances(v)]
+  return []
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+  """Refuse a parametrize value that is an instance of a bound class.
+
+  A parametrize value lives in pytest's collection tree (the mark's arguments
+  and each item's call spec), and in a full run that tree is still reachable
+  when the interpreter shuts down: the ``anyio`` plugin's distribution is
+  loaded through pytest's assertion-rewriting import hook, which holds the
+  config and through it every collected item, and ``typing``'s overload
+  registry keeps those modules reachable from objects torch never releases.
+  So a bound instance created at collection time is never destroyed and
+  nanobind reports it as leaked at exit. Parametrize over plain arguments and
+  construct the object in the test body instead.
+  """
+  offenders = [
+    f"{item.nodeid}: {type(b).__name__}"
+    for item in items
+    if (callspec := getattr(item, "callspec", None)) is not None
+    for b in _bound_instances(callspec.params)
+  ]
+  if offenders:
+    raise pytest.UsageError(
+      "parametrize values must not be instances of bound classes; build "
+      "them inside the test instead:\n  " + "\n  ".join(offenders)
+    )
+
+
 def _cuda_available() -> bool:
   """Whether a CUDA device is usable, without requiring torch to be installed."""
   try:
