@@ -2,6 +2,10 @@
 
 ## 1.0.1 (unreleased)
 
+### New features in `pyvinecopulib`
+
+- Evaluate a `TorchVinecop` with discrete variables on the batched fast path: `pdf` / `logpdf` / `rosenblatt` carry the left-limit cascade one stacked tree level at a time, and `inverse_rosenblatt` / `sample` batch as on a continuous vine. A discrete vine declined `batched=True` and ran edge by edge, on CUDA too (#NNN).
+
 ### Bug fixes in `pyvinecopulib`
 
 - Evaluate a discrete or mixed `Bicop` or `Vinecop` read from JSON, a file or a pickle with its variable types, not as continuous (#352, [vinecopulib#789](https://github.com/vinecopulib/vinecopulib/pull/789)).
@@ -13,6 +17,7 @@
 - Break ties the same way on every platform in `to_pseudo_obs(..., "random")`, Chatterjee's xi and every `tll` fit, and keep input order for `"first"`; tied-data results change once (#352, [wdm#28](https://github.com/tnagler/wdm/pull/28)).
 - Compute Hoeffding's D correctly on tied data, in `wdm(..., "hoeffding")` and the `"hoeffd"` tree criterion; it could leave the unit interval (#352, [wdm#28](https://github.com/tnagler/wdm/pull/28)).
 - Break ties in `TorchTllBicop.from_data` and `from_data_batched` as `Bicop.from_data` does, at random from a fixed seed rather than by row order (#351).
+- `TorchVinecop.inverse_rosenblatt(batched=True)` agrees bit for bit with `batched=False` where an intermediate quantile lands on 0 or 1: the batched waves skipped the clamp each pair applies to its input, and differed by up to `5e-8` (#NNN).
 
 ### Build / packaging
 

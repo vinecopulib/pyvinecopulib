@@ -450,10 +450,7 @@ def test_normalize_margins_balances_both_margins() -> None:
   Averaging the two sweep orders splits the residual, which is what makes the
   balance assertion meaningful rather than tautological.
   """
-  from pyvinecopulib.torch._bicop_interp import (
-    InterpolationGrid2D,
-    _trap_weights,
-  )
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
 
   m = 16
   grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
@@ -461,7 +458,7 @@ def test_normalize_margins_balances_both_margins() -> None:
   values = torch.from_numpy(rng.uniform(0.5, 1.5, size=(m, m)))
 
   ig = InterpolationGrid2D(grid, values)
-  w = _trap_weights(ig.grid_points)
+  w = ig.trap_weights
   r = (ig.values @ w - 1.0).abs().max().item()
   c = (ig.values.t().contiguous() @ w - 1.0).abs().max().item()
   assert max(r, c) < 1e-10

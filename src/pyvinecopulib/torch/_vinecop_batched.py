@@ -5,9 +5,11 @@ Stacks the per-pair ``InterpolationGrid2D`` state at one tree level into
 (or one batched trapezoidal integration) instead of N separate calls.
 
 Exposes :func:`interpolate_batched`, :func:`int_on_grid_batched`,
-:func:`integrate_1d_batched`, :func:`integrate_2d_batched` and
-:func:`inverse_integrate_1d_batched` — the ``(N, m, m)`` analogs of the
-unbatched operations in :mod:`._interp` — plus :class:`BatchedTreeLevel`,
+:func:`integrate_1d_batched`, :func:`integrate_2d_batched`,
+:func:`inverse_integrate_1d_batched`, :func:`rect_mass_batched` and
+:func:`cond_interval_mass_batched` — the ``(N, m, m)`` analogs of the
+unbatched operations in :mod:`._interp`, the last two being what a discrete
+slot reads an atom's probability off — plus :class:`BatchedTreeLevel`,
 :class:`BatchedWave` and :class:`BatchedVine`, which stage one tree level
 (resp. one wave of the inverse cascade, resp. an entire vine) of stacked
 grids and wire-up tensors.
@@ -25,6 +27,7 @@ import torch
 from torch import Tensor
 
 from ..core._trim import trim
+from ..core.bicop_base import DELTA_MIN
 from ..core.extend import NotBatchable
 from ..pyvinecopulib_ext import RVineStructure
 from ._placement import TENSOR_NS
@@ -416,6 +419,271 @@ def integrate_2d_batched(
 
 
 # --------------------------------------------------------------------------- #
+# Batched probabilities of rectangles and conditional intervals                #
+# --------------------------------------------------------------------------- #
+
+
+def trap_weights(grid_points: Tensor) -> Tensor:
+  """Trapezoid weights of ``grid_points``, summing to 1 on ``[0, 1]``.
+
+  ``trap_weights(g) @ v`` is the exact integral of the piecewise-linear
+  function through ``(g, v)``, because the telescoping sum collapses to
+  ``g[-1] - g[0]``.
+
+  Parameters
+  ----------
+  grid_points : Tensor, shape (m,), dtype float
+      A strictly increasing grid whose endpoints are 0 and 1.
+
+  Returns
+  -------
+  Tensor, shape (m,), dtype float
+      The weights.
+  """
+  m = grid_points.shape[0]
+  if m < 2:
+    return torch.zeros(0, dtype=grid_points.dtype, device=grid_points.device)
+  w = torch.empty_like(grid_points)
+  w[0] = (grid_points[1] - grid_points[0]) / 2.0
+  w[1:-1] = (grid_points[2:] - grid_points[:-2]) / 2.0
+  w[-1] = (grid_points[-1] - grid_points[-2]) / 2.0
+  return w
+
+
+def interval_weights_batched(
+  grid_points: Tensor, lo: Tensor, hi: Tensor, is_linear: bool = False
+) -> Tensor:
+  """Nonnegative quadrature weights for ``int_lo^hi`` on the grid.
+
+  Returns ``w`` with ``(w * v).sum(-1) == int_lo^hi f(t) dt`` for the
+  piecewise-linear ``f`` through ``(grid_points, v)``, exactly. Every entry is
+  nonnegative, because the hat functions are, which is the property
+  :func:`rect_mass_batched` needs: a difference of two cumulative integrals
+  would be exact too, but would carry the larger one's rounding error into a
+  result of order ``hi - lo``.
+
+  Parameters
+  ----------
+  grid_points : Tensor, shape (m,), dtype float
+      The shared grid.
+  lo, hi : Tensor, shape (*B,), dtype float
+      Interval endpoints, clamped to ``[0, 1]``; ``hi < lo`` gives zero.
+  is_linear : bool, default=False
+      Whether the grid is uniform, enabling O(1) cell lookup.
+
+  Returns
+  -------
+  Tensor, shape (*B, m), dtype float
+      The weights.
+  """
+  g = grid_points
+  m = g.shape[0]
+  a = lo.clamp(0.0, 1.0)
+  b = hi.clamp(0.0, 1.0).clamp_min(a)
+  ka = _batched_cell_index(g, a, is_linear)
+  kb = _batched_cell_index(g, b, is_linear)
+
+  def cell_pair(k: Tensor, s0: Tensor, d: Tensor) -> tuple[Tensor, Tensor]:
+    """Weights on nodes ``k`` / ``k + 1`` for the sub-cell ``[s0, s0 + d]``.
+
+    Parameterized by the *width* rather than by the upper end, so a narrow
+    interval never forms it as a difference of two numbers of order one --
+    which would put the ``1 / w`` amplification back into the weights.
+    """
+    h = g[k + 1] - g[k]
+    q = 0.5 * d * (2.0 * s0 + d)
+    return h * (d - q), h * q
+
+  # Whole cells strictly between the two partial ones: the trapezoid rule is
+  # exact for a piecewise-linear integrand, so each contributes h / 2 to both
+  # of its nodes.
+  dgrid = g[1:] - g[:-1]
+  idx = torch.arange(m - 1, device=g.device)
+  inner = (idx > ka.unsqueeze(-1)) & (idx < kb.unsqueeze(-1))
+  half = torch.where(inner, 0.5 * dgrid, 0.0)
+  zc = torch.zeros_like(half[..., :1])
+  w = torch.cat([zc, half], dim=-1) + torch.cat([half, zc], dim=-1)
+
+  zero = torch.zeros_like(a)
+  same = ka == kb
+  ha, hb = g[ka + 1] - g[ka], g[kb + 1] - g[kb]
+  s0a = (a - g[ka]) / ha
+  a0, a1 = cell_pair(ka, s0a, torch.where(same, (b - a) / ha, 1.0 - s0a))
+  b0, b1 = cell_pair(kb, zero, (b - g[kb]) / hb)
+  b0 = torch.where(same, zero, b0)
+  b1 = torch.where(same, zero, b1)
+  for col, val in ((ka, a0), (ka + 1, a1), (kb, b0), (kb + 1, b1)):
+    w = w.scatter_add(-1, col.unsqueeze(-1), val.unsqueeze(-1))
+  return w
+
+
+def _row_integrals_batched(
+  grid_points: Tensor, values: Tensor, u: Tensor, is_linear: bool
+) -> Tensor:
+  """Every grid line's integral over ``[0, u]``, one row per query.
+
+  Parameters
+  ----------
+  grid_points : Tensor, shape (m,), dtype float
+      The shared grid.
+  values : Tensor, shape (N, m, m), dtype float
+      Density grids, one per pair.
+  u : Tensor, shape (N, n), dtype float
+      Upper limits, clamped to ``[0, 1]``.
+  is_linear : bool
+      Whether the grid is uniform.
+
+  Returns
+  -------
+  Tensor, shape (N, n, m), dtype float
+      One integral per grid line of the first argument.
+  """
+  n_batch, m, _ = values.shape
+  n = u.shape[-1]
+  j, frac, s = _locate(grid_points, u.clamp(0.0, 1.0), is_linear)
+  # Each line's cumulative integral along the second argument: `sy` of
+  # `InterpolationGrid2D.build_caches`, repeated rather than read, since these
+  # routines run in both cache modes and it is O(m^2) against the O(n m^2) of a
+  # per-query sweep.
+  dgrid = grid_points[1:] - grid_points[:-1]
+  inc = 0.5 * (values[..., :-1] + values[..., 1:]) * dgrid
+  row_cum = torch.cat([torch.zeros_like(inc[..., :1]), inc.cumsum(-1)], -1)
+  vt = values.transpose(1, 2)
+  ct = row_cum.transpose(1, 2)
+  idx = j.unsqueeze(-1).expand(n_batch, n, m)
+  v0, v1 = vt.gather(1, idx), vt.gather(1, idx + 1)
+  part = (2.0 * v0 + (v1 - v0) * frac.unsqueeze(-1)) * s.unsqueeze(-1) / 2.0
+  return ct.gather(1, idx) + part
+
+
+def cond_interval_mass_batched(
+  grid_points: Tensor,
+  values: Tensor,
+  u_cond: Tensor,
+  lo: Tensor,
+  hi: Tensor,
+  cond_var: int,
+  is_linear: bool = False,
+) -> Tensor:
+  """Probability that the free argument falls in ``(lo, hi]``, given the other.
+
+  A conditional distribution is the grid line at ``u_cond`` over its own
+  total, so this is a ratio of nonnegative sums and does not cancel at all.
+  Not clamped into the open unit interval, unlike
+  :func:`integrate_1d_batched`: an empty interval is exactly ``0`` and the
+  whole line exactly ``1``, which is what makes the masses of a partition sum
+  to one.
+
+  Parameters
+  ----------
+  grid_points : Tensor, shape (m,), dtype float
+      The shared grid.
+  values : Tensor, shape (N, m, m), dtype float
+      Density grids, one per pair.
+  u_cond : Tensor, shape (N, n), dtype float
+      The argument held fixed.
+  lo, hi : Tensor, shape (N, n), dtype float
+      Bounds in the free argument, in either order.
+  cond_var : int
+      1 or 2, the argument held fixed, as for :func:`integrate_1d_batched`.
+  is_linear : bool, default=False
+      Whether the grid is uniform.
+
+  Returns
+  -------
+  Tensor, shape (N, n), dtype float
+      Conditional probabilities.
+  """
+  if cond_var not in (1, 2):
+    raise ValueError(f"cond_var must be 1 or 2; got {cond_var}")
+  m = grid_points.shape[0]
+  cell, t, _ = _locate(grid_points, u_cond.clamp(0.0, 1.0), is_linear)
+  # Axis 1 holds the grid lines of the first argument, axis 2 those of the
+  # second -- the gather the h-functions do.
+  line = _cond_strip(values, cell, t.unsqueeze(-1), cond_var, m)
+  w = interval_weights_batched(
+    grid_points, torch.minimum(lo, hi), torch.maximum(lo, hi), is_linear
+  )
+  total = (line @ trap_weights(grid_points)).clamp_min(_MIN_MASS)
+  return (w * line).sum(dim=-1) / total
+
+
+def rect_mass_batched(
+  grid_points: Tensor,
+  values: Tensor,
+  a1: Tensor,
+  b1: Tensor,
+  a2: Tensor,
+  b2: Tensor,
+  is_linear: bool = False,
+) -> Tensor:
+  """The exact probability of ``(a1, b1] x (a2, b2]``, without the cancellation.
+
+  The value the four-corner difference of the cached distribution function
+  defines, arranged so that almost none of it cancels. Differencing those four
+  values turns an absolute error ``eps`` into ``~4 eps / (w1 w2)`` in the
+  rectangle's widths; this route amplifies by ``1 / w2`` alone, one power
+  instead of two.
+
+  The distribution function renormalizes each line of the grid by its own
+  total, so the probability is not simply the mass. Writing
+  ``lam(y) = y / M(1, y)`` for that factor, ``R`` for the rectangle's own mass
+  and ``S`` for the mass of ``(a1, b1] x (0, a2]``, the four-corner difference
+  is ``lam(b2) R + (lam(b2) - lam(a2)) S``. ``R`` and ``S`` are sums of
+  nonnegative terms and do not cancel at all; only the ``lam`` difference
+  does, and expanded over the common denominator it cancels against
+  ``b2 - a2`` rather than against one -- formed as ``lam(b2) - lam(a2)`` it
+  would swamp the first term on a low-mass rectangle.
+
+  Parameters
+  ----------
+  grid_points : Tensor, shape (m,), dtype float
+      The shared grid.
+  values : Tensor, shape (N, m, m), dtype float
+      Density grids, one per pair.
+  a1, b1, a2, b2 : Tensor, shape (N, n), dtype float
+      Rectangle bounds per query, in either order. An empty rectangle gives
+      zero.
+  is_linear : bool, default=False
+      Whether the grid is uniform.
+
+  Returns
+  -------
+  Tensor, shape (N, n), dtype float
+      Rectangle probabilities.
+  """
+  # Rotating the data can leave a left limit above its own value.
+  x0, x1 = torch.minimum(a1, b1), torch.maximum(a1, b1)
+  y0, y1 = torch.minimum(a2, b2), torch.maximum(a2, b2)
+
+  wx = interval_weights_batched(grid_points, x0, x1, is_linear)
+  below = _row_integrals_batched(grid_points, values, y0, is_linear)
+  # With nothing below to subtract the cumulative integrals are the strip
+  # itself, which is the case every discrete h-function hits.
+  strip = torch.where(
+    (y0 > 0.0).unsqueeze(-1),
+    torch.bmm(
+      interval_weights_batched(grid_points, y0, y1, is_linear),
+      values.transpose(1, 2),
+    ),
+    _row_integrals_batched(grid_points, values, y1, is_linear),
+  )
+
+  w = trap_weights(grid_points)
+  m_strip = strip @ w
+  m_below = (below @ w).clamp_min(_MIN_MASS)
+  # Formed additively, so that the two terms below are consistent: an
+  # independent quadrature of the whole column would not cancel against the
+  # strip it is supposed to contain.
+  total = (m_below + m_strip).clamp_min(_MIN_MASS)
+  dlam = ((y1 - y0) * m_below - y0 * m_strip) / (total * m_below)
+  out = y1 * (wx * strip).sum(dim=-1) / total
+  out = out + dlam * (wx * below).sum(dim=-1)
+  empty = ~((x1 > x0) & (y1 > y0))
+  return torch.where(empty, torch.zeros_like(out), out)
+
+
+# --------------------------------------------------------------------------- #
 # Per-tree-level stacked state + per-vine container                            #
 # --------------------------------------------------------------------------- #
 
@@ -506,6 +774,12 @@ class BatchedTreeLevel(torch.nn.Module):
   - ``needs_h1, needs_h2: (N,) bool`` — whether the cascade requires this
     pair's h-function output at the next tree.
 
+  Variable types (per pair, for a vine with discrete variables):
+  - ``disc1, disc2: (N,) bool`` — whether the pair's first / second argument
+    is discrete, i.e. the slot's :meth:`~VinecopBase.pair_var_types`. The
+    left-limit columns are read through the same wiring as the values, and a
+    continuous argument's left limit is its own value.
+
   Indep handling:
   - ``is_indep: (N,) bool`` — true slots get short-circuit overrides
     (pdf=1, hfunc1=col1, hfunc2=col0). Their grids are sentinels.
@@ -523,6 +797,13 @@ class BatchedTreeLevel(torch.nn.Module):
   col1_use_h1: Tensor
   needs_h1: Tensor
   needs_h2: Tensor
+  disc1: Tensor
+  disc2: Tensor
+  idx_d1: Tensor
+  idx_d2: Tensor
+  idx_dd: Tensor
+  idx_dc: Tensor
+  idx_cd: Tensor
 
   def __init__(
     self,
@@ -536,6 +817,8 @@ class BatchedTreeLevel(torch.nn.Module):
     col1_use_h1: Tensor,
     needs_h1: Tensor,
     needs_h2: Tensor,
+    disc1: Tensor | None = None,
+    disc2: Tensor | None = None,
     is_linear: bool = False,
   ) -> None:
     super().__init__()
@@ -558,25 +841,85 @@ class BatchedTreeLevel(torch.nn.Module):
     self.register_buffer("col1_use_h1", col1_use_h1)
     self.register_buffer("needs_h1", needs_h1)
     self.register_buffer("needs_h2", needs_h2)
+    if disc1 is None:
+      disc1 = torch.zeros_like(is_indep)
+    if disc2 is None:
+      disc2 = torch.zeros_like(is_indep)
+    self.register_buffer("disc1", disc1)
+    self.register_buffer("disc2", disc2)
+    # The pairs each quotient is taken over, fixed by the structure. Their
+    # sizes are kept as Python ints so a group no pair belongs to is skipped
+    # before anything is launched for it.
+    groups = {
+      "idx_d1": disc1,
+      "idx_d2": disc2,
+      "idx_dd": disc1 & disc2,
+      "idx_dc": disc1 & ~disc2,
+      "idx_cd": ~disc1 & disc2,
+    }
+    self._group_sizes: dict[str, int] = {}
+    for name, mask in groups.items():
+      idx = torch.nonzero(mask).flatten()
+      self.register_buffer(name, idx)
+      self._group_sizes[name] = int(idx.numel())
     self._is_linear = bool(is_linear)
 
   @property
   def n_pairs(self) -> int:
     return int(self.values.shape[0])
 
-  def gather_inputs(self, hfunc1_prev: Tensor, hfunc2_prev: Tensor) -> Tensor:
-    """Build the per-pair ``(N, n, 2)`` input from the previous level's
-    h-function columns. Lays the ``col0`` / ``col1`` selection out as a
-    pair of gathers, plus a ``torch.where`` on the h1-vs-h2 source flag
-    for ``col1``.
+  @property
+  def has_discrete(self) -> bool:
+    """Whether any pair at this level has a discrete argument."""
+    return bool(self._group_sizes["idx_d1"] or self._group_sizes["idx_d2"])
+
+  def gather_inputs(
+    self,
+    hfunc1_prev: Tensor,
+    hfunc2_prev: Tensor,
+    hfunc1_sub: Tensor | None = None,
+    hfunc2_sub: Tensor | None = None,
+  ) -> Tensor:
+    """Build the per-pair input from the previous level's h-function columns.
+
+    Lays the ``col0`` / ``col1`` selection out as a pair of gathers, plus a
+    ``torch.where`` on the h1-vs-h2 source flag for ``col1``. Given the
+    left-limit scratch as well, the result is the four-column
+    ``[u1, u2, u1^-, u2^-]`` a discrete slot reads, gathered through the same
+    wiring; a continuous argument's left limit is its own value, so a stale
+    entry of the scratch is never read.
+
+    Parameters
+    ----------
+    hfunc1_prev, hfunc2_prev : Tensor, shape (n, d), dtype float
+        The h-function scratch.
+    hfunc1_sub, hfunc2_sub : Tensor, shape (n, d), dtype float, or None
+        The left-limit scratch, for a vine with discrete variables.
+
+    Returns
+    -------
+    Tensor, shape (N, n, 2) or (N, n, 4), dtype float
+        One input per pair.
     """
-    # hfunc{1,2}_prev: (n, d). Gather columns col0_src / col1_src -> (n, N).
-    col0 = hfunc2_prev.index_select(dim=1, index=self.col0_src)  # (n, N)
-    col1_h2 = hfunc2_prev.index_select(dim=1, index=self.col1_src)
-    col1_h1 = hfunc1_prev.index_select(dim=1, index=self.col1_src)
-    col1 = torch.where(self.col1_use_h1[None, :], col1_h1, col1_h2)
-    # Stack into (N, n, 2): permute (n, N) -> (N, n) then stack on last dim.
-    return torch.stack([col0.t(), col1.t()], dim=-1)
+
+    def pick(h1: Tensor, h2: Tensor) -> tuple[Tensor, Tensor]:
+      # (n, d) -> (N, n) per column.
+      col0 = h2.index_select(dim=1, index=self.col0_src)
+      col1 = torch.where(
+        self.col1_use_h1[None, :],
+        h1.index_select(dim=1, index=self.col1_src),
+        h2.index_select(dim=1, index=self.col1_src),
+      )
+      return col0.t(), col1.t()
+
+    col0, col1 = pick(hfunc1_prev, hfunc2_prev)
+    if hfunc2_sub is None:
+      return torch.stack([col0, col1], dim=-1)
+    assert hfunc1_sub is not None
+    sub0, sub1 = pick(hfunc1_sub, hfunc2_sub)
+    sub0 = torch.where(self.disc1[:, None], sub0, col0)
+    sub1 = torch.where(self.disc2[:, None], sub1, col1)
+    return torch.stack([col0, col1, sub0, sub1], dim=-1)
 
   def _locate_both(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, ...]:
     """Grid location of both arguments: ``(i, wx, dx, j, wy, dy)``.
@@ -595,22 +938,29 @@ class BatchedTreeLevel(torch.nn.Module):
     return torch.where(self.is_indep[:, None], torch.ones_like(raw), raw)
 
   def _h1_h2_at(
-    self, gp: Tensor, u: Tensor, loc: tuple[Tensor, ...]
+    self,
+    gp: Tensor,
+    a: Tensor,
+    loc_a: tuple[Tensor, ...],
+    b: Tensor,
+    loc_b: tuple[Tensor, ...],
   ) -> tuple[Tensor, Tensor]:
-    """Both h-functions at one located query.
+    """``hfunc1`` at the located query ``a`` and ``hfunc2`` at ``b``.
 
     ``hfunc1`` conditions on argument 1 and integrates argument 2; ``hfunc2``
     does the reverse against the transposed grid. That is the same kernel with
     the two triples swapped, so with the grids stacked it is one call on
     ``2N`` pairs instead of two on ``N`` -- worth doing in a cascade whose cost
-    is the number of calls.
+    is the number of calls. The two queries coincide on a continuous edge; a
+    discrete edge reads each h-function at a different point.
     """
-    i, wx, dx, j, wy, dy = loc
+    i_a, wx_a, _, j_a, wy_a, dy_a = loc_a
+    i_b, wx_b, dx_b, j_b, wy_b, _ = loc_b
     if self.grids2 is None or self.tables2 is None:
       raw = torch.cat(
         [
-          integrate_1d_batched(gp, self.values, u, 1, self._is_linear),
-          integrate_1d_batched(gp, self.values, u, 2, self._is_linear),
+          integrate_1d_batched(gp, self.values, a, 1, self._is_linear),
+          integrate_1d_batched(gp, self.values, b, 2, self._is_linear),
         ],
         0,
       )
@@ -618,17 +968,17 @@ class BatchedTreeLevel(torch.nn.Module):
       raw = _hfunc_from_cells(
         self.grids2,
         self.tables2,
-        torch.cat([i, j], 0),
-        torch.cat([wx, wy], 0),
-        torch.cat([j, i], 0),
-        torch.cat([wy, wx], 0),
-        torch.cat([dy, dx], 0),
+        torch.cat([i_a, j_b], 0),
+        torch.cat([wx_a, wy_b], 0),
+        torch.cat([j_a, i_b], 0),
+        torch.cat([wy_a, wx_b], 0),
+        torch.cat([dy_a, dx_b], 0),
       )
     # An independent pair returns its own free argument -- argument 2 for
     # `hfunc1`, argument 1 for `hfunc2` -- which is the same swap again.
     both = torch.where(
       self.is_indep.repeat(2)[:, None],
-      trim(torch.cat([u[..., 1], u[..., 0]], 0), TENSOR_NS),
+      trim(torch.cat([a[..., 1], b[..., 0]], 0), TENSOR_NS),
       raw,
     )
     return both[: self.n_pairs], both[self.n_pairs :]
@@ -645,12 +995,246 @@ class BatchedTreeLevel(torch.nn.Module):
     """
     loc = self._locate_both(grid_points, u)
     i, wx, _, j, wy, _ = loc
-    h1, h2 = self._h1_h2_at(grid_points, u, loc)
+    h1, h2 = self._h1_h2_at(grid_points, u, loc, u, loc)
     return self._pdf_at(i, j, wx, wy), h1, h2
 
   def h1_h2(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, Tensor]:
     """``(hfunc1, hfunc2)`` for one tree level; see :meth:`pdf_h1_h2`."""
-    return self._h1_h2_at(grid_points, u, self._locate_both(grid_points, u))
+    loc = self._locate_both(grid_points, u)
+    return self._h1_h2_at(grid_points, u, loc, u, loc)
+
+  # --- the mixed-discrete level ----------------------------------------- #
+  # The stacked twin of `BicopBase`'s quotients: each output is what the
+  # pair's `pdf` / `hfunc1` / `hfunc2` dispatchers return on the four-column
+  # input, with the per-row `DELTA_MIN` split taken as a `where` rather than a
+  # boolean index, and each quotient evaluated only on the pairs whose types
+  # call for it.
+
+  def _rects(
+    self,
+    gp: Tensor,
+    jobs: list[tuple[str, tuple[Tensor, Tensor, Tensor, Tensor]]],
+  ) -> list[Tensor]:
+    """Rectangle probabilities for several pair groups, in one stacked call.
+
+    Parameters
+    ----------
+    gp : Tensor, shape (m,), dtype float
+        The shared grid.
+    jobs : list of tuple
+        ``(group, (a1, b1, a2, b2))``: the name of an index buffer and the
+        level-wide ``(N, n)`` bounds, read at that group's pairs.
+
+    Returns
+    -------
+    list of Tensor
+        One ``(K, n)`` block per job, ``K`` the size of its group.
+    """
+    idx = torch.cat([getattr(self, group) for group, _ in jobs])
+    a1, b1, a2, b2 = (
+      torch.cat(
+        [bs[k].index_select(0, getattr(self, group)) for group, bs in jobs]
+      )
+      for k in range(4)
+    )
+    out = rect_mass_batched(
+      gp, self.values.index_select(0, idx), a1, b1, a2, b2, self._is_linear
+    )
+    # `TorchTllBicop.rect_prob`'s own answer for the independence copula.
+    indep = (b1 - a1).abs() * (b2 - a2).abs()
+    out = torch.where(self.is_indep.index_select(0, idx)[:, None], indep, out)
+    return list(out.split([self._group_sizes[group] for group, _ in jobs], 0))
+
+  def _interval(
+    self,
+    gp: Tensor,
+    group: str,
+    u_cond: Tensor,
+    lo: Tensor,
+    hi: Tensor,
+    cond_var: int,
+  ) -> Tensor:
+    """Conditional interval probabilities at one group's pairs."""
+    idx = getattr(self, group)
+    u_cond, lo, hi = (t.index_select(0, idx) for t in (u_cond, lo, hi))
+    out = cond_interval_mass_batched(
+      gp,
+      self.values.index_select(0, idx),
+      u_cond,
+      lo,
+      hi,
+      cond_var,
+      self._is_linear,
+    )
+    # `TorchTllBicop.cond_interval_prob`'s answer for the independence copula.
+    indep = (hi.clamp(0.0, 1.0) - lo.clamp(0.0, 1.0)).abs()
+    return torch.where(self.is_indep.index_select(0, idx)[:, None], indep, out)
+
+  def eval_discrete(
+    self, grid_points: Tensor, u: Tensor, *, with_pdf: bool
+  ) -> tuple[Tensor | None, Tensor, Tensor, Tensor, Tensor]:
+    """``(pdf, hfunc1, hfunc2, hfunc1^-, hfunc2^-)`` on a four-column input.
+
+    ``hfunc1^-`` is ``hfunc1`` with the second argument at its left limit and
+    ``hfunc2^-`` is ``hfunc2`` with the first at its left limit -- the two
+    values the vine's left-limit scratch propagates. Both are computed for
+    every pair; the cascade writes each only where the slot's types make it
+    one.
+
+    Parameters
+    ----------
+    grid_points : Tensor, shape (m,), dtype float
+        The shared grid.
+    u : Tensor, shape (N, n, 4), dtype float
+        ``[u1, u2, u1^-, u2^-]`` per pair, from :meth:`gather_inputs`.
+    with_pdf : bool
+        Whether to evaluate the density as well; ``None`` in its place
+        otherwise.
+
+    Returns
+    -------
+    tuple of Tensor
+        Five ``(N, n)`` tensors, the first ``None`` unless ``with_pdf``.
+    """
+    # The pair dispatchers clamp their whole input, left limits included, and
+    # a quotient the previous level produced is not clamped on its way out.
+    u = trim(u, TENSOR_NS)
+    if not self.has_discrete:
+      u2c = u[..., :2]
+      if with_pdf:
+        pdf, h1, h2 = self.pdf_h1_h2(grid_points, u2c)
+      else:
+        pdf, (h1, h2) = None, self.h1_h2(grid_points, u2c)
+      return pdf, h1, h2, h1, h2
+
+    gp, lin = grid_points, self._is_linear
+    u1, u2, u1m, u2m = u.unbind(-1)
+    # A continuous argument's left limit is its own value, so its midpoint is
+    # the value itself, exactly: every continuous reading below is therefore
+    # also the plain one for an argument with no atom.
+    mid1, mid2 = 0.5 * (u1 + u1m), 0.5 * (u2 + u2m)
+    at = {
+      name: _locate(gp, x.clamp(0.0, 1.0), lin)
+      for name, x in (
+        ("u1", u1),
+        ("u2", u2),
+        ("u1m", u1m),
+        ("u2m", u2m),
+        ("mid1", mid1),
+        ("mid2", mid2),
+      )
+    }
+
+    def loc(x: str, y: str) -> tuple[Tensor, ...]:
+      return (*at[x], *at[y])
+
+    def pt(x: Tensor, y: Tensor) -> Tensor:
+      return torch.stack([x, y], dim=-1)
+
+    # The continuous readings: `hfunc1` at the atom's midpoint in the first
+    # argument, `hfunc2` in the second, each at the value and at the left
+    # limit of the other argument.
+    h1_a, h2_a = self._h1_h2_at(
+      gp, pt(mid1, u2), loc("mid1", "u2"), pt(u1, mid2), loc("u1", "mid2")
+    )
+    h1_b, h2_b = self._h1_h2_at(
+      gp, pt(mid1, u2m), loc("mid1", "u2m"), pt(u1m, mid2), loc("u1m", "mid2")
+    )
+    delta1, delta2 = (u1 - u1m).abs(), (u2 - u2m).abs()
+    zero = torch.zeros_like(u1)
+    sizes = self._group_sizes
+
+    jobs: list[tuple[str, tuple[Tensor, Tensor, Tensor, Tensor]]] = []
+    if sizes["idx_d1"]:
+      jobs.append(("idx_d1", (u1m, u1, zero, u2)))
+    if sizes["idx_d2"]:
+      jobs.append(("idx_d2", (zero, u1, u2m, u2)))
+    if sizes["idx_dd"]:
+      jobs.extend(
+        [("idx_dd", (u1m, u1, zero, u2m)), ("idx_dd", (zero, u1m, u2m, u2))]
+      )
+      if with_pdf:
+        jobs.append(("idx_dd", (u1m, u1, u2m, u2)))
+    masses = iter(self._rects(gp, jobs))
+
+    def replace(base: Tensor, group: str, value: Tensor) -> Tensor:
+      return base.index_copy(0, getattr(self, group), value)
+
+    def take(t: Tensor, group: str) -> Tensor:
+      return t.index_select(0, getattr(self, group))
+
+    def quotient(num: Tensor, delta: Tensor, fallback: Tensor) -> Tensor:
+      # `BicopBase._quotient`: the quotient over a wide-enough atom, else the
+      # derivative at its midpoint.
+      wide = delta > DELTA_MIN
+      safe = torch.where(wide, delta, torch.ones_like(delta))
+      return torch.where(wide, num / safe, fallback).abs()
+
+    h1, h2, h1_sub, h2_sub = h1_a, h2_a, h1_b, h2_b
+    if sizes["idx_d1"]:
+      h1 = replace(
+        h1,
+        "idx_d1",
+        quotient(next(masses), take(delta1, "idx_d1"), take(h1_a, "idx_d1")),
+      )
+    if sizes["idx_d2"]:
+      h2 = replace(
+        h2,
+        "idx_d2",
+        quotient(next(masses), take(delta2, "idx_d2"), take(h2_a, "idx_d2")),
+      )
+    if sizes["idx_dd"]:
+      d1, d2 = take(delta1, "idx_dd"), take(delta2, "idx_dd")
+      h1_sub = replace(
+        h1_sub, "idx_dd", quotient(next(masses), d1, take(h1_b, "idx_dd"))
+      )
+      h2_sub = replace(
+        h2_sub, "idx_dd", quotient(next(masses), d2, take(h2_b, "idx_dd"))
+      )
+    if not with_pdf:
+      return None, h1, h2, h1_sub, h2_sub
+
+    loc_mid = loc("mid1", "mid2")
+    pdf = self._pdf_at(loc_mid[0], loc_mid[3], loc_mid[1], loc_mid[4])
+    base = pdf
+    for group, cond, lo, hi, cond_var, delta in (
+      ("idx_dc", u2, u1m, u1, 2, delta1),
+      ("idx_cd", u1, u2m, u2, 1, delta2),
+    ):
+      if not sizes[group]:
+        continue
+      num = self._interval(gp, group, cond, lo, hi, cond_var)
+      dg = take(delta, group)
+      # `BicopBase._pdf_mixed`: strictly wider than `DELTA_MIN` is wide.
+      wide = dg > DELTA_MIN
+      safe = torch.where(wide, dg, torch.ones_like(dg))
+      pdf = replace(
+        pdf, group, torch.where(wide, num / safe, take(base, group)).abs()
+      )
+    if sizes["idx_dd"]:
+      rect = next(masses)
+      d1, d2 = take(delta1, "idx_dd"), take(delta2, "idx_dd")
+      # `BicopBase._pdf_d_d`: the four regimes, which are disjoint.
+      both = torch.where(d1 > d2, d1, d2) < DELTA_MIN
+      only1 = (d1 < DELTA_MIN) & ~both
+      only2 = (d2 < DELTA_MIN) & ~both
+      wide = ~(both | only1 | only2)
+      one = torch.ones_like(d1)
+      val = torch.where(
+        wide,
+        rect / torch.where(wide, d1 * d2, one),
+        torch.where(
+          only1,
+          take(h1_a - h1_b, "idx_dd") / torch.where(only1, d2, one),
+          torch.where(
+            only2,
+            take(h2_a - h2_b, "idx_dd") / torch.where(only2, d1, one),
+            take(base, "idx_dd"),
+          ),
+        ),
+      )
+      pdf = replace(pdf, "idx_dd", val.abs())
+    return pdf, h1, h2, h1_sub, h2_sub
 
 
 def inverse_waves(
@@ -780,19 +1364,25 @@ class BatchedWave(torch.nn.Module):
       hfunc1.index_select(0, self.col1_src),
       hinv2.index_select(0, self.col1_src),
     )
+    # Clamped as a pair's `hinv2` / `hfunc1` dispatchers clamp their input: a
+    # quantile this wave's predecessors produced may sit exactly on 0 or 1.
+    col0, col1 = trim(col0, TENSOR_NS), trim(col1, TENSOR_NS)
     u_e = torch.stack([col0, col1], dim=-1)
 
     raw = inverse_integrate_1d_batched(
       grid_points, self.values, u_e, 2, self._is_linear, self.sx
     )
-    inv = torch.where(self.is_indep[:, None], trim(col0, TENSOR_NS), raw)
+    inv = torch.where(self.is_indep[:, None], col0, raw)
     hinv2.index_copy_(0, self.out_hinv2, inv)
 
     if self.h1_rows.numel() == 0:
       return
     rows = self.h1_rows
-    u_after = torch.stack(
-      [inv.index_select(0, rows), col1.index_select(0, rows)], dim=-1
+    u_after = trim(
+      torch.stack(
+        [inv.index_select(0, rows), col1.index_select(0, rows)], dim=-1
+      ),
+      TENSOR_NS,
     )
     vals = self.values.index_select(0, rows)
     uu = u_after.clamp(0.0, 1.0)
@@ -806,7 +1396,7 @@ class BatchedWave(torch.nn.Module):
       h = integrate_1d_batched(grid_points, vals, u_after, 1, self._is_linear)
     h = torch.where(
       self.is_indep.index_select(0, rows)[:, None],
-      trim(u_after[..., 1], TENSOR_NS),
+      u_after[..., 1],
       h,
     )
     hfunc1.index_copy_(0, self.out_hfunc1, h)
@@ -981,6 +1571,8 @@ class BatchedVine(torch.nn.Module):
       col1_use_h1: list[bool] = []
       needs_h1_list: list[bool] = []
       needs_h2_list: list[bool] = []
+      disc1: list[bool] = []
+      disc2: list[bool] = []
       all_have_cache = True
 
       for e in range(N_t):
@@ -1010,6 +1602,9 @@ class BatchedVine(torch.nn.Module):
         col1_use_h1.append(m != sarr)
         needs_h1_list.append(bool(s.needed_hfunc1(t, e)))
         needs_h2_list.append(bool(s.needed_hfunc2(t, e)))
+        types = tvc.pair_var_types(t, e)
+        disc1.append(types[0] == "d")
+        disc2.append(types[1] == "d")
 
       values = torch.stack(vals, dim=0).to(device=device)
       sy: Tensor | None
@@ -1032,6 +1627,8 @@ class BatchedVine(torch.nn.Module):
         col1_use_h1=torch.tensor(col1_use_h1, dtype=torch.bool, device=device),
         needs_h1=torch.tensor(needs_h1_list, dtype=torch.bool, device=device),
         needs_h2=torch.tensor(needs_h2_list, dtype=torch.bool, device=device),
+        disc1=torch.tensor(disc1, dtype=torch.bool, device=device),
+        disc2=torch.tensor(disc2, dtype=torch.bool, device=device),
         is_linear=is_linear,
       )
       levels.append(level)

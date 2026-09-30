@@ -1142,17 +1142,85 @@ def test_from_data_matches_discrete_vinecop(var_types: list[str]) -> None:
   )
 
 
-def test_discrete_vine_declines_the_batched_path() -> None:
-  # The batched level carries no distribution-function grid, which a discrete
-  # edge's h-functions are difference quotients of, so an explicit
-  # `batched=True` must fall back rather than evaluate something else.
-  var_types = ["d", "c", "c"]
-  u = _discrete_data(var_types, n=400, seed=8)
-  bc = TorchVinecop.from_vinecop(_discrete_vinecop(var_types, u))
+@pytest.mark.parametrize("cache", [False, True])
+@pytest.mark.parametrize(
+  "var_types",
+  [
+    ["d", "c", "c"],
+    ["c", "d", "d"],
+    ["d", "d", "d"],
+    ["c", "d", "c", "d", "d"],
+  ],
+  ids=str,
+)
+def test_discrete_vine_takes_the_batched_path(
+  var_types: list[str], cache: bool
+) -> None:
+  """A discrete vine's stacked cascade computes what the per-edge one does.
+
+  Each level gathers the left limits through the same wiring as the values,
+  and each quotient is the pair's own expression with its per-row
+  ``DELTA_MIN`` split taken as a ``where``, so the two agree to rounding --
+  measured 1.8e-15 on the log-density and 8.9e-16 on the transform. The
+  inverse reads no left limit and stays a reordering, so it is exact.
+  """
+  u = _discrete_data(var_types, n=600, seed=8)
+  cop = _discrete_vinecop(var_types, u)
+  bc = TorchVinecop.from_vinecop(cop, cache_integrals=cache)
   u_t = torch.from_numpy(u)
-  np.testing.assert_array_equal(
-    bc.pdf(u_t, batched=True).numpy(), bc.pdf(u_t, batched=False).numpy()
+  logpdf = bc.logpdf(u_t, batched=True)
+  assert bc._batched is not None
+  torch.testing.assert_close(
+    logpdf, bc.logpdf(u_t, batched=False), rtol=1e-13, atol=1e-13
   )
+  np.testing.assert_allclose(
+    bc.pdf(u_t, batched=True).numpy(), cop.pdf(u), rtol=1e-12, atol=1e-12
+  )
+  # The randomization draws the same uniforms on both paths, so it is pinned by
+  # the seed rather than switched off.
+  for randomize in (False, True):
+    torch.testing.assert_close(
+      bc.rosenblatt(u_t, batched=True, randomize_discrete=randomize, seeds=[4]),
+      bc.rosenblatt(
+        u_t, batched=False, randomize_discrete=randomize, seeds=[4]
+      ),
+      rtol=1e-13,
+      atol=1e-13,
+    )
+  w = u_t[:, : len(var_types)]
+  torch.testing.assert_close(
+    bc.inverse_rosenblatt(w, batched=True),
+    bc.inverse_rosenblatt(w, batched=False),
+    atol=0.0,
+    rtol=0.0,
+  )
+
+
+def test_discrete_batched_gradient_matches_the_per_edge_one() -> None:
+  """The stacked quotients carry the gradient the per-edge ones do.
+
+  Every branch a row does not take is still evaluated, so each division is
+  guarded where its branch is not selected: an unguarded one puts ``inf`` in
+  the discarded branch, and ``where`` turns that into a NaN gradient.
+  """
+  var_types = ["c", "d", "c", "d"]
+  u = _discrete_data(var_types, n=500, seed=12)
+  cop = _discrete_vinecop(var_types, u)
+  u_t = torch.from_numpy(u)
+  grads = []
+  for batched in (True, False):
+    bc = TorchVinecop.from_vinecop(cop)
+    grids = [
+      bc._pair_module(t, e).interp_grid.values.requires_grad_(True)
+      for t in range(bc.trunc_lvl)
+      for e in range(bc.d - t - 1)
+    ]
+    total = bc.logpdf(u_t, batched=batched).sum()
+    grads.append(
+      torch.cat([g.flatten() for g in torch.autograd.grad(total, grids)])
+    )
+  assert torch.isfinite(grads[0]).all()
+  torch.testing.assert_close(grads[0], grads[1], rtol=1e-12, atol=1e-12)
 
 
 def test_discrete_vine_round_trips_through_pickle() -> None:
@@ -1294,18 +1362,25 @@ def test_a_no_grad_cascade_does_not_detach_the_cache(first: str) -> None:
   assert grad.abs().sum() > 0
 
 
-@pytest.mark.parametrize("value", [0.0, 1.0])
+@pytest.mark.parametrize("value", [0.0, 1.0, None])
 def test_batched_inverse_matches_at_the_unit_square_boundary(
-  value: float,
+  value: float | None,
 ) -> None:
   """The waves agree with the per-edge cascade at the trimmed boundary too.
 
   Random interior points exercise neither clamp, and the two paths trim in
-  different places -- the vine trims its input, each pair trims again.
+  different places -- the vine trims its input, each pair trims again. A
+  constant row is not enough on its own: what has to agree is a quantile an
+  earlier wave produced *on* the boundary, which is then an input, so the
+  ``None`` case mixes the two ends with the interior column by column.
   """
   cop_tll = fit_tll_vinecop(banded_pseudo_obs(d=5, n=600, seed=86))
   bc = TorchVinecop.from_vinecop(cop_tll)
-  u_t = torch.full((16, 5), value, dtype=torch.float64)
+  if value is None:
+    levels = torch.tensor([0.0, 0.5, 1.0], dtype=torch.float64)
+    u_t = torch.cartesian_prod(*[levels] * 5)
+  else:
+    u_t = torch.full((16, 5), value, dtype=torch.float64)
   torch.testing.assert_close(
     bc.inverse_rosenblatt(u_t, batched=True),
     bc.inverse_rosenblatt(u_t, batched=False),
