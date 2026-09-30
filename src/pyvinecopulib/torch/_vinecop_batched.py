@@ -743,7 +743,7 @@ def rect_mass_batched(
   )
   (px, py), (wx, wy), (in_x, in_y) = nodes, w, inner
   # The first argument's stencil and the last node, which is where `sx` and
-  # `p` hold the masses over the whole of the first argument.
+  # `p` hold the masses over all of the first argument.
   rows = torch.cat([px, torch.full_like(px[..., :1], m - 1)], dim=-1)
   st = _stencil(tables, rows, py, m)  # (7, N, n, 5, 4)
   v = st[_V, ..., :4, :]
