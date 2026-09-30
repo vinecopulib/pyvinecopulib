@@ -1097,25 +1097,36 @@ def test_from_data_batched_rejects_a_non_stacked_input() -> None:
   u = torch.from_numpy(
     np.random.default_rng(0).uniform(0.05, 0.95, size=(64, 2))
   )
-  with pytest.raises(ValueError, match=r"\(P, n, 2\)"):
+  with pytest.raises(ValueError, match=r"\(P, n, 2 or 4\)"):
     TorchTllBicop.from_data_batched(u)
 
 
-def test_a_discrete_edge_is_refused_a_pair_axis() -> None:
-  """`find_latent_sample` is a compiled per-pair draw with no batch axis.
+def test_a_discrete_lane_fits_as_it_does_alone() -> None:
+  """A discrete lane of a stack reproduces its own single-pair fit.
 
-  Refusing beats silently fitting the wrong thing: the discrete fit runs on
-  a latent sample reconstructed from a fixed-seed generator, so there is no
-  batched equivalent to fall back to.
+  ``find_latent_sample`` is a compiled per-pair draw with no batch axis, so a
+  stack draws one lane at a time, each from its own lane's bandwidth, and
+  every lane ranks its ties inside the kernel as a single pair does. Stacked
+  beside a continuous lane, each one comes back as it would alone, up to the
+  last bits stacking always moves in the bandwidth search.
   """
   from pyvinecopulib.torch._bicop_fit_tll import fit_tll_constant
 
   rng = np.random.default_rng(5)
-  u = np.ceil(rng.uniform(0.0, 1.0, size=(200, 2)) * 4) / 4
-  wide = np.column_stack([u, np.maximum(u - 0.25, 0.0)])
-  stack = torch.from_numpy(np.stack([wide, wide]))
-  with pytest.raises(ValueError, match="leading pair axis"):
-    fit_tll_constant(stack[..., :2], discrete_data=stack)
+  n = 300
+  atoms = np.ceil(rng.uniform(0.0, 1.0, size=(n, 2)) * 4) / 4
+  discrete = np.column_stack([atoms, np.maximum(atoms - 0.25, 0.0)])
+  z = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.5], [0.5, 1.0]], size=n)
+  cont = pv.to_pseudo_obs(z)
+  stack = torch.from_numpy(np.stack([discrete, np.column_stack([cont, cont])]))
+
+  _, stacked = fit_tll_constant(
+    stack[..., :2], discrete_data=stack, discrete_lanes=[0]
+  )
+  _, alone = fit_tll_constant(stack[0, :, :2], discrete_data=stack[0])
+  _, cont_alone = fit_tll_constant(stack[1, :, :2])
+  torch.testing.assert_close(stacked[0], alone, rtol=1e-12, atol=1e-13)
+  torch.testing.assert_close(stacked[1], cont_alone, rtol=1e-12, atol=1e-13)
 
 
 def test_from_data_batched_at_one_pair() -> None:
