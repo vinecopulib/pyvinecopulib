@@ -149,9 +149,9 @@ class TorchVinecop(
   trees -- a level of the dependency graph for ``inverse_rosenblatt``. It is
   not a control: ``batched=None`` is resolved from the vine's device on every
   call, to ``True`` on CUDA and ``False`` elsewhere, and any call may name it
-  explicitly. A vine with a discrete variable declines the batched path, its
-  stacked per-level grids carrying no distribution function; it does not
-  decline the integral cache, which reconstructs the integral exactly.
+  explicitly. A vine with a discrete variable takes the batched path and the
+  integral cache like any other: a discrete slot reads each atom's
+  probability off its stacked grid, as the pair itself reads it off its own.
   ``compile_cascades`` is the other: whether the batched cascades run through
   :func:`torch.compile`.
 
@@ -1119,18 +1119,10 @@ class TorchVinecop(
     Raises
     ------
     NotBatchable
-        If any variable is discrete -- the stacked per-level grids carry no
-        distribution function, which a discrete edge's h-functions are
-        difference quotients of -- or if any pair lacks the grid internals the
-        batched path reads (it declares no ``supports_batched``). The dispatch
-        layer catches it and falls back to the non-batched cascade.
+        If any pair lacks the grid internals the batched path reads (it
+        declares no ``supports_batched``). The dispatch layer catches it and
+        falls back to the non-batched cascade.
     """
-    if self._n_discrete:
-      raise NotBatchable(
-        "batched path is continuous-only: the stacked per-level grids carry no "
-        "distribution function, which a discrete edge's h-functions are "
-        "difference quotients of"
-      )
     if not all(
       getattr(self._pair_module(t, e), "supports_batched", False)
       for t in range(self.trunc_lvl)

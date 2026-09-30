@@ -20,16 +20,17 @@ from ..core._trim import trim
 # source of truth for the numerics shared with the batched vine cascade.
 from ._placement import TENSOR_NS
 from ._vinecop_batched import (
-  _MIN_MASS,
   _batched_cell_index,
-  _cond_strip,
   _hfunc_from_cells,
   _locate,
+  cond_interval_mass_batched,
   int_on_grid_batched,
   integrate_1d_batched,
   integrate_2d_batched,
   interpolate_batched,
   inverse_integrate_1d_batched,
+  rect_mass_batched,
+  trap_weights,
 )
 
 #: Above this grid side the passes below stay on the device: the launch
@@ -175,33 +176,6 @@ def _newton_margins(
   return values, err <= exact or (err < rounding and err >= previous)
 
 
-def _trap_weights(grid_points: Tensor) -> Tensor:
-  """Trapezoid weights of ``grid_points``, summing to 1 on ``[0, 1]``.
-
-  ``_trap_weights(g) @ v`` is the exact integral of the piecewise-linear
-  function through ``(g, v)``, because the telescoping sum collapses to
-  ``g[-1] - g[0]``.
-
-  Parameters
-  ----------
-  grid_points : Tensor, shape (m,), dtype float
-      A strictly increasing grid whose endpoints are 0 and 1.
-
-  Returns
-  -------
-  Tensor, shape (m,), dtype float
-      The weights.
-  """
-  m = grid_points.shape[0]
-  if m < 2:
-    return torch.zeros(0, dtype=grid_points.dtype, device=grid_points.device)
-  w = torch.empty_like(grid_points)
-  w[0] = (grid_points[1] - grid_points[0]) / 2.0
-  w[1:-1] = (grid_points[2:] - grid_points[:-2]) / 2.0
-  w[-1] = (grid_points[-1] - grid_points[-2]) / 2.0
-  return w
-
-
 class InterpolationGrid2D(torch.nn.Module):
   """Bilinear interpolation grid for a bivariate density on `[0, 1]^2`.
 
@@ -259,7 +233,7 @@ class InterpolationGrid2D(torch.nn.Module):
     # piecewise-linear function through `(grid_points, v)` over [0, 1]. The grid
     # is immutable after construction, so this is built once; the normalization
     # and the h-function denominator both read it instead of walking the cells.
-    self.register_buffer("trap_weights", _trap_weights(grid_points))
+    self.register_buffer("trap_weights", trap_weights(grid_points))
     self.register_buffer("_dgrid", grid_points[1:] - grid_points[:-1])
     # When ``is_linear`` is True the grid is assumed to be ``linspace(0, 1, m)``
     # (with the endpoint clamp above leaving it unchanged), so cell-finding is
@@ -642,74 +616,13 @@ class InterpolationGrid2D(torch.nn.Module):
     )
     return trim(out, TENSOR_NS)
 
-  def _interval_weights(self, lo: Tensor, hi: Tensor) -> Tensor:
-    """Nonnegative quadrature weights for ``int_lo^hi`` on the grid.
-
-    Returns ``w`` with ``w @ v == int_lo^hi f(t) dt`` for the piecewise-linear
-    ``f`` through ``(grid_points, v)``, exactly. Every entry is nonnegative,
-    because the hat functions are, which is the property :meth:`rect_mass`
-    needs: a difference of two cumulative integrals would be exact too, but
-    would carry the larger one's rounding error into a result of order
-    ``hi - lo``.
-
-    Parameters
-    ----------
-    lo, hi : Tensor, shape (n,), dtype float
-        Interval endpoints, clamped to ``[0, 1]``; ``hi < lo`` gives zero.
-
-    Returns
-    -------
-    Tensor, shape (n, m), dtype float
-        The weights.
-    """
-    g = self.grid_points
-    m = g.shape[0]
-    a = lo.clamp(0.0, 1.0)
-    b = hi.clamp(0.0, 1.0).clamp_min(a)
-    ka, kb = self._cell_index(a), self._cell_index(b)
-
-    def cell_pair(k: Tensor, s0: Tensor, d: Tensor) -> tuple[Tensor, Tensor]:
-      """Weights on nodes ``k`` / ``k + 1`` for the sub-cell ``[s0, s0 + d]``.
-
-      Parameterized by the *width* rather than by the upper end, so a narrow
-      interval never forms it as a difference of two numbers of order one --
-      which would put the ``1 / w`` amplification back into the weights.
-      """
-      h = g[k + 1] - g[k]
-      q = 0.5 * d * (2.0 * s0 + d)
-      return h * (d - q), h * q
-
-    # Whole cells strictly between the two partial ones: the trapezoid rule is
-    # exact for a piecewise-linear integrand, so each contributes h / 2 to both
-    # of its nodes.
-    idx = torch.arange(m - 1, device=g.device)
-    inner = (idx[None, :] > ka[:, None]) & (idx[None, :] < kb[:, None])
-    half = torch.where(inner, 0.5 * self._dgrid.expand(a.shape[0], m - 1), 0.0)
-    zc = torch.zeros_like(half[:, :1])
-    w = torch.cat([zc, half], dim=1) + torch.cat([half, zc], dim=1)
-
-    zero = torch.zeros_like(a)
-    same = ka == kb
-    ha, hb = g[ka + 1] - g[ka], g[kb + 1] - g[kb]
-    s0a = (a - g[ka]) / ha
-    a0, a1 = cell_pair(ka, s0a, torch.where(same, (b - a) / ha, 1.0 - s0a))
-    b0, b1 = cell_pair(kb, zero, (b - g[kb]) / hb)
-    b0 = torch.where(same, zero, b0)
-    b1 = torch.where(same, zero, b1)
-    for col, val in ((ka, a0), (ka + 1, a1), (kb, b0), (kb + 1, b1)):
-      w = w.scatter_add(1, col.unsqueeze(1), val.unsqueeze(1))
-    return w
-
   def cond_interval_mass(
     self, u_cond: Tensor, lo: Tensor, hi: Tensor, cond_var: int
   ) -> Tensor:
     """Probability that the free argument falls in ``(lo, hi]``, given the other.
 
-    A conditional distribution is the grid line at ``u_cond`` over its own
-    total, so this is a ratio of nonnegative sums and does not cancel at all.
-    Not clamped into the open unit interval, unlike :meth:`integrate_1d`: an
-    empty interval is exactly ``0`` and the whole line exactly ``1``, which is
-    what makes the masses of a partition sum to one.
+    A batch of one through :func:`cond_interval_mass_batched`, which the
+    stacked vine cascade calls too, so the two routes cannot drift.
 
     Parameters
     ----------
@@ -725,35 +638,23 @@ class InterpolationGrid2D(torch.nn.Module):
     Tensor, shape (n,), dtype float
         Conditional probabilities.
     """
-    if cond_var not in (1, 2):
-      raise ValueError(f"cond_var must be 1 or 2; got {cond_var}")
-    m = self.grid_points.shape[0]
-    cell, t, _ = _locate(
-      self.grid_points, u_cond.clamp(0.0, 1.0), self._is_linear
-    )
-    # Same gather the batched h-function does: axis 1 holds the grid lines of
-    # the first argument, axis 2 those of the second.
-    line = _cond_strip(
+    return cond_interval_mass_batched(
+      self.grid_points,
       self.values.unsqueeze(0),
-      cell.unsqueeze(0),
-      t.unsqueeze(0).unsqueeze(-1),
-      1 if cond_var == 1 else 2,
-      m,
+      u_cond.unsqueeze(0),
+      lo.unsqueeze(0),
+      hi.unsqueeze(0),
+      cond_var,
+      self._is_linear,
     ).squeeze(0)
-    w = self._interval_weights(torch.minimum(lo, hi), torch.maximum(lo, hi))
-    total = (line @ self.trap_weights).clamp_min(_MIN_MASS)
-    return (w * line).sum(dim=1) / total
 
   def rect_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
     """The exact mass of ``(a1, b1] x (a2, b2]``, without the cancellation.
 
-    ``wx' V wy`` for the nonnegative quadrature weights of the two intervals,
-    a sum of nonnegative terms, so nothing cancels however narrow the
-    rectangle: differencing four values of the distribution function would
-    turn an absolute error ``eps`` into ``~4 eps / (w1 w2)`` in its widths. It
-    is the probability of the rectangle wherever the margins are uniform, which
-    they are for every fitted grid. Summed with either argument first and
-    averaged, so a grid and its transpose give the same value bit for bit.
+    A batch of one through :func:`rect_mass_batched`, where the arrangement
+    that avoids the four-corner cancellation is written down. On a
+    ``1.2e-4``-wide rectangle it errs by ``2.9e-12`` against the difference's
+    ``8.7e-9``.
 
     Parameters
     ----------
@@ -766,18 +667,15 @@ class InterpolationGrid2D(torch.nn.Module):
     Tensor, shape (n,), dtype float
         Rectangle masses.
     """
-    # Rotating the data can leave a left limit above its own value.
-    x0, x1 = torch.minimum(a1, b1), torch.maximum(a1, b1)
-    y0, y1 = torch.minimum(a2, b2), torch.maximum(a2, b2)
-    wx = self._interval_weights(x0, x1)
-    wy = self._interval_weights(y0, y1)
-    # The transpose materialized, so that either order is a product against a
-    # contiguous grid, and a transposed grid runs the other one bit for bit.
-    rows = (wx * (wy @ self.values.t().contiguous())).sum(dim=1)
-    cols = (wy * (wx @ self.values)).sum(dim=1)
-    out = 0.5 * (rows + cols)
-    empty = ~((x1 > x0) & (y1 > y0))
-    return torch.where(empty, torch.zeros_like(out), out)
+    return rect_mass_batched(
+      self.grid_points,
+      self.values.unsqueeze(0),
+      a1.unsqueeze(0),
+      b1.unsqueeze(0),
+      a2.unsqueeze(0),
+      b2.unsqueeze(0),
+      self._is_linear,
+    ).squeeze(0)
 
   def hfunc_cached(self, u: Tensor, cond_var: int, sy: Tensor) -> Tensor:
     """The exact conditional distribution function at ``u``, in O(1) per point.
