@@ -54,6 +54,128 @@ _NORMAL_GRID_Z_LIMIT: float = 3.25
 GRID_TYPES = ("normal", "linear")
 
 
+def _checked_grid(grid_points: Tensor, values: Tensor) -> Tensor:
+  """``grid_points`` with its endpoints at 0 and 1, once it and ``values`` pass.
+
+  Both checks read the device once, together, whatever the number of grids
+  ``values`` stacks.
+  """
+  m = values.shape[-1]
+  if grid_points.ndim != 1 or grid_points.shape[0] != m:
+    raise ValueError(
+      "grid_points must be 1D and match the side length of values"
+    )
+  # Two points are the minimum a cell needs, and the cell widths divide every
+  # interpolation and every prefix table: a single point leaves no cell and
+  # produced NaN, while a repeated or decreasing point divides by zero or by a
+  # negative width and produced a plausible-looking wrong number.
+  if m < 2:
+    raise ValueError(f"grid_points must contain at least two points, got {m}")
+  # A density is nonnegative, and the exact prefix tables rely on it: every
+  # integral they serve is a sum of nonnegative terms, so no cancellation can
+  # amplify a rounding error. A negative node would break that silently.
+  unsorted, negative = torch.stack(
+    [(grid_points[1:] <= grid_points[:-1]).any(), (values < 0.0).any()]
+  ).tolist()
+  if unsorted:
+    raise ValueError("grid_points must be strictly increasing")
+  if negative:
+    raise ValueError("values must be nonnegative; it is a density grid")
+  grid_points = grid_points.clone()
+  # Force boundary points to exactly 0 / 1 so we never extrapolate.
+  grid_points[0] = 0.0
+  grid_points[-1] = 1.0
+  return grid_points.contiguous()
+
+
+@torch.no_grad()
+def normalize_stack(
+  values: Tensor,
+  w: Tensor,
+  max_iter: int,
+  min_mass: float = 1e-20,
+) -> Tensor:
+  """``InterpolationGrid2D.normalize_margins`` over ``(P, m, m)`` at once.
+
+  Each pair stops where the single grid stops -- once its margins' residual is
+  at machine precision or, already at the level of rounding, no longer
+  shrinks -- so a pair's passes are the ones its own grid earns.
+
+  Parameters
+  ----------
+  values : Tensor, shape (P, m, m), dtype float
+      Density grids.
+  w : Tensor, shape (m,), dtype float
+      Trapezoid weights of the grid.
+  max_iter : int
+      Maximum number of passes.
+  min_mass : float, default=1e-20
+      Floor on a margin, so a zero line cannot 0 / 0.
+
+  Returns
+  -------
+  Tensor, shape (P, m, m), dtype float
+      The normalized grids.
+  """
+  values = values.clone()
+  exact = 8 * torch.finfo(values.dtype).eps
+  rounding = 1e-12
+  live = torch.ones(values.shape[0], dtype=torch.bool, device=values.device)
+  previous = torch.full(
+    (values.shape[0],), math.inf, dtype=values.dtype, device=values.device
+  )
+  for _ in range(max_iter):
+    # materialized, so that both margins are the same reduction and
+    # transposing a grid swaps them bit for bit
+    vt = values.transpose(-1, -2).contiguous()
+    r = (values @ w).clamp_min(min_mass)
+    c = (vt @ w).clamp_min(min_mass)
+    err = torch.maximum((r - 1.0).abs().amax(-1), (c - 1.0).abs().amax(-1))
+    live = live & ~((err <= exact) | ((err < rounding) & (err >= previous)))
+    if not bool(live.any()):
+      break
+    previous = torch.where(live, err, previous)
+    r2 = (values @ (w / c).unsqueeze(-1)).squeeze(-1).clamp_min(min_mass)
+    c2 = (vt @ (w / r).unsqueeze(-1)).squeeze(-1).clamp_min(min_mass)
+    sr = (r * r2).sqrt().reciprocal()
+    sc = (c * c2).sqrt().reciprocal()
+    # one fused rank-one scaling: two successive ones would round the two
+    # orders differently and lose the equivariance
+    scaled = values * sr.unsqueeze(-1) * sc.unsqueeze(-2)
+    values = torch.where(live[:, None, None], scaled, values)
+  return values
+
+
+def prefix_tables(
+  values: Tensor, dgrid: Tensor
+) -> tuple[Tensor, Tensor, Tensor]:
+  """``InterpolationGrid2D.build_caches`` for any leading dimensions of ``values``.
+
+  Parameters
+  ----------
+  values : Tensor, shape (..., m, m), dtype float
+      Density grids.
+  dgrid : Tensor, shape (m - 1,), dtype float
+      The grid's cell widths.
+
+  Returns
+  -------
+  tuple of Tensor
+      ``sy``, ``sx`` and ``p``, each shaped like ``values``.
+  """
+  inc = 0.5 * (values[..., :, :-1] + values[..., :, 1:]) * dgrid
+  sy = torch.cat([torch.zeros_like(inc[..., :1]), inc.cumsum(dim=-1)], dim=-1)
+  incx = 0.5 * (values[..., :-1, :] + values[..., 1:, :]) * dgrid.unsqueeze(-1)
+  sx = torch.cat(
+    [torch.zeros_like(incx[..., :1, :]), incx.cumsum(dim=-2)], dim=-2
+  )
+  incp = 0.5 * (sy[..., :-1, :] + sy[..., 1:, :]) * dgrid.unsqueeze(-1)
+  p = torch.cat(
+    [torch.zeros_like(incp[..., :1, :]), incp.cumsum(dim=-2)], dim=-2
+  )
+  return sy, sx, p
+
+
 class InterpolationGrid2D(torch.nn.Module):
   """Bilinear interpolation grid for a bivariate density on `[0, 1]^2`.
 
@@ -79,45 +201,94 @@ class InterpolationGrid2D(torch.nn.Module):
     super().__init__()
     if values.ndim != 2 or values.shape[0] != values.shape[1]:
       raise ValueError("values must be a square 2D tensor")
-    if grid_points.ndim != 1 or grid_points.shape[0] != values.shape[0]:
-      raise ValueError(
-        "grid_points must be 1D and match the side length of values"
-      )
-    # Two points are the minimum a cell needs, and the cell widths divide every
-    # interpolation and every prefix table: a single point leaves no cell and
-    # produced NaN, while a repeated or decreasing point divides by zero or by a
-    # negative width and produced a plausible-looking wrong number.
-    if grid_points.shape[0] < 2:
-      raise ValueError(
-        "grid_points must contain at least two points, "
-        f"got {grid_points.shape[0]}"
-      )
-    if not bool((grid_points[1:] > grid_points[:-1]).all()):
-      raise ValueError("grid_points must be strictly increasing")
-    # A density is nonnegative, and the exact prefix tables rely on it: every
-    # integral they serve is a sum of nonnegative terms, so no cancellation can
-    # amplify a rounding error. A negative node would break that silently.
-    if bool((values < 0.0).any()):
-      raise ValueError("values must be nonnegative; it is a density grid")
+    grid_points = _checked_grid(grid_points, values)
+    self._setup(
+      grid_points,
+      values.clone().contiguous(),
+      trap_weights(grid_points),
+      grid_points[1:] - grid_points[:-1],
+      is_linear,
+    )
+    self.normalize_margins(norm_maxiter)
 
-    grid_points = grid_points.clone()
-    # Force boundary points to exactly 0 / 1 so we never extrapolate.
-    grid_points[0] = 0.0
-    grid_points[-1] = 1.0
-
-    self.register_buffer("grid_points", grid_points.contiguous())
-    self.register_buffer("values", values.clone().contiguous())
+  def _setup(
+    self,
+    grid_points: Tensor,
+    values: Tensor,
+    weights: Tensor,
+    dgrid: Tensor,
+    is_linear: bool,
+  ) -> None:
+    """Register a checked grid's buffers; the one place a grid's state is set."""
+    self.register_buffer("grid_points", grid_points)
+    self.register_buffer("values", values)
     # Trapezoid weights of `grid_points`, so `trap_weights @ v` integrates the
     # piecewise-linear function through `(grid_points, v)` over [0, 1]. The grid
     # is immutable after construction, so this is built once; the normalization
     # and the h-function denominator both read it instead of walking the cells.
-    self.register_buffer("trap_weights", trap_weights(grid_points))
-    self.register_buffer("_dgrid", grid_points[1:] - grid_points[:-1])
+    self.register_buffer("trap_weights", weights)
+    self.register_buffer("_dgrid", dgrid)
     # When ``is_linear`` is True the grid is assumed to be ``linspace(0, 1, m)``
-    # (with the endpoint clamp above leaving it unchanged), so cell-finding is
+    # (with the endpoint clamp leaving it unchanged), so cell-finding is
     # O(1) — ``floor(u * (m - 1))`` — instead of an O(log m) ``searchsorted``.
     self._is_linear = bool(is_linear)
-    self.normalize_margins(norm_maxiter)
+
+  @classmethod
+  def _stack(
+    cls,
+    grid_points: Tensor,
+    values: Tensor,
+    *,
+    norm_maxiter: int = 2000,
+    is_linear: bool = False,
+  ) -> list[InterpolationGrid2D]:
+    """One grid per pair of a stack, checked and normalized as one tensor.
+
+    What ``P`` constructor calls give, for a batched fit's pairs: the checks
+    run once for the stack, the grid's weights are computed once, and the
+    normalization runs over the stack with each pair freezing at its own
+    tolerance, rather than as ``P`` loops of a few hundred small kernels.
+
+    Parameters
+    ----------
+    grid_points : Tensor, shape (m,), dtype float
+        The shared grid.
+    values : Tensor, shape (P, m, m), dtype float
+        One density grid per pair.
+    norm_maxiter : int, default=2000
+        As on the constructor.
+    is_linear : bool, default=False
+        As on the constructor.
+
+    Returns
+    -------
+    list of InterpolationGrid2D
+        One grid per pair, each holding its own copy of its values.
+    """
+    if values.ndim != 3 or values.shape[-1] != values.shape[-2]:
+      raise ValueError("values must be a stack of square 2D tensors")
+    grid_points = _checked_grid(grid_points, values)
+    weights = trap_weights(grid_points)
+    dgrid = grid_points[1:] - grid_points[:-1]
+    if norm_maxiter >= 1 and grid_points.shape[0] >= 2:
+      values = normalize_stack(values, weights, norm_maxiter)
+    grids = []
+    for v in values.unbind(0):
+      # the state `__init__` sets, through the same `_setup`, once the stack is
+      # checked; the module base still needs its own initializer
+      grid = cls.__new__(cls)
+      torch.nn.Module.__init__(grid)  # noqa: PLC2801
+      # its own copies: `load_state_dict` writes buffers in place, so a shared
+      # one would carry a load into every sibling
+      grid._setup(
+        grid_points.clone(),
+        v.clone(),
+        weights.clone(),
+        dgrid.clone(),
+        is_linear,
+      )
+      grids.append(grid)
+    return grids
 
   # --------------------------------------------------------------------- #
   # Grid construction (factories shared by all callers)                    #
@@ -262,26 +433,8 @@ class InterpolationGrid2D(torch.nn.Module):
     on_host = values.device.type != "cpu" and m <= _HOST_NORMALIZE_MAX_M
     if on_host:
       values, w = values.cpu(), w.cpu()
-
-    exact = 8 * torch.finfo(values.dtype).eps
-    rounding, min_mass = 1e-12, 1e-20
-    previous = math.inf
-    for _ in range(max_iter):
-      vt = values.t().contiguous()
-      r = (values @ w).clamp_min(min_mass)
-      c = (vt @ w).clamp_min(min_mass)
-      err = float(torch.maximum((r - 1.0).abs().max(), (c - 1.0).abs().max()))
-      if err <= exact or (err < rounding and err >= previous):
-        break
-      previous = err
-      r2 = (values @ (w / c)).clamp_min(min_mass)
-      c2 = (vt @ (w / r)).clamp_min(min_mass)
-      sr = (r * r2).sqrt().reciprocal()
-      sc = (c * c2).sqrt().reciprocal()
-      values.mul_(sr.unsqueeze(-1)).mul_(sc)
-
-    if on_host:
-      self.values.copy_(values.to(self.values.device))
+    out = normalize_stack(values.unsqueeze(0), w, max_iter)[0]
+    self.values.copy_(out.to(self.values.device))
 
   @torch.no_grad()
   def _cell_index(self, u: Tensor) -> Tensor:
@@ -422,17 +575,7 @@ class InterpolationGrid2D(torch.nn.Module):
     tuple of Tensor
         The three ``(m, m)`` tables.
     """
-    inc = 0.5 * (self.values[:, :-1] + self.values[:, 1:]) * self._dgrid
-    sy = torch.cat([torch.zeros_like(inc[:, :1]), inc.cumsum(dim=1)], dim=1)
-    incx = (
-      0.5
-      * (self.values[:-1, :] + self.values[1:, :])
-      * self._dgrid.unsqueeze(-1)
-    )
-    sx = torch.cat([torch.zeros_like(incx[:1, :]), incx.cumsum(dim=0)], dim=0)
-    incp = 0.5 * (sy[:-1, :] + sy[1:, :]) * self._dgrid.unsqueeze(-1)
-    p = torch.cat([torch.zeros_like(incp[:1, :]), incp.cumsum(dim=0)], dim=0)
-    return sy, sx, p
+    return prefix_tables(self.values, self._dgrid)
 
   def cdf_cached(self, u: Tensor, sy: Tensor, sx: Tensor, p: Tensor) -> Tensor:
     """The exact distribution function at ``u``, in O(1) per point.

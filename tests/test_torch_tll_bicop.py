@@ -1093,6 +1093,40 @@ def test_from_data_batched_matches_cpp() -> None:
     )
 
 
+def test_from_data_batched_builds_each_pair_as_the_constructor_does() -> None:
+  """A stacked pair is the constructor's pair, owning every buffer it holds.
+
+  The batched fit checks and normalizes its grids as one stack and builds
+  their tables in one pass, so it is pinned here against a pair constructed
+  from the same normalized values: the same buffers, bit for bit. And no two
+  pairs share one, since ``load_state_dict`` writes buffers in place and a
+  shared one would carry a load into every sibling.
+  """
+  u = torch.rand(
+    3, 400, 2, dtype=torch.float64, generator=torch.Generator().manual_seed(2)
+  )
+  pairs = TorchTllBicop.from_data_batched(u)
+  for pair in pairs:
+    built = TorchTllBicop(
+      pair.interp_grid.grid_points, pair.interp_grid.values, norm_maxiter=0
+    )
+    got, want = dict(pair.named_buffers()), dict(built.named_buffers())
+    assert got.keys() == want.keys()
+    for name, buffer in want.items():
+      torch.testing.assert_close(got[name], buffer, atol=0.0, rtol=0.0)
+  before = pairs[1].interp_grid.values.clone()
+  pairs[0].load_state_dict(
+    TorchTllBicop.from_data(
+      torch.rand(400, 2, dtype=torch.float64)
+    ).state_dict()
+  )
+  torch.testing.assert_close(
+    pairs[1].interp_grid.values, before, atol=0.0, rtol=0.0
+  )
+  pointers = [{b.data_ptr() for b in p.buffers()} for p in pairs]
+  assert not (pointers[0] & pointers[1]) and not (pointers[1] & pointers[2])
+
+
 def test_from_data_batched_rejects_a_non_stacked_input() -> None:
   u = torch.from_numpy(
     np.random.default_rng(0).uniform(0.05, 0.95, size=(64, 2))
