@@ -566,8 +566,54 @@ def _kde_grid_block(n: int, lanes: int, itemsize: int, grid: int) -> int:
   return max(1, min(grid, _KDE_MEM_BUDGET_BYTES // max(per_point, 1)))
 
 
+def _kde_sum(
+  zd0: Tensor, zd1: Tensor, zg0: Tensor, zg1: Tensor, const: Tensor
+) -> Tensor:
+  """The Gaussian kernel mean at each of a block of whitened grid points.
+
+  Parameters
+  ----------
+  zd0, zd1 : Tensor, shape (..., n), dtype float
+      Whitened data.
+  zg0, zg1 : Tensor, shape (..., G), dtype float
+      Whitened grid points.
+  const : Tensor, shape (...,), dtype float
+      Normalizing constants.
+
+  Returns
+  -------
+  Tensor, shape (..., G), dtype float
+      Density estimates at the grid points.
+  """
+  d0 = zd0[..., None, :] - zg0[..., :, None]
+  d1 = zd1[..., None, :] - zg1[..., :, None]
+  return (torch.exp(-0.5 * (d0**2 + d1**2)) * const[..., None, None]).mean(-1)
+
+
+_COMPILED_KDE_SUM: Callable[..., Tensor] | None = None
+
+
+def _compiled_kde_sum() -> Callable[..., Tensor]:
+  """:func:`_kde_sum` fused into one reduction, compiled once per process.
+
+  Fused, the sum never materializes the ``(..., G, n)`` differences, which
+  is what bounds the eager version by memory traffic, so the whole grid goes
+  in one call. ``dynamic=True`` for the reason :func:`_compiled_ace_step`
+  gives.
+
+  Returns
+  -------
+  callable
+      The compiled sum, with :func:`_kde_sum`'s signature.
+  """
+  global _COMPILED_KDE_SUM  # noqa: PLW0603
+  if _COMPILED_KDE_SUM is None:
+    _COMPILED_KDE_SUM = torch.compile(_kde_sum, dynamic=True)
+  return _COMPILED_KDE_SUM
+
+
 def _fit_local_likelihood_constant(
-  z: Tensor, z_data: Tensor, B: Tensor
+  z: Tensor, z_data: Tensor, B: Tensor, *, compile_step: bool = False
 ) -> Tensor:
   """Local-constant kernel density estimate at ``z`` from ``z_data``.
 
@@ -601,6 +647,10 @@ def _fit_local_likelihood_constant(
   zd0 = ia[..., None] * z_data[..., 0]
   zd1 = ib[..., None] * z_data[..., 0] + ic[..., None] * z_data[..., 1]
   const = (_SQRT_2PI_INV * _SQRT_2PI_INV) * det_irB
+  if compile_step:
+    zg0 = ia[..., None] * z[:, 0]
+    zg1 = ib[..., None] * z[:, 0] + ic[..., None] * z[:, 1]
+    return _compiled_kde_sum()(zd0, zd1, zg0, zg1, const)
   lanes = 1
   for extent in z_data.shape[:-2]:
     lanes *= int(extent)
@@ -612,10 +662,7 @@ def _fit_local_likelihood_constant(
     zb = z[lo : lo + block]
     zg0 = ia[..., None] * zb[:, 0]
     zg1 = ib[..., None] * zb[:, 0] + ic[..., None] * zb[:, 1]
-    d0 = zd0[..., None, :] - zg0[..., :, None]
-    d1 = zd1[..., None, :] - zg1[..., :, None]
-    kernels = torch.exp(-0.5 * (d0**2 + d1**2)) * const[..., None, None]
-    out.append(kernels.mean(dim=-1))
+    out.append(_kde_sum(zd0, zd1, zg0, zg1, const))
   return torch.cat(out, dim=-1) if len(out) > 1 else out[0]
 
 
@@ -824,7 +871,7 @@ def fit_tll_constant(
   z = _qnorm(grid_2d)
 
   # Local-constant KDE on the z-scale grid.
-  f0 = _fit_local_likelihood_constant(z, z_data, B)
+  f0 = _fit_local_likelihood_constant(z, z_data, B, compile_step=compile_fit)
 
   # Transform z-space density to copula-scale density.
   phi_z = (
