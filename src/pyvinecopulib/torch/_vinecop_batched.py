@@ -580,14 +580,22 @@ def _stencil(tables: Tensor, rows: Tensor, cols: Tensor, m: int) -> Tensor:
 
   Returns
   -------
-  Tensor, shape (N, n, R, C, 7), dtype float
-      The gathered channels.
+  Tensor, shape (7, N, n, R, C), dtype float
+      The gathered channels, channel first.
+
+  Notes
+  -----
+  The gather reads each node's seven channels together, which is why the
+  tables keep them last; the result puts them first, in one copy, so every
+  channel the kernels read is contiguous. Left channel-last, each read is a
+  stride-7 view, which vectorizes on no cpu kernel.
   """
   n_batch, n, r = rows.shape
   c = cols.shape[-1]
   pos = (rows.unsqueeze(-1) * m + cols.unsqueeze(-2)).reshape(n_batch, -1)
   batch = torch.arange(n_batch, device=tables.device).unsqueeze(-1)
-  return tables[batch, pos].reshape(n_batch, n, r, c, 7)
+  st = tables[batch, pos].reshape(n_batch, n, r, c, 7)
+  return st.movedim(-1, 0).contiguous()
 
 
 def _whole(t: Tensor, dim: int) -> Tensor:
@@ -596,7 +604,7 @@ def _whole(t: Tensor, dim: int) -> Tensor:
   The whole cells of an interval run between those two nodes, so this is
   every table's mass over them at once. A difference of two rounded values is
   itself correctly rounded, so with each ``_lo`` channel's difference folded
-  back in -- ``d[..., c] + d[..., c + 1]`` -- the result is accurate relative
+  back in -- ``d[c] + d[c + 1]`` -- the result is accurate relative
   to itself: a range sum of nonnegative terms, read without cancellation.
   """
   return t.select(dim, 2) - t.select(dim, 1)
@@ -655,13 +663,13 @@ def cond_interval_mass_batched(
   if cond_var == 1:
     st, ch = _stencil(tables, lines, free, m), _SY
   else:
-    st, ch = _stencil(tables, free, lines, m).transpose(2, 3), _SX
-  # (N, n, 2 lines, 5 free nodes, 7): partial cells, then the whole ones.
-  line_mass = (w.unsqueeze(-2) * st[..., :4, _V]).sum(-1)
-  d = _whole(st, -2)
-  whole = d[..., ch] + d[..., ch + 1]
+    st, ch = _stencil(tables, free, lines, m).transpose(-1, -2), _SX
+  # (7, N, n, 2 lines, 5 free nodes): partial cells, then the whole ones.
+  line_mass = (w.unsqueeze(-2) * st[_V, ..., :4]).sum(-1)
+  d = _whole(st, -1)
+  whole = d[ch] + d[ch + 1]
   line_mass = line_mass + torch.where(inner.unsqueeze(-1), whole, 0.0)
-  total = st[..., 4, ch] + st[..., 4, ch + 1]
+  total = st[ch, ..., 4] + st[ch + 1, ..., 4]
   mass = torch.lerp(line_mass[..., 0], line_mass[..., 1], t)
   return mass / torch.lerp(total[..., 0], total[..., 1], t).clamp_min(_MIN_MASS)
 
@@ -728,25 +736,25 @@ def rect_mass_batched(
   # The first argument's stencil and the last node, which is where `sx` and
   # `p` hold the masses over the whole of the first argument.
   rows = torch.cat([px, torch.full_like(px[..., :1], m - 1)], dim=-1)
-  st = _stencil(tables, rows, py, m)  # (N, n, 5, 4, 7)
-  v = st[..., :4, :, _V]
+  st = _stencil(tables, rows, py, m)  # (7, N, n, 5, 4)
+  v = st[_V, ..., :4, :]
   # Whole cells in the second argument, per first-argument node, and in the
   # first, per second-argument node.
-  dy = _whole(st, -2)  # (N, n, 5, 7)
-  dx = _whole(st, -3)  # (N, n, 4, 7)
+  dy = _whole(st, -1)  # (7, N, n, 5)
+  dx = _whole(st, -2)  # (7, N, n, 4)
 
   # R, the rectangle's own mass: partial cells in both arguments, partial in
   # one and whole in the other, and whole in both.
   pp = (wx.unsqueeze(-1) * wy.unsqueeze(-2) * v).sum((-1, -2))
-  x_part = (wx * (dy[..., :4, _SY] + dy[..., :4, _SY_LO])).sum(-1)
-  y_whole = dx[..., _SX] + dx[..., _SX_LO]
+  x_part = (wx * (dy[_SY, ..., :4] + dy[_SY_LO, ..., :4])).sum(-1)
+  y_whole = dx[_SX] + dx[_SX_LO]
   x_whole = (wy * y_whole).sum(-1)
   # The whole-by-whole block is a four-corner difference of `p`, so its first
   # stage keeps its rounding error exactly and the second cannot cancel
   # against it.
-  s1, e1 = _two_sum(st[..., 2, 1:3, _P], -st[..., 1, 1:3, _P])
+  s1, e1 = _two_sum(st[_P, ..., 2, 1:3], -st[_P, ..., 1, 1:3])
   both = (s1[..., 1] - s1[..., 0]) + (
-    (e1[..., 1] - e1[..., 0]) + (dx[..., 2, _P_LO] - dx[..., 1, _P_LO])
+    (e1[..., 1] - e1[..., 0]) + (dx[_P_LO, ..., 2] - dx[_P_LO, ..., 1])
   )
   r = (
     pp
@@ -762,25 +770,25 @@ def rect_mass_batched(
   f = s / (g[j0 + 1] - g[j0])
   al, be = s / 2.0 * (2.0 - f), s / 2.0 * f
   below_line = (
-    st[..., :4, 0, _SY]
-    + st[..., :4, 0, _SY_LO]
+    st[_SY, ..., :4, 0]
+    + st[_SY_LO, ..., :4, 0]
     + al.unsqueeze(-1) * v[..., 0]
     + be.unsqueeze(-1) * v[..., 1]
   )
   s_part = (wx * below_line).sum(-1)
   # The whole cells in the first argument below `y0`: their prefix mass up to
   # node 0, plus the same partial cell, taken across them.
-  p_below = dx[..., 0, _P] + dx[..., 0, _P_LO]
+  p_below = dx[_P, ..., 0] + dx[_P_LO, ..., 0]
   s_mass = s_part + torch.where(
     in_x, p_below + al * y_whole[..., 0] + be * y_whole[..., 1], 0.0
   )
 
   # The masses over the whole first argument, off its last node.
-  sx_last = st[..., 4, :, _SX] + st[..., 4, :, _SX_LO]
+  sx_last = st[_SX, ..., 4, :] + st[_SX_LO, ..., 4, :]
   m_strip = (wy * sx_last).sum(-1) + torch.where(
-    in_y, dy[..., 4, _P] + dy[..., 4, _P_LO], 0.0
+    in_y, dy[_P, ..., 4] + dy[_P_LO, ..., 4], 0.0
   )
-  p_last = st[..., 4, 0, _P] + st[..., 4, 0, _P_LO]
+  p_last = st[_P, ..., 4, 0] + st[_P_LO, ..., 4, 0]
   m_below = (p_last + al * sx_last[..., 0] + be * sx_last[..., 1]).clamp_min(
     _MIN_MASS
   )
