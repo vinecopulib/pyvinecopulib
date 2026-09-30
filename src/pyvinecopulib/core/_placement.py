@@ -56,10 +56,35 @@ from .protocols import ArrayT, array_namespace
 __all__ = [
   "PlacementMixin",
   "QrngUniformMixin",
+  "copy_array",
   "place",
   "reference_array",
   "to_numpy",
 ]
+
+
+def copy_array(a: ArrayT) -> ArrayT:
+  """A copy of ``a`` in its own namespace that stays in its autograd graph.
+
+  ``xp.asarray(a, copy=True)`` is the array-API spelling, and on torch before
+  2.13 it returns a *detached* copy: a gradient taken through it silently
+  loses that path. An assignment into a fresh array is a differentiable copy
+  in every torch version, and an ordinary one in every other namespace.
+
+  Parameters
+  ----------
+  a : array
+      Values in any array namespace.
+
+  Returns
+  -------
+  array
+      A copy of ``a``, with the same shape, dtype and device.
+  """
+  xp = array_namespace(a)
+  out: Any = xp.empty_like(a)
+  out[...] = a
+  return cast("ArrayT", out)
 
 
 def to_numpy(a: ArrayT, *, dtype: npt.DTypeLike | None = None) -> np.ndarray:

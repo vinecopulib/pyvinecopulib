@@ -27,7 +27,7 @@ import numpy as np
 
 from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import pair_eval, prepare_covariates
-from ._placement import to_numpy
+from ._placement import copy_array, to_numpy
 from ._validation import check_var_types, validate_weights
 from ._vinecop_discrete import (
   collapse_data,
@@ -299,9 +299,7 @@ def fit_parts(
     if hfunc2_sub is None
     else xp.zeros((n, d), dtype=ua.dtype, device=ua.device)
   )
-  u_nat = (
-    xp.asarray(hfunc2, copy=True) if context.assembles_conditioning else None
-  )
+  u_nat = copy_array(hfunc2) if context.assembles_conditioning else None
   cache: dict[tuple[int, int], tuple[int, ...]] = {}
 
   def edge_context_for(tree: int, edge: int) -> ArrayT | None:
