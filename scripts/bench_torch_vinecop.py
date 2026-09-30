@@ -76,7 +76,6 @@ import torch
 
 import pyvinecopulib as pv
 from pyvinecopulib.torch import (
-  FitControlsTorchBicop,
   FitControlsTorchVinecop,
   TorchVinecop,
 )
@@ -301,18 +300,14 @@ def _torch_controls(
   grid_size: int,
   cache: bool,
   trunc_lvl: int,
-  device: str,
-  dtype: torch.dtype,
   batched_fit: bool | None = None,
 ) -> FitControlsTorchVinecop:
+  # No device or dtype: a torch fit reads both off the data it is handed.
   return FitControlsTorchVinecop(
-    bicop_controls=FitControlsTorchBicop(
-      grid_type=grid_type, grid_size=grid_size
-    ),
+    grid_type=grid_type,
+    grid_size=grid_size,
     cache_integrals=cache,
     trunc_lvl=trunc_lvl,
-    device=torch.device(device),
-    dtype=dtype,
     batched_fit=batched_fit,
   )
 
@@ -364,8 +359,8 @@ def _cpp_fit_call(u_fit, structure, ctl):
 def _torch_fit_call(u_t, structure, ctl):
   """The torch vine fit to time; `structure=None` means the `select` arm.
 
-  `structure` is `from_data`'s second positional argument: `None` routes
-  to the array-agnostic selector, a skeleton routes to the fit engine.
+  `None` for `structure` routes to the array-agnostic selector, a skeleton
+  to the fit engine.
   """
   return lambda: TorchVinecop.from_data(u_t, structure=structure, controls=ctl)
 
@@ -447,11 +442,9 @@ def _bench_eval_cell(
               # variant of the storage grid sits on the same skeleton and
               # pair-copula fits, isolating the eval-time effect.
               bc = TorchVinecop.from_data(
-                torch.from_numpy(u_fit).to(device),
+                torch.from_numpy(u_fit).to(device=device, dtype=torch_dtype),
                 structure=ref.structure,
-                controls=_torch_controls(
-                  grid_type, g, cache, trunc_lvl, device, torch_dtype
-                ),
+                controls=_torch_controls(grid_type, g, cache, trunc_lvl),
               )
               u_t = torch.from_numpy(u_eval).to(
                 device=device, dtype=torch_dtype
@@ -569,9 +562,7 @@ def _bench_fit_cell(
           for g in grid_sizes:
             for cache in caches:
               for bf in batched_fits:
-                ctl = _torch_controls(
-                  grid_type, g, cache, trunc_lvl, device, torch_dtype, bf
-                )
+                ctl = _torch_controls(grid_type, g, cache, trunc_lvl, bf)
                 for arm in structures:
                   label = (
                     f"torch {arm} {device} {dtype_name} {grid_type} "
