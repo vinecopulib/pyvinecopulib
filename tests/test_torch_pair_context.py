@@ -28,6 +28,7 @@ engines return rather than an assembled vine. The public ``fit`` / ``select`` /
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import numpy as np
@@ -184,6 +185,39 @@ def test_numpy_and_torch_match() -> None:
     atol=1e-10,
     rtol=1e-10,
   )
+
+
+@pytest.mark.parametrize("method", ["logpdf", "rosenblatt"])
+def test_gradient_reaches_the_conditioning_values(method: str) -> None:
+  """A non-simplified vine's gradient in ``u`` includes its path through ``u_D``.
+
+  The conditioning values are a copy of the seeded observations. The array-API
+  copy detaches a tensor on torch before 2.13 and warns from 2.13 on, so that
+  part of the gradient went missing without an error on the older versions.
+  Central differences see every path, and the warning is an error here, so
+  the check holds on either side of that release.
+  """
+  d, n, eps = 4, 5, 1e-6
+  vine = _vine(d, NonSimplifiedContext())
+  rng = np.random.default_rng(11)
+  u = torch.tensor(
+    rng.uniform(0.2, 0.8, (n, d)), dtype=torch.float64, requires_grad=True
+  )
+
+  def total(v: torch.Tensor) -> torch.Tensor:
+    return getattr(vine, method)(v).sum()
+
+  with warnings.catch_warnings():
+    warnings.simplefilter("error", UserWarning)
+    (grad,) = torch.autograd.grad(total(u), u)
+  numeric = torch.zeros_like(u)
+  with torch.no_grad():
+    for i in range(n):
+      for j in range(d):
+        step = torch.zeros_like(u)
+        step[i, j] = eps
+        numeric[i, j] = (total(u + step) - total(u - step)) / (2 * eps)
+  torch.testing.assert_close(grad, numeric, rtol=1e-6, atol=1e-7)
 
 
 def test_row_permutation_alignment() -> None:

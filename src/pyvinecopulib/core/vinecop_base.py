@@ -71,7 +71,7 @@ import numpy as np
 from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import pair_eval, prepare_covariates
 from ._loglik import safe_log, sum_loglik
-from ._placement import PlacementMixin, QrngUniformMixin, to_numpy
+from ._placement import PlacementMixin, QrngUniformMixin, copy_array, to_numpy
 from ._trim import trim
 from ._validation import check_var_types
 from ._vinecop_discrete import (
@@ -745,11 +745,7 @@ class VinecopBase(
     )
     # Keep an immutable copy of the seeded observations for conditioning-set
     # (u_D) gathers; skipped entirely under a simplified/unconditional vine.
-    u_nat = (
-      xp.asarray(hfunc2, copy=True)
-      if self._context.assembles_conditioning
-      else None
-    )
+    u_nat = copy_array(hfunc2) if self._context.assembles_conditioning else None
     logpdf = xp.zeros(n, dtype=u.dtype, device=u.device)
     s = self.structure
     pair_types = self._pair_types
@@ -807,7 +803,7 @@ class VinecopBase(
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       hfunc2[:, j] = u[:, order[j] - 1]
-    hfunc1 = xp.asarray(hfunc2, copy=True)
+    hfunc1 = copy_array(hfunc2)
     # See _pdf on why hfunc1_sub needs no seed.
     hfunc2_sub: Any = seed_left_limits(
       u, self.d, self.order, self._var_types, self._disc_cols, xp
@@ -817,11 +813,7 @@ class VinecopBase(
       if hfunc2_sub is None
       else xp.zeros((n, d), dtype=u.dtype, device=u.device)
     )
-    u_nat = (
-      xp.asarray(hfunc2, copy=True)
-      if self._context.assembles_conditioning
-      else None
-    )
+    u_nat = copy_array(hfunc2) if self._context.assembles_conditioning else None
     s = self.structure
     pair_types = self._pair_types
     for tree in range(trunc_lvl):
@@ -1135,7 +1127,7 @@ class VinecopBase(
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       hfunc2[:, j] = u[:, order[j] - 1]
-    hfunc1 = xp.asarray(hfunc2, copy=True)
+    hfunc1 = copy_array(hfunc2)
     # See `_logpdf` on why hfunc1_sub needs no seed.
     hfunc2_sub: Any = seed_left_limits(
       u, self.d, self.order, self._var_types, self._disc_cols, xp
