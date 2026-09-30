@@ -1146,7 +1146,7 @@ class VinecopBase(
         h1_e, h2_e = lvl.h1_h2(bv.grid_points, u_e)
       else:
         _, h1_e, h2_e, h1s_e, h2s_e = lvl.eval_discrete(
-          bv.grid_points, u_e, with_pdf=False
+          bv.grid_points, u_e, with_pdf=False, every_h2=True
         )
         # `_rosenblatt` writes hfunc2 at every edge, and its left limit at
         # every edge whose first argument is discrete.
