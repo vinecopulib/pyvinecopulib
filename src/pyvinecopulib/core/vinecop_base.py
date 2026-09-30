@@ -2116,7 +2116,12 @@ class VinecopBase(
         ``bicop_class``. Conditional fitting is driven through this hook.
     fit_level : callable, or None, optional
         ``(tree, u_level, types) -> Sequence[BicopLike]``, fitting a whole tree
-        level at once instead of edge by edge.
+        level at once instead of edge by edge. ``u_level`` is
+        ``(P, n, 2)`` for an all-continuous level and ``(P, n, 4)``,
+        ``[u1, u2, u1^-, u2^-]`` per edge, for a level with a discrete edge,
+        where a continuous edge's left limits are its own values; ``types``
+        says which edge is which. A level whose pairs see a conditioning
+        context is fitted edge by edge.
 
     Returns
     -------

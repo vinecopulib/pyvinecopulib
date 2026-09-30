@@ -1421,6 +1421,41 @@ def test_batched_fit_matches_the_per_edge_fit(d: int) -> None:
     )
 
 
+@pytest.mark.parametrize("select", [False, True], ids=["fit", "select"])
+@pytest.mark.parametrize(
+  "var_types", [["d", "c", "c"], ["d", "d", "d", "c", "d"]], ids=str
+)
+def test_batched_fit_matches_the_per_edge_fit_on_a_discrete_vine(
+  var_types: list[str], select: bool
+) -> None:
+  """A level with a discrete edge fits in one call, to the per-edge model.
+
+  The level reaches the batched fit as one four-column stack. Each discrete
+  lane ranks its ties and draws its latent sample exactly as the single-pair
+  fit does, from its own lane's bandwidth, so the stacked fit moves the model
+  no further than `batched_fit` moves a continuous one.
+  """
+  u = _discrete_data(var_types, n=600, seed=4)
+  u_t = torch.from_numpy(u)
+  structure = None if select else _discrete_vinecop(var_types, u).structure
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t,
+      structure=structure,
+      var_types=var_types,
+      controls=FitControlsTorchVinecop(batched_fit=flag),
+    )
+    for flag in (False, True)
+  }
+  assert np.array_equal(
+    np.asarray(fits[True].structure.matrix),
+    np.asarray(fits[False].structure.matrix),
+  )
+  torch.testing.assert_close(
+    fits[True].logpdf(u_t), fits[False].logpdf(u_t), atol=1e-11, rtol=1e-9
+  )
+
+
 def test_batched_fit_defaults_to_off_on_cpu() -> None:
   """The default follows the device, as the evaluation cascade's does.
 

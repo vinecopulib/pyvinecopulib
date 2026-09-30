@@ -1813,11 +1813,16 @@ Key surface:
   - `batched_fit` — fits a whole tree level in one call instead of edge at a
     time, through the optional `fit_level` hook on `VinecopBase.fit` /
     `.select` (`TorchTllBicop.from_data_batched` is the pair-level entry point,
-    taking `(P, n, 2)`). Resolved per device like the cascade's `batched`.
-    The hook does not know what the pairs are for — `P`
-    independent pairs on shared rows — so several vines' levels concatenate
-    into the same axis as readily as one vine's. A level carrying a discrete
-    edge or a conditioning context cannot stack and stays per-edge.
+    taking `(P, n, 2)`, or `(P, n, 4)` with per-pair `var_types`). Resolved
+    per device like the cascade's `batched`. The hook does not know what the
+    pairs are for — `P` independent pairs on shared rows — so several vines'
+    levels concatenate into the same axis as readily as one vine's. A level
+    with a discrete edge stacks in the four-column layout throughout, a
+    continuous edge carrying its values as its own left limits, and each
+    discrete lane draws its latent sample from its own bandwidth through the
+    compiled `find_latent_sample` -- one lane at a time on a thread pool,
+    since the binding releases the GIL and the draw is seeded. Only a level
+    carrying a conditioning context stays per-edge.
   - **`device` and `dtype` are not controls.** Where a module lives is a
     property of the module, as it is for every other `nn.Module`, so the fit
     reads them off the data instead: `from_data` places the grid where `u` is
