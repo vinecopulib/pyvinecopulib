@@ -1037,12 +1037,12 @@ def _many_level_data(n: int, seed: int) -> tuple[np.ndarray, list[str]]:
 def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree() -> None:
   """Selected or refitted on its structure, in either lane, a mixed vine is one.
 
-  A ``tll`` fit breaks rank ties at random in value order, and a discrete one
-  then draws a latent sample that is discontinuous in its bandwidth, so the
-  fit agrees across evaluations only when its data agree up to near-ties
-  (vinecopulib#798) and when it does not depend on the orientation its pair
-  was fitted in (vinecopulib#799): selection fits a pair in the search's
-  orientation and stores it flipped, a refit fits it in place.
+  The two lanes' h-functions, and a selection's against a refit's, differ in
+  their last bits: selection fits a pair in the search's orientation and
+  stores it flipped, a refit fits it in place. A discrete fit moves
+  continuously with its data (vinecopulib#799), so the fits agree to about
+  that noise over the ranks' scale, the square root of the machine epsilon
+  -- not to rounding, but never by the jump a redrawn latent sample was.
   """
   u, var_types = _many_level_data(n=2000, seed=8)
   cop = pv.Vinecop.from_data(u, var_types=var_types, controls=_TLL_CONTROLS)
@@ -1075,15 +1075,48 @@ def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree() -> None:
         np.testing.assert_allclose(
           grid(fit, tree, edge),
           grid(cop, tree, edge),
-          rtol=1e-10,
-          atol=1e-10,
+          rtol=1e-8,
+          atol=1e-8,
           err_msg=f"{name}: tree {tree}, edge {edge}",
         )
   np.testing.assert_allclose(
     torch_fits["selection"].pdf(torch.from_numpy(u)).numpy(),
     cop.pdf(u),
-    rtol=1e-10,
+    rtol=1e-8,
   )
+
+
+def test_a_discrete_pair_fit_moves_continuously_with_its_data() -> None:
+  """Rounding-sized changes to a discrete pair's data move its fit as little.
+
+  The torch mirror of vinecopulib's test: a continuous argument crowding
+  below 1 with gaps around ``1e-11``, refitted after a relative error of up to
+  ``1e-13`` keyed on each value, as rounding is. Any threshold on those gaps
+  would be straddled, and a redrawn latent sample moved the grid by about 10.
+  """
+  rng = np.random.default_rng(11)
+  z = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.7], [0.7, 1.0]], size=2000)
+  u = pv.to_pseudo_obs(z)
+  k = np.ceil(12 * u[:, 0])
+  c = u[:, 1].copy()
+  crowd = np.arange(0, len(c), 4)
+  c[crowd] = 1 - 0.9e-6 - crowd * 1e-11 * (1 + 0.5 * np.sin(crowd))
+  data = np.column_stack([k / 12, c, (k - 1) / 12, c])
+
+  def fit(x: np.ndarray) -> np.ndarray:
+    pair = TorchTllBicop.from_data(
+      torch.from_numpy(x), var_types=["d", "c"], cache_integrals=False
+    )
+    return pair.interp_grid.values.numpy()
+
+  base = fit(data)
+  for rep in range(1, 4):
+    bits = data.view(np.uint64) ^ np.uint64(rep)
+    key = (bits * np.uint64(0xBF58476D1CE4E5B9)) ^ (bits >> np.uint64(31))
+    xi = (key >> np.uint64(11)).astype(np.float64) / 2.0**53 * 2 - 1
+    noisy = np.minimum(data * (1 + 1e-13 * xi), 1.0)
+    noisy[:, 3] = noisy[:, 1]
+    np.testing.assert_allclose(fit(noisy), base, rtol=0.0, atol=1e-6)
 
 
 @pytest.mark.parametrize("seed", [7, 18, 30, 36])

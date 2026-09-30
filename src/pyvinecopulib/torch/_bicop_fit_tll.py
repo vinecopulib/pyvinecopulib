@@ -3,12 +3,13 @@
 Mirrors the algorithm in ``lib/vinecopulib/.../bicop/implementation/tll.ipp``
 end-to-end so :meth:`TorchTllBicop.from_data` produces an ``(m, m)`` density
 grid that matches the C++ ``pv.Bicop.from_data`` output to machine
-precision after :meth:`InterpolationGrid2D.normalize_margins(25)`.
+precision after :meth:`InterpolationGrid2D.normalize_margins`.
 
 Three pieces:
 
-* :func:`_to_pseudo_obs` — empirical CDF ``rank/(n+1)``, with ties broken
-  the way ``TllBicop::fit`` breaks them.
+* :func:`_to_pseudo_obs` — empirical CDF ``rank/(n+1)``, ranked the way
+  ``TllBicop::fit`` ranks, through the compiled function where ties or
+  near-ties make that differ from ranking by value.
 * :func:`_ace` — alternating conditional expectations for the maximal-
   correlation coefficient. Outer/inner convergence loop matches the C++
   tolerances (``2e-15`` / ``1e-4``); the moving-average window smoother is
@@ -51,91 +52,75 @@ def _qnorm(p: Tensor) -> Tensor:
   return cast("Tensor", torch.special.ndtri(p))
 
 
-#: ``tools_stats::merge_near_ties``' default; the lanes rank alike only if equal.
-_NEAR_TIE_TOL: float = 1e-11
+def _to_pseudo_obs(
+  u: Tensor,
+  discrete_data: Tensor | None = None,
+  discrete_lanes: Sequence[int] | None = None,
+) -> Tensor:
+  """The pseudo-observations ``TllBicop::fit`` selects its bandwidth from.
 
-
-def _merge_near_ties(x: Tensor, tol: float = _NEAR_TIE_TOL) -> Tensor:
-  """Make values of each column that are equal up to rounding exactly equal.
-
-  ``tools_stats::merge_near_ties``, per lane and column: every run of sorted
-  values, each within ``tol`` of its predecessor, takes the run's first value.
+  ``tools_stats::pair_soft_pseudo_obs``, per lane: ties ordered by a fixed key
+  per observation, and on a discrete lane values within rounding of each
+  other ranked partly by key, so that the ranks move continuously with the
+  data. A lane whose columns have neither is ranked by value on its own
+  device, which is then the same thing; the others are ranked on the host by
+  the compiled function itself, so that the two lanes rank alike.
 
   Parameters
   ----------
-  x : Tensor, shape (..., n, 2) or (..., n, 4), dtype float
-      One sample per lane.
-  tol : float, default=_NEAR_TIE_TOL
-      Absolute merge distance.
+  u : Tensor, shape (n, 2) or (P, n, 2), dtype float
+      The pairs' values.
+  discrete_data : Tensor, shape (n, 4) or (P, n, 4), dtype float, optional
+      ``[u1, u2, u1^-, u2^-]`` alongside ``u``, where any lane is discrete.
+  discrete_lanes : sequence of int, optional
+      The discrete lanes of a stack; ``None`` means every lane when
+      ``discrete_data`` is given.
 
   Returns
   -------
-  Tensor, shape (..., n, 2) or (..., n, 4), dtype float
-      ``x`` with near-ties made exact; ``NaN`` left in place.
+  Tensor
+      ``u``'s shape, ``rank / (n + 1)``.
   """
-  n = x.shape[-2]
-  lines = x.movedim(-1, -2).reshape(-1, n)
+  from ..pyvinecopulib_ext import _SOFT_RANK_SCALE
+
+  n = u.shape[-2]
+  pairs = u.reshape(-1, n, 2)
+  lanes = pairs.shape[0]
+  discrete = torch.zeros(lanes, dtype=torch.bool, device=u.device)
+  if discrete_data is not None:
+    discrete[
+      slice(None) if discrete_lanes is None else list(discrete_lanes)
+    ] = True
+  # one row per (lane, column), each ranked by value
+  lines = pairs.movedim(-1, -2).reshape(-1, n)
   order = lines.argsort(dim=-1, stable=True)
   srt = lines.gather(-1, order)
-  nan = srt.isnan()
-  starts = torch.ones_like(srt, dtype=torch.bool)
-  starts[:, 1:] = (
-    ~((srt[:, 1:] - srt[:, :-1]) <= tol) | nan[:, 1:] | nan[:, :-1]
+  gaps = srt[:, 1:] - srt[:, :-1]
+  reach = 9.0 * _SOFT_RANK_SCALE
+  close = torch.where(
+    discrete.repeat_interleave(2)[:, None], gaps <= reach, gaps == 0
   )
-  position = torch.arange(n, device=x.device).expand_as(srt)
-  first = torch.where(starts, position, 0).cummax(dim=-1).values
-  merged = torch.empty_like(lines).scatter_(-1, order, srt.gather(-1, first))
-  merged = torch.where(lines.isnan(), lines, merged)
-  moved = x.movedim(-1, -2).shape
-  return merged.reshape(moved).movedim(-2, -1)
-
-
-def _to_pseudo_obs(x: Tensor) -> Tensor:
-  """Empirical CDF ``rank/(n+1)`` of each column, per lane.
-
-  ``TllBicop::fit`` ranks with ``to_pseudo_obs(u, "random", {}, {5})``: ties
-  broken at random, each column from a generator seeded with 5, starting from
-  the ties' order of appearance. The sort happens here, on the data's own
-  device; what the compiled draw needs is only the sizes of the tie groups,
-  so those are all that go to the host, and the order it draws for them is
-  all that comes back. A column without ties never leaves the device.
-
-  Ties are not limited to discrete margins: a continuous column with few
-  distinct values has them, and so does any sample after the trim to
-  ``(1e-10, 1 - 1e-10)``, which collapses everything beyond the clamp into one
-  group. Broken by row order instead, the tied blocks of the two columns line
-  up and add dependence the data does not have.
-  """
-  n = x.shape[-2]
-  # One row per (lane, column), each ranked on its own.
-  lines = x.movedim(-1, -2).reshape(-1, n)
-  order = lines.argsort(dim=-1, stable=True)
-  srt = lines.gather(-1, order)
-  starts = torch.ones_like(srt, dtype=torch.bool)
-  starts[:, 1:] = srt[:, 1:] != srt[:, :-1]
-  position = torch.arange(n, device=x.device)
-  ranks = (position + 1).expand_as(lines).clone()
-
-  tied = torch.nonzero(~starts.all(dim=-1)).flatten()
-  if tied.numel() > 0:
-    from ..core.extend import to_numpy
-    from ..pyvinecopulib_ext import _tie_order
-
-    # The value at sorted position `o + ord[o + k]` of the group starting at
-    # `o` receives the group's `(k + 1)`-th rank, `o + k + 1`.
-    target = np.empty((tied.numel(), n), dtype=np.int32)
-    for i, line in enumerate(to_numpy(starts[tied])):
-      first = np.flatnonzero(line)
-      sizes = np.diff(np.append(first, n))
-      target[i] = np.repeat(first, sizes) + _tie_order(sizes, [5])
-    target_t = torch.as_tensor(target, device=x.device).long()
-    ranks[tied] = torch.empty_like(target_t).scatter_(-1, target_t, ranks[tied])
-
+  position = torch.arange(1, n + 1, device=u.device, dtype=u.dtype)
   psobs = torch.empty_like(lines).scatter_(
-    -1, order, ranks.to(x.dtype) / (n + 1)
+    -1, order, (position / (n + 1)).expand_as(lines)
   )
-  moved = x.movedim(-1, -2).shape
-  return psobs.reshape(moved).movedim(-2, -1)
+  psobs = psobs.reshape(lanes, 2, n).movedim(-2, -1)
+
+  host = torch.nonzero(close.reshape(lanes, 2, -1).any(dim=(-1, -2))).flatten()
+  if host.numel() > 0:
+    from ..core.extend import to_numpy
+    from ..pyvinecopulib_ext import _pair_soft_pseudo_obs
+
+    wide = None if discrete_data is None else discrete_data.reshape(-1, n, 4)
+    flags = discrete.tolist()
+    out = psobs.clone()
+    for k in host.tolist():
+      data = wide[k] if flags[k] and wide is not None else pairs[k]
+      scale = _SOFT_RANK_SCALE if flags[k] else 0.0
+      soft = _pair_soft_pseudo_obs(to_numpy(data, dtype=np.float64), scale)
+      out[k] = torch.as_tensor(soft, dtype=u.dtype, device=u.device)
+    psobs = out
+  return psobs.reshape(u.shape)
 
 
 def _win_smoother(x: Tensor, wl: int) -> Tensor:
@@ -637,7 +622,7 @@ def _latent_z(
   data = discrete_data if stacked else discrete_data.unsqueeze(0)
   bw = B if stacked else B.unsqueeze(0)
   idx = list(range(data.shape[0])) if lanes is None else list(lanes)
-  host = to_numpy(_merge_near_ties(data[idx]))
+  host = to_numpy(data[idx])
   # The product crosses to the host and the root is taken there, as the
   # single-pair fit always took it, so a lane draws with the same `b` either
   # way.
@@ -704,7 +689,7 @@ def fit_tll_constant(
   Returns:
     A ``(grid_points, values)`` pair. ``values`` is the unnormalized
     ``(m, m)`` density; callers should pass it through
-    ``InterpolationGrid2D(grid_points, values, norm_maxiter=25,
+    ``InterpolationGrid2D(grid_points, values, norm_maxiter=2000,
     is_linear=(grid_type == "linear"))`` to match the C++
     ``Bicop.parameters`` output to machine precision for ``"normal"``.
 
@@ -727,17 +712,8 @@ def fit_tll_constant(
 
   # Pseudo-observations + qnorm to z-space.
   # On a discrete edge these ranks only select the bandwidth; see
-  # ``discrete_data``. Its near-ties are merged first, as ``TllBicop::fit``
-  # merges them: the latent draw turns any change in the random tie-breaking
-  # into another sample.
-  tied = u
-  if discrete_data is not None:
-    tied = _merge_near_ties(u)
-    if u.ndim == 3 and discrete_lanes is not None:
-      is_discrete = torch.zeros(u.shape[0], dtype=torch.bool, device=device)
-      is_discrete[list(discrete_lanes)] = True
-      tied = torch.where(is_discrete[:, None, None], tied, u)
-  z_data = _qnorm(_to_pseudo_obs(tied))
+  # ``discrete_data``.
+  z_data = _qnorm(_to_pseudo_obs(u, discrete_data, discrete_lanes))
 
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data, compile_step=compile_fit) * mult
@@ -778,7 +754,7 @@ def fit_tll_constant(
   values = c.reshape((*c.shape[:-1], grid_size, grid_size))
 
   # The canonical TorchTllBicop builds an InterpolationGrid2D from
-  # (grid_points, values) with norm_maxiter=25 — that's what matches C++
+  # (grid_points, values) with norm_maxiter=2000 — that's what matches C++
   # to machine precision. The grid_points returned here are the
   # un-forced ones used for the fit positions; InterpolationGrid2D's
   # constructor will clamp the endpoints to 0/1 internally.

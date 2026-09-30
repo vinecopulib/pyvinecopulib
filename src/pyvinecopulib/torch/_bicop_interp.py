@@ -73,7 +73,7 @@ class InterpolationGrid2D(torch.nn.Module):
     self,
     grid_points: Tensor,
     values: Tensor,
-    norm_maxiter: int = 25,
+    norm_maxiter: int = 2000,
     is_linear: bool = False,
   ) -> None:
     super().__init__()
@@ -239,10 +239,16 @@ class InterpolationGrid2D(torch.nn.Module):
     transpose is materialized rather than left as a view, so both margins are
     the same reduction and transposing the grid swaps them bit for bit.
 
+    The passes run to convergence, as ``InterpolationGrid`` runs them: they
+    stop once the margins' residual is at machine precision or, already at the
+    level of rounding, no longer shrinks. A grid left short of uniform margins
+    is not a copula density, and its distribution function, which rescales one
+    argument's margin only, then depends on which argument is first by as much
+    as the residual.
+
     Args:
       max_iter: maximum number of rescaling passes; ``0`` leaves the values
-        untouched. Rescaling also stops as soon as both margins integrate to 1
-        within ``1e-10``.
+        untouched.
     """
     m = self.grid_points.shape[0]
     if max_iter < 1 or m < 2:
@@ -257,14 +263,17 @@ class InterpolationGrid2D(torch.nn.Module):
     if on_host:
       values, w = values.cpu(), w.cpu()
 
-    tol, min_mass = 1e-10, 1e-20
+    exact = 8 * torch.finfo(values.dtype).eps
+    rounding, min_mass = 1e-12, 1e-20
+    previous = math.inf
     for _ in range(max_iter):
       vt = values.t().contiguous()
       r = (values @ w).clamp_min(min_mass)
       c = (vt @ w).clamp_min(min_mass)
-      err = torch.maximum((r - 1.0).abs().max(), (c - 1.0).abs().max())
-      if bool(err < tol):
+      err = float(torch.maximum((r - 1.0).abs().max(), (c - 1.0).abs().max()))
+      if err <= exact or (err < rounding and err >= previous):
         break
+      previous = err
       r2 = (values @ (w / c)).clamp_min(min_mass)
       c2 = (vt @ (w / r)).clamp_min(min_mass)
       sr = (r * r2).sqrt().reciprocal()
@@ -327,12 +336,13 @@ class InterpolationGrid2D(torch.nn.Module):
     ).squeeze(0)
 
   def integrate_2d(self, u: Tensor) -> Tensor:
-    """Bivariate CDF: the grid's mass ``M`` over ``[0, u1] x [0, u2]``, rescaled.
+    """Bivariate CDF: ``int_0^{u1} int_0^{u2} c(s, t) dt ds``.
 
-    ``M(u1, u2) f(u1) g(u2) M(1, 1)``, with ``f(x) = x / M(x, 1)`` and
-    ``g(y) = y / M(1, y)``, so that both margins are exactly uniform and the
-    function is symmetric in its arguments, as ``InterpolationGrid`` defines
-    it. Clamped strictly inside ``[0, 1]``. Thin ``N=1`` wrapper over
+    Trapezoidally integrate each grid row up to ``u2`` to get an
+    ``(n, m)`` strip, then integrate that strip up to ``u1``,
+    renormalizing by the full-strip outer integral so C(1, u2) = u2
+    holds exactly (post-vinecopulib#667 C++ behavior). Clamped strictly
+    inside ``[0, 1]``. Thin ``N=1`` wrapper over
     :func:`._batched.integrate_2d_batched`.
     """
     return integrate_2d_batched(
@@ -434,9 +444,9 @@ class InterpolationGrid2D(torch.nn.Module):
     a fixed linear combination of two columns of ``values`` -- so integrating it
     over the first argument reads ``sx`` rather than needing its own table.
 
-    The result carries the same rescaling of both margins and the same
-    domain clamp as :meth:`integrate_2d`, so it is that function's value and
-    not a different definition of it.
+    The result carries the same ``* u2 / total`` renormalization and domain
+    clamp as :meth:`integrate_2d`, so it is that function's
+    value and not a different definition of it.
 
     Parameters
     ----------
@@ -475,16 +485,10 @@ class InterpolationGrid2D(torch.nn.Module):
     out = out + be * s_partial(
       self.values[ic, jc + 1], self.values[ic + 1, jc + 1]
     )
-    # the same expression at u1 = 1, where both first-argument partials vanish,
-    # and at u2 = 1, where both second-argument ones do
+    # the same expression at u1 = 1, where both first-argument partials vanish
     last = torch.full_like(jc, m - 1)
-    m_y = p[last, jc] + al * sx[last, jc] + be * sx[last, jc + 1]
-    m_x = p[ic, last] + s_partial(sy[ic, last], sy[ic + 1, last])
-    fx = u1 / m_x.clamp_min(_MIN_MASS)
-    gy = u2 / m_y.clamp_min(_MIN_MASS)
-    inside = (u1 > 0) & (u2 > 0)
-    cdf = torch.where(inside, p[-1, -1] * ((fx * gy) * out), 0.0)
-    return trim(cdf, TENSOR_NS)
+    total = p[last, jc] + al * sx[last, jc] + be * sx[last, jc + 1]
+    return trim(out * u2 / total.clamp_min(_MIN_MASS), TENSOR_NS)
 
   def _mass(self) -> Tensor:
     """This grid's mass tables, rebuilt only when the grid has changed.

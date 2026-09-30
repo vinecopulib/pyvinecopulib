@@ -1784,8 +1784,8 @@ Key surface:
     in **both** cache modes: they read their own mass tables, not the
     `cache_integrals` prefix tables. A four-corner `cdf` difference turns an
     absolute error `ε` into `≈4ε/(w₁w₂)` in the atom widths; the rectangle's
-    only canceling terms are the increments of the two margins' rescalings,
-    each multiplying a mass no larger than its strip. Measured against exact rational truth on a `1.2e-4`-wide
+    only canceling term is its `λ(b₂) − λ(a₂)`, which multiplies a term of
+    order `w₁`. Measured against exact rational truth on a `1.2e-4`-wide
     rectangle: `2.8e-15` against `1.8e-8`, and flat in the width.
     **Every mass is `O(1)` per query**, not a quadrature over the grid: its
     partial cells are summed directly and its whole cells read off
@@ -1798,17 +1798,15 @@ Key surface:
     table would lose that accuracy at `1e-5`, which a strongly dependent pair's
     off-diagonal atoms reach; a dense quadrature is `O(m)` per query, which is
     what made the discrete batched path memory-bound at large `n`. That bound
-    is earned only by expanding each rescaling's increment over its common
-    denominator, so it cancels against the width rather than against one —
-    formed as a difference of the two rescalings it swamps the first term on a
-    low-mass rectangle, and each margin is formed additively, as the mass
-    before the interval plus the strip over it, for the same reason. `values >= 0` is a constructor precondition precisely
+    is earned only by expanding the `λ` difference over
+    the common denominator, so it cancels against `b₂ − a₂` rather than against
+    one — formed as `λ(b₂) − λ(a₂)` it swamps the first term on a low-mass
+    rectangle, and the total is formed additively as `m_below + m_strip` for
+    the same reason. `values >= 0` is a constructor precondition precisely
     because the nonnegative-weight bound depends on it. Note it is the
-    **probability**, not the density's mass: `cdf` is the mass rescaled along
-    both arguments, `M(x, y) f(x) g(y) M(1, 1)` with `f(x) = x / M(x, 1)` and
-    `g(y) = y / M(1, y)`, so that both margins are exactly uniform and a
-    flipped pair evaluates as the original with its arguments swapped; the two
-    differ, and a discrete edge is defined against the distribution function. The conditional one is **not** clamped into the
+    **probability**, not the density's mass: `cdf` renormalizes each grid line
+    by its own total, so the two differ, and a discrete edge is defined against
+    the distribution function. The conditional one is **not** clamped into the
     open unit interval, unlike an h-function value, which is what makes the
     masses of a partition sum to one.
   - `compile` — runs the batched cascades through `torch.compile`, on CUDA
@@ -1851,7 +1849,9 @@ Key surface:
     namespace rather than round-tripping a compiled `pv.Vinecop`.
 - `InterpolationGrid2D` (`torch/_bicop_interp.py`) — the 2-d bilinear grid
   backing `TorchTllBicop`; **internal** (not re-exported). Margin
-  normalization uses Sinkhorn iterations to drive marginals to uniform.
+  normalization uses Sinkhorn iterations to drive marginals to uniform, run
+  to convergence as `InterpolationGrid` runs them: a flipped pair evaluates as
+  the original only to within the residual left.
 
 ### Top-level `pyvinecopulib`
 

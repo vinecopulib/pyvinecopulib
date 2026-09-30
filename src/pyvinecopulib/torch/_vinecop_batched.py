@@ -390,9 +390,9 @@ def integrate_2d_batched(
 
   Same shape contract as :func:`integrate_1d_batched`: ``values: (N, m, m)``,
   ``u: (N, n, 2)``, returns ``(N, n)`` clamped strictly inside ``[0, 1]``.
-  ``InterpolationGrid::integrate_2d``'s ``M(u1, u2) f(u1) g(u2) M(1, 1)``,
-  with ``f(x) = x / M(x, 1)`` and ``g(y) = y / M(1, y)`` rescaling the mass
-  ``M`` so that both margins are exactly uniform; in parity with the unbatched
+  The result is renormalized by the full-strip outer integral so
+  C(1, u2) = u2 holds exactly — matches the post-vinecopulib#667 C++
+  behavior and stays in parity with the unbatched
   :meth:`InterpolationGrid2D.integrate_2d`.
   """
   u = u.clamp(0.0, 1.0)
@@ -411,23 +411,20 @@ def integrate_2d_batched(
   strip = int_on_grid_batched(
     grid_points, upr_inner, vals_inner, is_linear
   )  # (N, n, m)
-  mass = int_on_grid_batched(grid_points, u1, strip, is_linear)
-  m_y = int_on_grid_batched(grid_points, torch.ones_like(u1), strip, is_linear)
-  # each grid line's total, the first margin's density at the nodes
-  totals = int_on_grid_batched(
-    grid_points, torch.ones_like(values[..., 0]), values, is_linear
-  )  # (N, m)
-  m_x = int_on_grid_batched(
-    grid_points, u1, totals.unsqueeze(1).expand(N, n, m), is_linear
+
+  # Outer pass: integrate strip[k, l, :] up to u1[k, l] and renormalize
+  # by the full-first-axis integral so C(1, u2) = u2 holds exactly.
+  # Guard the degenerate `tmpint1 = 0` case (e.g. cache-building at
+  # raw grid endpoints) — true CDF is then 0.
+  tmpint = int_on_grid_batched(grid_points, u1, strip, is_linear)
+  tmpint1 = int_on_grid_batched(
+    grid_points, torch.ones_like(u1), strip, is_linear
   )
-  total = int_on_grid_batched(
-    grid_points, torch.ones_like(totals[..., 0]), totals, is_linear
-  ).unsqueeze(-1)
-  fx = u1 / m_x.clamp_min(_MIN_MASS)
-  gy = u2 / m_y.clamp_min(_MIN_MASS)
-  # zero where either argument is: the mass is, and its rescaling is 0 / 0
-  inside = (u1 > 0) & (u2 > 0)
-  out = torch.where(inside, total * ((fx * gy) * mass), torch.zeros_like(mass))
+  out = torch.where(
+    tmpint1 > 0,
+    tmpint * u2 / tmpint1.clamp_min(_MIN_MASS),
+    torch.zeros_like(tmpint),
+  )
   return trim(out, TENSOR_NS)
 
 
@@ -717,16 +714,15 @@ def rect_mass_batched(
   rectangle's widths; this route amplifies by ``1 / w2`` alone, one power
   instead of two.
 
-  The distribution function is ``M(x, y) f(x) g(y) M(1, 1)``, with
-  ``f(x) = x / M(x, 1)`` and ``g(y) = y / M(1, y)`` rescaling the mass ``M``
-  so that both margins are exactly uniform. So the probability is not simply
-  the rectangle's mass ``D``: with ``A`` the mass below and left of the
-  rectangle and ``Bx`` / ``By`` the strips below and left of it, the
-  four-corner difference is ``M(1, 1) [f1 g1 D + A df dg + Bx f1 dg +
-  By g1 df]``. The masses are sums of nonnegative terms and do not cancel at
-  all; only the rescalings' increments ``df`` and ``dg`` do, and expanded over
-  their common denominators they cancel against the widths rather than
-  against one.
+  The distribution function renormalizes each line of the grid by its own
+  total, so the probability is not simply the mass. Writing
+  ``lam(y) = y / M(1, y)`` for that factor, ``R`` for the rectangle's own mass
+  and ``S`` for the mass of ``(a1, b1] x (0, a2]``, the four-corner difference
+  is ``lam(b2) R + (lam(b2) - lam(a2)) S``. ``R`` and ``S`` are sums of
+  nonnegative terms and do not cancel at all; only the ``lam`` difference
+  does, and expanded over the common denominator it cancels against
+  ``b2 - a2`` rather than against one -- formed as ``lam(b2) - lam(a2)`` it
+  would swamp the first term on a low-mass rectangle.
 
   Each mass is its partial cells, summed directly, plus its whole cells, read
   as compensated differences of the prefix tables (:func:`mass_tables`), so
@@ -760,23 +756,21 @@ def rect_mass_batched(
     g, torch.stack([x0, y0]), torch.stack([x1, y1]), is_linear
   )
   (px, py), (wx, wy), (in_x, in_y) = nodes, w, inner
-  # Each argument's stencil and the last node, which is where the tables hold
-  # the masses over all of the other argument.
-  last = torch.full_like(px[..., :1], m - 1)
-  rows = torch.cat([px, last], dim=-1)
-  cols = torch.cat([py, last], dim=-1)
-  st = _stencil(tables, rows, cols, m)  # (7, N, n, 5, 5)
-  v = st[_V, ..., :4, :4]
+  # The first argument's stencil and the last node, which is where `sx` and
+  # `p` hold the masses over all of the first argument.
+  rows = torch.cat([px, torch.full_like(px[..., :1], m - 1)], dim=-1)
+  st = _stencil(tables, rows, py, m)  # (7, N, n, 5, 4)
+  v = st[_V, ..., :4, :]
   # Whole cells in the second argument, per first-argument node, and in the
   # first, per second-argument node.
   dy = _whole(st, -1)  # (7, N, n, 5)
-  dx = _whole(st, -2)  # (7, N, n, 5)
+  dx = _whole(st, -2)  # (7, N, n, 4)
 
-  # D, the rectangle's own mass: partial cells in both arguments, partial in
+  # R, the rectangle's own mass: partial cells in both arguments, partial in
   # one and whole in the other, and whole in both.
   pp = (wx.unsqueeze(-1) * wy.unsqueeze(-2) * v).sum((-1, -2))
   x_part = (wx * (dy[_SY, ..., :4] + dy[_SY_LO, ..., :4])).sum(-1)
-  y_whole = dx[_SX, ..., :4] + dx[_SX_LO, ..., :4]
+  y_whole = dx[_SX] + dx[_SX_LO]
   x_whole = (wy * y_whole).sum(-1)
   # The whole-by-whole block is a four-corner difference of `p`, so its first
   # stage keeps its rounding error exactly and the second cannot cancel
@@ -785,104 +779,49 @@ def rect_mass_batched(
   both = (s1[..., 1] - s1[..., 0]) + (
     (e1[..., 1] - e1[..., 0]) + (dx[_P_LO, ..., 2] - dx[_P_LO, ..., 1])
   )
-  inside = (
+  r = (
     pp
     + torch.where(in_y, x_part, 0.0)
     + torch.where(in_x, x_whole + torch.where(in_y, both, 0.0), 0.0)
   )
 
-  def partial(lo: Tensor, k: Tensor) -> tuple[Tensor, Tensor]:
-    """``cdf_cached``'s node weights for the partial cell up to ``lo``."""
-    s = lo.clamp(0.0, 1.0) - g[k]
-    f = s / (g[k + 1] - g[k])
-    return s / 2.0 * (2.0 - f), s / 2.0 * f
-
-  # `x0` and `y0` fall in the stencils' first cells, so the masses before
-  # them are read at nodes 0 and 1: the prefix at node 0 plus the partial cell.
-  alx, bex = partial(x0, px[..., 0])
-  aly, bey = partial(y0, py[..., 0])
-
-  # The strip below the rectangle, `(x0, x1] x (0, y0]`: each first-argument
-  # line up to `y0`, across the partial cells, plus the whole ones.
+  # `y0` falls in the stencil's first cell, so the mass below it is read at
+  # nodes 0 and 1: the prefix at node 0 plus the partial cell up to `y0`,
+  # whose two node weights are `cdf_cached`'s `al` / `be`.
+  j0 = py[..., 0]
+  s = y0.clamp(0.0, 1.0) - g[j0]
+  f = s / (g[j0 + 1] - g[j0])
+  al, be = s / 2.0 * (2.0 - f), s / 2.0 * f
   below_line = (
     st[_SY, ..., :4, 0]
     + st[_SY_LO, ..., :4, 0]
-    + aly.unsqueeze(-1) * v[..., 0]
-    + bey.unsqueeze(-1) * v[..., 1]
+    + al.unsqueeze(-1) * v[..., 0]
+    + be.unsqueeze(-1) * v[..., 1]
   )
-  below = (wx * below_line).sum(-1) + torch.where(
-    in_x,
-    dx[_P, ..., 0]
-    + dx[_P_LO, ..., 0]
-    + aly * y_whole[..., 0]
-    + bey * y_whole[..., 1],
-    0.0,
-  )
-  # The strip left of it, `(0, x0] x (y0, y1]`, the same with the roles of the
-  # arguments swapped.
-  x_whole_rows = dy[_SY, ..., :2] + dy[_SY_LO, ..., :2]
-  left_line = (
-    st[_SX, ..., 0, :4]
-    + st[_SX_LO, ..., 0, :4]
-    + alx.unsqueeze(-1) * v[..., 0, :]
-    + bex.unsqueeze(-1) * v[..., 1, :]
-  )
-  left = (wy * left_line).sum(-1) + torch.where(
-    in_y,
-    dy[_P, ..., 0]
-    + dy[_P_LO, ..., 0]
-    + alx * x_whole_rows[..., 0]
-    + bex * x_whole_rows[..., 1],
-    0.0,
-  )
-  # The block below and left of it, `(0, x0] x (0, y0]`.
-  below_left = (
-    (st[_P, ..., 0, 0] + st[_P_LO, ..., 0, 0])
-    + alx * (st[_SY, ..., 0, 0] + st[_SY_LO, ..., 0, 0])
-    + bex * (st[_SY, ..., 1, 0] + st[_SY_LO, ..., 1, 0])
-    + aly * (st[_SX, ..., 0, 0] + st[_SX_LO, ..., 0, 0])
-    + bey * (st[_SX, ..., 0, 1] + st[_SX_LO, ..., 0, 1])
-    + aly * (alx * v[..., 0, 0] + bex * v[..., 1, 0])
-    + bey * (alx * v[..., 0, 1] + bex * v[..., 1, 1])
+  s_part = (wx * below_line).sum(-1)
+  # The whole cells in the first argument below `y0`: their prefix mass up to
+  # node 0, plus the same partial cell, taken across them.
+  p_below = dx[_P, ..., 0] + dx[_P_LO, ..., 0]
+  s_mass = s_part + torch.where(
+    in_x, p_below + al * y_whole[..., 0] + be * y_whole[..., 1], 0.0
   )
 
-  # The margins: each argument's mass before its interval and over it, off
-  # the other argument's last node.
-  sx_last = st[_SX, ..., 4, :4] + st[_SX_LO, ..., 4, :4]
-  m_y0 = (st[_P, ..., 4, 0] + st[_P_LO, ..., 4, 0]) + (
-    aly * sx_last[..., 0] + bey * sx_last[..., 1]
-  )
-  m_y = (wy * sx_last).sum(-1) + torch.where(
+  # The masses over the whole first argument, off its last node.
+  sx_last = st[_SX, ..., 4, :] + st[_SX_LO, ..., 4, :]
+  m_strip = (wy * sx_last).sum(-1) + torch.where(
     in_y, dy[_P, ..., 4] + dy[_P_LO, ..., 4], 0.0
   )
-  sy_last = st[_SY, ..., :4, 4] + st[_SY_LO, ..., :4, 4]
-  m_x0 = (st[_P, ..., 0, 4] + st[_P_LO, ..., 0, 4]) + (
-    alx * sy_last[..., 0] + bex * sy_last[..., 1]
+  p_last = st[_P, ..., 4, 0] + st[_P_LO, ..., 4, 0]
+  m_below = (p_last + al * sx_last[..., 0] + be * sx_last[..., 1]).clamp_min(
+    _MIN_MASS
   )
-  m_x = (wx * sy_last).sum(-1) + torch.where(
-    in_x, dx[_P, ..., 4] + dx[_P_LO, ..., 4], 0.0
-  )
-  total = st[_P, ..., 4, 4] + st[_P_LO, ..., 4, 4]
 
-  def rescaling(
-    lo: Tensor, hi: Tensor, m0: Tensor, strip: Tensor
-  ) -> tuple[Tensor, Tensor]:
-    """``hi / M(hi)`` and its increment over ``(lo, hi]``.
-
-    The increment over the common denominator, where it cancels against
-    ``hi - lo`` rather than against one; exactly zero where ``lo`` is, as the
-    blocks it multiplies are then empty.
-    """
-    m1 = (m0 + strip).clamp_min(_MIN_MASS)
-    increment = ((hi - lo) * m0 - lo * strip) / (m1 * m0.clamp_min(_MIN_MASS))
-    return hi / m1, increment
-
-  f1, df = rescaling(x0, x1, m_x0, m_x)
-  g1, dg = rescaling(y0, y1, m_y0, m_y)
-  out = total * (
-    ((f1 * g1) * inside + below_left * (df * dg))
-    + (below * (f1 * dg) + left * (g1 * df))
-  )
+  # Formed additively, so that the two terms below are consistent: an
+  # independent quadrature of the whole column would not cancel against the
+  # strip it is supposed to contain.
+  total = (m_below + m_strip).clamp_min(_MIN_MASS)
+  dlam = ((y1 - y0) * m_below - y0 * m_strip) / (total * m_below)
+  out = y1 * r / total + dlam * s_mass
   empty = ~((x1 > x0) & (y1 > y0))
   return torch.where(empty, torch.zeros_like(out), out)
 
