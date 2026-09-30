@@ -671,24 +671,25 @@ def _exact_rect_prob(
   return cdf(b1, b2) - cdf(a1, b2) - cdf(b1, a2) + cdf(a1, a2)
 
 
-# Both bounds move with the width, which is the point: differencing four
-# distribution values amplifies any absolute error by ~4 / (w1 w2), where
-# `rect_mass` amplifies by 1 / w2 alone -- one power instead of two, because
-# only its `lam` difference cancels and that multiplies a term of order w1.
+# Only the difference's bound moves with the width, which is the point:
+# differencing four distribution values amplifies any absolute error by
+# ~4 / (w1 w2), while `rect_mass` sums each mass as nonnegative partial cells
+# plus compensated whole-cell reads and holds ~1e-15 at every width -- its one
+# canceling term, the `lam` difference, multiplies a term of order w1.
 # Measuring both in one run is what shows the gap is the construction rather
-# than the test data: the two agree at 3/8 and are 3000x apart at 1/8192.
+# than the test data: the two agree at 3/8 and are 6e6x apart at 1/8192.
 # Dyadic endpoints keep `float(x) == x`, so the comparison is against the
 # algorithm and not against how the query points round.
 @pytest.mark.parametrize(
   "width,tol_rect,tol_diff",
   [
-    # One decade of tolerance per decade of width for `rect_mass`, two for the
-    # difference -- which is the finding, stated as the shape of the table.
-    (Fraction(3, 8), 3e-15, 3e-15),
-    (Fraction(1, 16), 3e-14, 1e-13),
-    (Fraction(1, 64), 1e-13, 3e-12),
-    (Fraction(1, 1024), 2e-12, 1e-9),
-    (Fraction(1, 8192), 1e-11, 3e-8),
+    # A flat tolerance for `rect_mass`, two decades per decade of width for
+    # the difference -- which is the finding, stated as the shape of the table.
+    (Fraction(3, 8), 1e-14, 3e-15),
+    (Fraction(1, 16), 1e-14, 1e-13),
+    (Fraction(1, 64), 1e-14, 3e-12),
+    (Fraction(1, 1024), 1e-14, 1e-9),
+    (Fraction(1, 8192), 1e-14, 3e-8),
   ],
 )
 def test_rect_mass_is_exact_at_every_atom_width(

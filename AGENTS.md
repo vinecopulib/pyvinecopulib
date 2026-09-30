@@ -1300,7 +1300,7 @@ tests.
     them onto `InterpolationGrid`. Differencing amplifies an absolute error by
     `4/(w₁w₂)` in the atom widths and reading the mass by `1/w₂` alone, which
     at the widths a vine's inner trees reach is the difference between `8.5e-8`
-    and `7.0e-14` on the torch↔`Vinecop` cascade comparison. `rect_mass` /
+    and `5.9e-14` on the torch↔`Vinecop` cascade comparison. `rect_mass` /
     `cond_interval_mass` stay `InterpolationGrid2D`'s own names, as upstream
     keeps them `InterpolationGrid`'s; nothing outside the torch grid reaches
     for them.
@@ -1774,12 +1774,24 @@ Key surface:
     starts tracking grad after construction.
   - `rect_prob` / `cond_interval_prob` — the two `BicopBase` hooks, overridden
     onto `InterpolationGrid2D.rect_mass` / `cond_interval_mass`, and available
-    in **both** cache modes: they read the density grid, not the prefix tables.
-    A four-corner `cdf` difference turns an absolute error `ε` into
-    `≈4ε/(w₁w₂)` in the atom widths; the rectangle amplifies by `1/w₂` alone,
-    since only its `λ(b₂) − λ(a₂)` term cancels and that multiplies a term of
-    order `w₁`. Measured on a `1.2e-4`-wide rectangle: `2.9e-12` against
-    `8.7e-9`. That bound is earned only by expanding the `λ` difference over
+    in **both** cache modes: they read their own mass tables, not the
+    `cache_integrals` prefix tables. A four-corner `cdf` difference turns an
+    absolute error `ε` into `≈4ε/(w₁w₂)` in the atom widths; the rectangle's
+    only canceling term is its `λ(b₂) − λ(a₂)`, which multiplies a term of
+    order `w₁`. Measured against exact rational truth on a `1.2e-4`-wide
+    rectangle: `2.8e-15` against `1.8e-8`, and flat in the width.
+    **Every mass is `O(1)` per query**, not a quadrature over the grid: its
+    partial cells are summed directly and its whole cells read off
+    *compensated* prefix tables (`mass_tables` in `torch/_vinecop_batched.py`:
+    a value plus its rounding error), which is what keeps a difference of two
+    prefixes from canceling. The residual is `≈1e-32` absolute, so the
+    relative accuracy of a dense quadrature holds for any probability above
+    `~1e-16` and degrades below it -- `1e-11` relative at `1e-21`, which is a
+    `1e-11` error in a log-density twenty orders into the tail. A plain prefix
+    table would lose that accuracy at `1e-5`, which a strongly dependent pair's
+    off-diagonal atoms reach; a dense quadrature is `O(m)` per query, which is
+    what made the discrete batched path memory-bound at large `n`. That bound
+    is earned only by expanding the `λ` difference over
     the common denominator, so it cancels against `b₂ − a₂` rather than against
     one — formed as `λ(b₂) − λ(a₂)` it swamps the first term on a low-mass
     rectangle, and the total is formed additively as `m_below + m_strip` for

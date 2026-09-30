@@ -450,115 +450,174 @@ def trap_weights(grid_points: Tensor) -> Tensor:
   return w
 
 
-def interval_weights_batched(
-  grid_points: Tensor, lo: Tensor, hi: Tensor, is_linear: bool = False
-) -> Tensor:
-  """Nonnegative quadrature weights for ``int_lo^hi`` on the grid.
+#: Channels of a mass table (see :func:`mass_tables`): the density grid, then
+#: its three prefix-integral tables, each as a value and that value's rounding
+#: error.
+_V, _SY, _SY_LO, _SX, _SX_LO, _P, _P_LO = range(7)
 
-  Returns ``w`` with ``(w * v).sum(-1) == int_lo^hi f(t) dt`` for the
-  piecewise-linear ``f`` through ``(grid_points, v)``, exactly. Every entry is
-  nonnegative, because the hat functions are, which is the property
-  :func:`rect_mass_batched` needs: a difference of two cumulative integrals
-  would be exact too, but would carry the larger one's rounding error into a
-  result of order ``hi - lo``.
 
-  Parameters
-  ----------
-  grid_points : Tensor, shape (m,), dtype float
-      The shared grid.
-  lo, hi : Tensor, shape (*B,), dtype float
-      Interval endpoints, clamped to ``[0, 1]``; ``hi < lo`` gives zero.
-  is_linear : bool, default=False
-      Whether the grid is uniform, enabling O(1) cell lookup.
+def _two_sum(a: Tensor, b: Tensor) -> tuple[Tensor, Tensor]:
+  """``a + b`` as a rounded sum and its exact rounding error (Knuth)."""
+  s = a + b
+  bb = s - a
+  return s, (a - (s - bb)) + (b - bb)
 
-  Returns
-  -------
-  Tensor, shape (*B, m), dtype float
-      The weights.
+
+def _prefix(x: Tensor, dim: int) -> tuple[Tensor, Tensor]:
+  """Compensated prefix sums of the nonnegative ``x`` along ``dim``.
+
+  Returns ``hi`` and ``lo`` with a leading zero, so that ``hi + lo`` is the
+  running sum to within ``eps**2`` of its size rather than ``eps``. That is
+  what lets a *difference* of two entries be accurate relative to itself: the
+  range sum of a nonnegative sequence, read off a plain prefix table, carries
+  the rounding error of the whole prefix and cancels in a low-mass range.
+
+  The error is recovered without a sequential loop: ``s = hi[k-1] + x[k]`` and
+  ``hi[k]`` approximate the same nonnegative sum, so ``s - hi[k]`` is exact by
+  Sterbenz's lemma, and the per-step residuals telescope to ``T[k] - hi[k]``.
   """
-  g = grid_points
-  m = g.shape[0]
-  a = lo.clamp(0.0, 1.0)
-  b = hi.clamp(0.0, 1.0).clamp_min(a)
-  ka = _batched_cell_index(g, a, is_linear)
-  kb = _batched_cell_index(g, b, is_linear)
-
-  def cell_pair(k: Tensor, s0: Tensor, d: Tensor) -> tuple[Tensor, Tensor]:
-    """Weights on nodes ``k`` / ``k + 1`` for the sub-cell ``[s0, s0 + d]``.
-
-    Parameterized by the *width* rather than by the upper end, so a narrow
-    interval never forms it as a difference of two numbers of order one --
-    which would put the ``1 / w`` amplification back into the weights.
-    """
-    h = g[k + 1] - g[k]
-    q = 0.5 * d * (2.0 * s0 + d)
-    return h * (d - q), h * q
-
-  # Whole cells strictly between the two partial ones: the trapezoid rule is
-  # exact for a piecewise-linear integrand, so each contributes h / 2 to both
-  # of its nodes.
-  dgrid = g[1:] - g[:-1]
-  idx = torch.arange(m - 1, device=g.device)
-  inner = (idx > ka.unsqueeze(-1)) & (idx < kb.unsqueeze(-1))
-  half = torch.where(inner, 0.5 * dgrid, 0.0)
-  zc = torch.zeros_like(half[..., :1])
-  w = torch.cat([zc, half], dim=-1) + torch.cat([half, zc], dim=-1)
-
-  zero = torch.zeros_like(a)
-  same = ka == kb
-  ha, hb = g[ka + 1] - g[ka], g[kb + 1] - g[kb]
-  s0a = (a - g[ka]) / ha
-  a0, a1 = cell_pair(ka, s0a, torch.where(same, (b - a) / ha, 1.0 - s0a))
-  b0, b1 = cell_pair(kb, zero, (b - g[kb]) / hb)
-  b0 = torch.where(same, zero, b0)
-  b1 = torch.where(same, zero, b1)
-  for col, val in ((ka, a0), (ka + 1, a1), (kb, b0), (kb + 1, b1)):
-    w = w.scatter_add(-1, col.unsqueeze(-1), val.unsqueeze(-1))
-  return w
+  hi = x.cumsum(dim)
+  n = x.shape[dim]
+  zero = torch.zeros_like(hi.narrow(dim, 0, 1))
+  prev = torch.cat([zero, hi.narrow(dim, 0, n - 1)], dim)
+  s, e = _two_sum(prev, x)
+  lo = ((s - hi) + e).cumsum(dim)
+  return torch.cat([zero, hi], dim), torch.cat([zero, lo], dim)
 
 
-def _row_integrals_batched(
-  grid_points: Tensor, values: Tensor, u: Tensor, is_linear: bool
-) -> Tensor:
-  """Every grid line's integral over ``[0, u]``, one row per query.
+def mass_tables(grid_points: Tensor, values: Tensor) -> Tensor:
+  """What :func:`rect_mass_batched` and :func:`cond_interval_mass_batched` read.
+
+  Per pair, the density grid and its three prefix-integral tables -- ``sy``
+  along the second argument, ``sx`` along the first, and ``p`` over both, the
+  tables of ``InterpolationGrid2D.build_caches`` -- summed cell by cell and
+  compensated (:func:`_prefix`). A probability is then a few reads of a 4x4
+  stencil around its interval's ends instead of a quadrature over every grid
+  node, which is what made it ``O(m)`` per query.
 
   Parameters
   ----------
   grid_points : Tensor, shape (m,), dtype float
       The shared grid.
   values : Tensor, shape (N, m, m), dtype float
-      Density grids, one per pair.
-  u : Tensor, shape (N, n), dtype float
-      Upper limits, clamped to ``[0, 1]``.
+      Density grids, one per pair; nonnegative.
+
+  Returns
+  -------
+  Tensor, shape (N, m * m, 7), dtype float
+      The channels ``_V`` .. ``_P_LO``, flattened over the grid row-major.
+  """
+  n_batch, m, _ = values.shape
+  dg = grid_points[1:] - grid_points[:-1]
+  # Cell by cell: each line's trapezoids along either argument, and the
+  # bilinear cell masses, all nonnegative.
+  cy = 0.5 * (values[..., :-1] + values[..., 1:]) * dg
+  cx = 0.5 * (values[:, :-1, :] + values[:, 1:, :]) * dg[:, None]
+  cell = 0.5 * (cy[:, :-1, :] + cy[:, 1:, :]) * dg[:, None]
+  sy, sy_lo = _prefix(cy, 2)
+  sx, sx_lo = _prefix(cx, 1)
+  rows, rows_lo = _prefix(cell, 2)
+  p, p_lo = _prefix(rows, 1)
+  zero = torch.zeros_like(rows_lo[:, :1, :])
+  p_lo = p_lo + torch.cat([zero, rows_lo.cumsum(1)], 1)
+  out = torch.stack([values, sy, sy_lo, sx, sx_lo, p, p_lo], dim=-1)
+  return out.reshape(n_batch, m * m, 7)
+
+
+def _pieces(
+  grid_points: Tensor, lo: Tensor, hi: Tensor, is_linear: bool
+) -> tuple[Tensor, Tensor, Tensor]:
+  """``[lo, hi]`` as two partial cells and the whole cells between them.
+
+  The partial cells are nonnegative weights on the four nodes
+  ``(ka, ka + 1, kb, kb + 1)`` bracketing the two ends, the second pair zero
+  when both ends share a cell. The whole cells run from node ``ka + 1`` to
+  node ``kb``, stencil positions 1 and 2, and exist where ``kb > ka``.
+
+  Parameters
+  ----------
+  grid_points : Tensor, shape (m,), dtype float
+      The shared grid.
+  lo, hi : Tensor, shape (*B,), dtype float
+      Interval ends, clamped to ``[0, 1]``; ``hi < lo`` is empty.
   is_linear : bool
       Whether the grid is uniform.
 
   Returns
   -------
-  Tensor, shape (N, n, m), dtype float
-      One integral per grid line of the first argument.
+  nodes : Tensor, shape (*B, 4), dtype long
+      The four stencil nodes.
+  weights : Tensor, shape (*B, 4), dtype float
+      Their partial-cell weights.
+  inner : Tensor, shape (*B,), dtype bool
+      Whether there are whole cells between the two partial ones.
   """
-  n_batch, m, _ = values.shape
-  n = u.shape[-1]
-  j, frac, s = _locate(grid_points, u.clamp(0.0, 1.0), is_linear)
-  # Each line's cumulative integral along the second argument: `sy` of
-  # `InterpolationGrid2D.build_caches`, repeated rather than read, since these
-  # routines run in both cache modes and it is O(m^2) against the O(n m^2) of a
-  # per-query sweep.
-  dgrid = grid_points[1:] - grid_points[:-1]
-  inc = 0.5 * (values[..., :-1] + values[..., 1:]) * dgrid
-  row_cum = torch.cat([torch.zeros_like(inc[..., :1]), inc.cumsum(-1)], -1)
-  vt = values.transpose(1, 2)
-  ct = row_cum.transpose(1, 2)
-  idx = j.unsqueeze(-1).expand(n_batch, n, m)
-  v0, v1 = vt.gather(1, idx), vt.gather(1, idx + 1)
-  part = (2.0 * v0 + (v1 - v0) * frac.unsqueeze(-1)) * s.unsqueeze(-1) / 2.0
-  return ct.gather(1, idx) + part
+  g = grid_points
+  a = lo.clamp(0.0, 1.0)
+  b = hi.clamp(0.0, 1.0).clamp_min(a)
+  ka = _batched_cell_index(g, a, is_linear)
+  kb = _batched_cell_index(g, b, is_linear)
+
+  def cell_pair(h: Tensor, s0: Tensor, d: Tensor) -> tuple[Tensor, Tensor]:
+    """Weights on a cell's two nodes for its sub-interval ``[s0, s0 + d]``.
+
+    Parameterized by the *width* rather than by the upper end, so a narrow
+    interval never forms it as a difference of two numbers of order one --
+    which would put the ``1 / w`` amplification back into the weights.
+    """
+    q = 0.5 * d * (2.0 * s0 + d)
+    return h * (d - q), h * q
+
+  same = ka == kb
+  ha, hb = g[ka + 1] - g[ka], g[kb + 1] - g[kb]
+  s0a = (a - g[ka]) / ha
+  a0, a1 = cell_pair(ha, s0a, torch.where(same, (b - a) / ha, 1.0 - s0a))
+  b0, b1 = cell_pair(hb, torch.zeros_like(a), (b - g[kb]) / hb)
+  b0 = torch.where(same, 0.0, b0)
+  b1 = torch.where(same, 0.0, b1)
+  nodes = torch.stack([ka, ka + 1, kb, kb + 1], dim=-1)
+  return nodes, torch.stack([a0, a1, b0, b1], dim=-1), kb > ka
+
+
+def _stencil(tables: Tensor, rows: Tensor, cols: Tensor, m: int) -> Tensor:
+  """Every channel at every ``(row, col)`` pair of two node sets.
+
+  Parameters
+  ----------
+  tables : Tensor, shape (N, m * m, 7), dtype float
+      From :func:`mass_tables`.
+  rows, cols : Tensor, shape (N, n, R) and (N, n, C), dtype long
+      Grid nodes along the first and the second argument.
+  m : int
+      Grid size.
+
+  Returns
+  -------
+  Tensor, shape (N, n, R, C, 7), dtype float
+      The gathered channels.
+  """
+  n_batch, n, r = rows.shape
+  c = cols.shape[-1]
+  pos = (rows.unsqueeze(-1) * m + cols.unsqueeze(-2)).reshape(n_batch, -1)
+  batch = torch.arange(n_batch, device=tables.device).unsqueeze(-1)
+  return tables[batch, pos].reshape(n_batch, n, r, c, 7)
+
+
+def _whole(t: Tensor, dim: int) -> Tensor:
+  """Every channel's difference between stencil nodes 2 and 1 along ``dim``.
+
+  The whole cells of an interval run between those two nodes, so this is
+  every table's mass over them at once. A difference of two rounded values is
+  itself correctly rounded, so with each ``_lo`` channel's difference folded
+  back in -- ``d[..., c] + d[..., c + 1]`` -- the result is accurate relative
+  to itself: a range sum of nonnegative terms, read without cancellation.
+  """
+  return t.select(dim, 2) - t.select(dim, 1)
 
 
 def cond_interval_mass_batched(
   grid_points: Tensor,
-  values: Tensor,
+  tables: Tensor,
   u_cond: Tensor,
   lo: Tensor,
   hi: Tensor,
@@ -572,14 +631,15 @@ def cond_interval_mass_batched(
   Not clamped into the open unit interval, unlike
   :func:`integrate_1d_batched`: an empty interval is exactly ``0`` and the
   whole line exactly ``1``, which is what makes the masses of a partition sum
-  to one.
+  to one. Read off the tables as :func:`rect_mass_batched` reads them, and to
+  the same accuracy.
 
   Parameters
   ----------
   grid_points : Tensor, shape (m,), dtype float
       The shared grid.
-  values : Tensor, shape (N, m, m), dtype float
-      Density grids, one per pair.
+  tables : Tensor, shape (N, m * m, 7), dtype float
+      From :func:`mass_tables`, one per pair.
   u_cond : Tensor, shape (N, n), dtype float
       The argument held fixed.
   lo, hi : Tensor, shape (N, n), dtype float
@@ -598,19 +658,30 @@ def cond_interval_mass_batched(
     raise ValueError(f"cond_var must be 1 or 2; got {cond_var}")
   m = grid_points.shape[0]
   cell, t, _ = _locate(grid_points, u_cond.clamp(0.0, 1.0), is_linear)
-  # Axis 1 holds the grid lines of the first argument, axis 2 those of the
-  # second -- the gather the h-functions do.
-  line = _cond_strip(values, cell, t.unsqueeze(-1), cond_var, m)
-  w = interval_weights_batched(
+  nodes, w, inner = _pieces(
     grid_points, torch.minimum(lo, hi), torch.maximum(lo, hi), is_linear
   )
-  total = (line @ trap_weights(grid_points)).clamp_min(_MIN_MASS)
-  return (w * line).sum(dim=-1) / total
+  lines = torch.stack([cell, cell + 1], dim=-1)
+  free = torch.cat([nodes, torch.full_like(nodes[..., :1], m - 1)], dim=-1)
+  # The fixed argument indexes the lines; the free one runs along them, read
+  # off `sy` when that is the second argument and `sx` when it is the first.
+  if cond_var == 1:
+    st, ch = _stencil(tables, lines, free, m), _SY
+  else:
+    st, ch = _stencil(tables, free, lines, m).transpose(2, 3), _SX
+  # (N, n, 2 lines, 5 free nodes, 7): partial cells, then the whole ones.
+  line_mass = (w.unsqueeze(-2) * st[..., :4, _V]).sum(-1)
+  d = _whole(st, -2)
+  whole = d[..., ch] + d[..., ch + 1]
+  line_mass = line_mass + torch.where(inner.unsqueeze(-1), whole, 0.0)
+  total = st[..., 4, ch] + st[..., 4, ch + 1]
+  mass = torch.lerp(line_mass[..., 0], line_mass[..., 1], t)
+  return mass / torch.lerp(total[..., 0], total[..., 1], t).clamp_min(_MIN_MASS)
 
 
 def rect_mass_batched(
   grid_points: Tensor,
-  values: Tensor,
+  tables: Tensor,
   a1: Tensor,
   b1: Tensor,
   a2: Tensor,
@@ -635,12 +706,18 @@ def rect_mass_batched(
   ``b2 - a2`` rather than against one -- formed as ``lam(b2) - lam(a2)`` it
   would swamp the first term on a low-mass rectangle.
 
+  Each mass is its partial cells, summed directly, plus its whole cells, read
+  as compensated differences of the prefix tables (:func:`mass_tables`), so
+  the cost per query does not depend on the grid size. The tables are exact to
+  ``~1e-32`` absolute, so a mass is accurate relative to itself down to about
+  ``1e-16`` and absolutely below that.
+
   Parameters
   ----------
   grid_points : Tensor, shape (m,), dtype float
       The shared grid.
-  values : Tensor, shape (N, m, m), dtype float
-      Density grids, one per pair.
+  tables : Tensor, shape (N, m * m, 7), dtype float
+      From :func:`mass_tables`, one per pair.
   a1, b1, a2, b2 : Tensor, shape (N, n), dtype float
       Rectangle bounds per query, in either order. An empty rectangle gives
       zero.
@@ -655,30 +732,78 @@ def rect_mass_batched(
   # Rotating the data can leave a left limit above its own value.
   x0, x1 = torch.minimum(a1, b1), torch.maximum(a1, b1)
   y0, y1 = torch.minimum(a2, b2), torch.maximum(a2, b2)
+  g = grid_points
+  m = g.shape[0]
+  nodes, w, inner = _pieces(
+    g, torch.stack([x0, y0]), torch.stack([x1, y1]), is_linear
+  )
+  (px, py), (wx, wy), (in_x, in_y) = nodes, w, inner
+  # The first argument's stencil and the last node, which is where `sx` and
+  # `p` hold the masses over the whole of the first argument.
+  rows = torch.cat([px, torch.full_like(px[..., :1], m - 1)], dim=-1)
+  st = _stencil(tables, rows, py, m)  # (N, n, 5, 4, 7)
+  v = st[..., :4, :, _V]
+  # Whole cells in the second argument, per first-argument node, and in the
+  # first, per second-argument node.
+  dy = _whole(st, -2)  # (N, n, 5, 7)
+  dx = _whole(st, -3)  # (N, n, 4, 7)
 
-  wx = interval_weights_batched(grid_points, x0, x1, is_linear)
-  below = _row_integrals_batched(grid_points, values, y0, is_linear)
-  # With nothing below to subtract the cumulative integrals are the strip
-  # itself, which is the case every discrete h-function hits.
-  strip = torch.where(
-    (y0 > 0.0).unsqueeze(-1),
-    torch.bmm(
-      interval_weights_batched(grid_points, y0, y1, is_linear),
-      values.transpose(1, 2),
-    ),
-    _row_integrals_batched(grid_points, values, y1, is_linear),
+  # R, the rectangle's own mass: partial cells in both arguments, partial in
+  # one and whole in the other, and whole in both.
+  pp = (wx.unsqueeze(-1) * wy.unsqueeze(-2) * v).sum((-1, -2))
+  x_part = (wx * (dy[..., :4, _SY] + dy[..., :4, _SY_LO])).sum(-1)
+  y_whole = dx[..., _SX] + dx[..., _SX_LO]
+  x_whole = (wy * y_whole).sum(-1)
+  # The whole-by-whole block is a four-corner difference of `p`, so its first
+  # stage keeps its rounding error exactly and the second cannot cancel
+  # against it.
+  s1, e1 = _two_sum(st[..., 2, 1:3, _P], -st[..., 1, 1:3, _P])
+  both = (s1[..., 1] - s1[..., 0]) + (
+    (e1[..., 1] - e1[..., 0]) + (dx[..., 2, _P_LO] - dx[..., 1, _P_LO])
+  )
+  r = (
+    pp
+    + torch.where(in_y, x_part, 0.0)
+    + torch.where(in_x, x_whole + torch.where(in_y, both, 0.0), 0.0)
   )
 
-  w = trap_weights(grid_points)
-  m_strip = strip @ w
-  m_below = (below @ w).clamp_min(_MIN_MASS)
+  # `y0` falls in the stencil's first cell, so the mass below it is read at
+  # nodes 0 and 1: the prefix at node 0 plus the partial cell up to `y0`,
+  # whose two node weights are `cdf_cached`'s `al` / `be`.
+  j0 = py[..., 0]
+  s = y0.clamp(0.0, 1.0) - g[j0]
+  f = s / (g[j0 + 1] - g[j0])
+  al, be = s / 2.0 * (2.0 - f), s / 2.0 * f
+  below_line = (
+    st[..., :4, 0, _SY]
+    + st[..., :4, 0, _SY_LO]
+    + al.unsqueeze(-1) * v[..., 0]
+    + be.unsqueeze(-1) * v[..., 1]
+  )
+  s_part = (wx * below_line).sum(-1)
+  # The whole cells in the first argument below `y0`: their prefix mass up to
+  # node 0, plus the same partial cell, taken across them.
+  p_below = dx[..., 0, _P] + dx[..., 0, _P_LO]
+  s_mass = s_part + torch.where(
+    in_x, p_below + al * y_whole[..., 0] + be * y_whole[..., 1], 0.0
+  )
+
+  # The masses over the whole first argument, off its last node.
+  sx_last = st[..., 4, :, _SX] + st[..., 4, :, _SX_LO]
+  m_strip = (wy * sx_last).sum(-1) + torch.where(
+    in_y, dy[..., 4, _P] + dy[..., 4, _P_LO], 0.0
+  )
+  p_last = st[..., 4, 0, _P] + st[..., 4, 0, _P_LO]
+  m_below = (p_last + al * sx_last[..., 0] + be * sx_last[..., 1]).clamp_min(
+    _MIN_MASS
+  )
+
   # Formed additively, so that the two terms below are consistent: an
   # independent quadrature of the whole column would not cancel against the
   # strip it is supposed to contain.
   total = (m_below + m_strip).clamp_min(_MIN_MASS)
   dlam = ((y1 - y0) * m_below - y0 * m_strip) / (total * m_below)
-  out = y1 * (wx * strip).sum(dim=-1) / total
-  out = out + dlam * (wx * below).sum(dim=-1)
+  out = y1 * r / total + dlam * s_mass
   empty = ~((x1 > x0) & (y1 > y0))
   return torch.where(empty, torch.zeros_like(out), out)
 
@@ -804,6 +929,7 @@ class BatchedTreeLevel(torch.nn.Module):
   idx_dd: Tensor
   idx_dc: Tensor
   idx_cd: Tensor
+  mass: Tensor | None
 
   def __init__(
     self,
@@ -819,6 +945,7 @@ class BatchedTreeLevel(torch.nn.Module):
     needs_h2: Tensor,
     disc1: Tensor | None = None,
     disc2: Tensor | None = None,
+    grid_points: Tensor | None = None,
     is_linear: bool = False,
   ) -> None:
     super().__init__()
@@ -863,6 +990,15 @@ class BatchedTreeLevel(torch.nn.Module):
       self.register_buffer(name, idx)
       self._group_sizes[name] = int(idx.numel())
     self._is_linear = bool(is_linear)
+    # What a discrete slot reads its atoms' probabilities off. Built from the
+    # grids once per level rather than per call, and only where a slot needs
+    # it: a continuous level never reads a probability.
+    if self.has_discrete:
+      if grid_points is None:
+        raise ValueError("a level with a discrete slot needs grid_points")
+      self.register_buffer("mass", mass_tables(grid_points, values))
+    else:
+      self.mass = None
 
   @property
   def n_pairs(self) -> int:
@@ -1037,8 +1173,9 @@ class BatchedTreeLevel(torch.nn.Module):
       )
       for k in range(4)
     )
+    assert self.mass is not None
     out = rect_mass_batched(
-      gp, self.values.index_select(0, idx), a1, b1, a2, b2, self._is_linear
+      gp, self.mass.index_select(0, idx), a1, b1, a2, b2, self._is_linear
     )
     # `TorchTllBicop.rect_prob`'s own answer for the independence copula.
     indep = (b1 - a1).abs() * (b2 - a2).abs()
@@ -1057,9 +1194,10 @@ class BatchedTreeLevel(torch.nn.Module):
     """Conditional interval probabilities at one group's pairs."""
     idx = getattr(self, group)
     u_cond, lo, hi = (t.index_select(0, idx) for t in (u_cond, lo, hi))
+    assert self.mass is not None
     out = cond_interval_mass_batched(
       gp,
-      self.values.index_select(0, idx),
+      self.mass.index_select(0, idx),
       u_cond,
       lo,
       hi,
@@ -1629,6 +1767,7 @@ class BatchedVine(torch.nn.Module):
         needs_h2=torch.tensor(needs_h2_list, dtype=torch.bool, device=device),
         disc1=torch.tensor(disc1, dtype=torch.bool, device=device),
         disc2=torch.tensor(disc2, dtype=torch.bool, device=device),
+        grid_points=grid_points.to(device=device),
         is_linear=is_linear,
       )
       levels.append(level)

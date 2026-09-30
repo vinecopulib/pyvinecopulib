@@ -839,8 +839,8 @@ def test_from_vinecop_matches_discrete_vinecop(var_types: list[str]) -> None:
   # A discrete C++ vine lifted into torch. The stored grids are continuous and
   # `DiscreteBicop` supplies the mixed-discrete surface, reading each atom's
   # probability off the same grid the reference reads it off -- so what is
-  # compared is one expression summed in two orders: measured 7.0e-14 / 2.8e-14
-  # / 2.6e-15 relative across the three type patterns. Differencing four `cdf`
+  # compared is one quantity summed in two orders: measured 5.9e-14 / 2.7e-14
+  # / 2.7e-15 relative across the three type patterns. Differencing four `cdf`
   # values instead amplifies by `4 / (w1 w2)` and gives 8.5e-8.
   u = _discrete_data(var_types)
   cop = _discrete_vinecop(var_types, u)
