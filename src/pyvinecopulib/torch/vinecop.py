@@ -573,27 +573,28 @@ class TorchVinecop(
     def fit_level_tll(
       tree: int, u_level: Tensor, types: list[tuple[str, str]]
     ) -> Sequence[BicopLike[Tensor]]:
-      """Fit a whole continuous tree level in one call.
+      """Fit a whole tree level in one call.
 
       Parameters
       ----------
       tree : int
           Tree index; unused, the fit needing no structural context.
-      u_level : Tensor, shape (N_t, n, 2)
-          The level's edges, stacked in ascending edge order.
+      u_level : Tensor, shape (N_t, n, 2) or (N_t, n, 4)
+          The level's edges, stacked in ascending edge order; four columns
+          throughout when any edge is discrete.
       types : list of tuple of str
-          Each edge's variable types; unused, a level reaching here being
-          continuous throughout.
+          Each edge's variable types.
 
       Returns
       -------
       sequence of BicopLike
           One fitted pair copula per edge, in the same order.
       """
-      del tree, types  # a level reaching here is continuous and simplified
+      del tree  # a level reaching here is simplified
       return TorchTllBicop.from_data_batched(
         u_level,
         bc_controls,
+        var_types=types,
         cache_integrals=cache_integrals,
         device=u_t.device,
         dtype=eff_dtype,

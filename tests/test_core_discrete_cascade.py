@@ -893,6 +893,60 @@ def test_fit_edge_receives_the_edge_types_and_four_columns() -> None:
     assert n_cols == (4 if "d" in expected else 2), (tree, edge)
 
 
+@pytest.mark.parametrize("engine", ["fit", "select"])
+def test_fit_level_receives_a_mixed_level_as_four_columns(engine: str) -> None:
+  # A level with a discrete edge reaches `fit_level` as one stack in the
+  # four-column layout, a continuous edge carrying its values as its own left
+  # limits -- and fitting from that stack gives the pairs `fit_edge` gives.
+  # One discrete variable, so that tree 0 mixes the two kinds of edge on
+  # either engine.
+  var_types = ["c", "d", "c", "c"]
+  u = _to_compact(_dependent_expanded(var_types, seed=2), var_types)
+  seen: list[tuple[int, tuple[tuple[str, ...], ...]]] = []
+
+  def by_level(tree: int, u_level: Any, types: Any) -> list[BicopLike[Any]]:
+    stack = np.asarray(u_level)
+    seen.append((int(stack.shape[2]), tuple(tuple(t) for t in types)))
+    fitted = []
+    for k, edge_types in enumerate(types):
+      block = stack[k]
+      if "d" not in edge_types and block.shape[1] == 4:
+        np.testing.assert_array_equal(block[:, 2:], block[:, :2])
+        block = block[:, :2]
+      fitted.append(_discrete_fit_edge(tree, k, block, None, edge_types))
+    return fitted
+
+  if engine == "fit":
+    structure = _order_structure(len(var_types))
+    stacked = VinecopBase._fit_parts(
+      structure, u, _discrete_fit_edge, var_types=var_types, fit_level=by_level
+    )
+    per_edge = VinecopBase._fit_parts(
+      structure, u, _discrete_fit_edge, var_types=var_types
+    )
+  else:
+    _, stacked, _ = VinecopBase._select_parts(
+      u, _discrete_fit_edge, var_types=var_types, fit_level=by_level
+    )
+    _, per_edge, _ = VinecopBase._select_parts(
+      u, _discrete_fit_edge, var_types=var_types
+    )
+  assert seen
+  for width, types in seen:
+    assert width == (4 if any("d" in t for t in types) else 2), types
+  # At least one level mixes the two kinds, or the widening went untested.
+  assert any(
+    width == 4 and any("d" not in t for t in types) for width, types in seen
+  )
+  for row_s, row_e in zip(
+    _as_bicops(stacked), _as_bicops(per_edge), strict=True
+  ):
+    for a, b in zip(row_s, row_e, strict=True):
+      np.testing.assert_array_equal(
+        np.asarray(a.parameters), np.asarray(b.parameters)
+      )
+
+
 def test_a_continuous_fit_edge_fails_loudly_on_a_discrete_edge() -> None:
   # A callback written for a continuous vine cannot fit four columns of data;
   # it must say so rather than quietly fitting the value columns.
