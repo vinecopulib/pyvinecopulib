@@ -28,7 +28,9 @@ Only the ``constant`` method is supported here; the ``linear`` and
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import cast
 
 import numpy as np
@@ -50,11 +52,15 @@ def _qnorm(p: Tensor) -> Tensor:
   return cast("Tensor", torch.special.ndtri(p))
 
 
-def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
+def _to_pseudo_obs(
+  u: Tensor,
+  discrete_data: Tensor | None = None,
+  discrete_lanes: Sequence[int] | None = None,
+) -> Tensor:
   """The pseudo-observations ``TllBicop::fit`` selects its bandwidth from.
 
   ``tools_stats::pair_soft_pseudo_obs``, per lane: ties ordered by a fixed key
-  per observation, and on a discrete pair values within rounding of each
+  per observation, and on a discrete lane values within rounding of each
   other ranked partly by key, so that the ranks move continuously with the
   data. A lane whose columns have neither is ranked by value on its own
   device, which is then the same thing; the others are ranked on the host by
@@ -64,8 +70,11 @@ def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
   ----------
   u : Tensor, shape (n, 2) or (P, n, 2), dtype float
       The pairs' values.
-  discrete_data : Tensor, shape (n, 4), dtype float, optional
-      ``[u1, u2, u1^-, u2^-]`` alongside ``u``, where the pair is discrete.
+  discrete_data : Tensor, shape (n, 4) or (P, n, 4), dtype float, optional
+      ``[u1, u2, u1^-, u2^-]`` alongside ``u``, where any lane is discrete.
+  discrete_lanes : sequence of int, optional
+      The discrete lanes of a stack; ``None`` means every lane when
+      ``discrete_data`` is given.
 
   Returns
   -------
@@ -77,14 +86,20 @@ def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
   n = u.shape[-2]
   pairs = u.reshape(-1, n, 2)
   lanes = pairs.shape[0]
-  discrete = discrete_data is not None
+  discrete = torch.zeros(lanes, dtype=torch.bool, device=u.device)
+  if discrete_data is not None:
+    discrete[
+      slice(None) if discrete_lanes is None else list(discrete_lanes)
+    ] = True
   # one row per (lane, column), each ranked by value
   lines = pairs.movedim(-1, -2).reshape(-1, n)
   order = lines.argsort(dim=-1, stable=True)
   srt = lines.gather(-1, order)
   gaps = srt[:, 1:] - srt[:, :-1]
   reach = 9.0 * _SOFT_RANK_SCALE
-  close = gaps <= reach if discrete else gaps == 0
+  close = torch.where(
+    discrete.repeat_interleave(2)[:, None], gaps <= reach, gaps == 0
+  )
   position = torch.arange(1, n + 1, device=u.device, dtype=u.dtype)
   psobs = torch.empty_like(lines).scatter_(
     -1, order, (position / (n + 1)).expand_as(lines)
@@ -97,10 +112,11 @@ def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
     from ..pyvinecopulib_ext import _pair_soft_pseudo_obs
 
     wide = None if discrete_data is None else discrete_data.reshape(-1, n, 4)
-    scale = _SOFT_RANK_SCALE if discrete else 0.0
+    flags = discrete.tolist()
     out = psobs.clone()
     for k in host.tolist():
-      data = pairs[k] if wide is None else wide[k]
+      data = wide[k] if flags[k] and wide is not None else pairs[k]
+      scale = _SOFT_RANK_SCALE if flags[k] else 0.0
       soft = _pair_soft_pseudo_obs(to_numpy(data, dtype=np.float64), scale)
       out[k] = torch.as_tensor(soft, dtype=u.dtype, device=u.device)
     psobs = out
@@ -595,6 +611,69 @@ def _swaps_pair(data: Tensor) -> Tensor:
   return (differ & verdict).gather(-1, first).squeeze(-1)
 
 
+def _latent_z(
+  discrete_data: Tensor,
+  B: Tensor,
+  z_data: Tensor,
+  lanes: Sequence[int] | None,
+) -> Tensor:
+  """``z_data`` with each discrete lane's sample replaced by its latent one.
+
+  Reuses the compiled draw, as structure selection reuses ``wdm``: it is a
+  stochastic iterative reconstruction over a spatial index, and reproducing it
+  in torch would put the torch<->C++ grid parity at the mercy of a
+  reimplementation rather than of the same code. Being compiled, it has no
+  pair axis, so a stack draws one lane at a time -- on a thread pool, since the
+  binding releases the GIL and each draw is seeded, so the result does not
+  depend on the pool.
+
+  Parameters
+  ----------
+  discrete_data : Tensor, shape (n, 4) or (P, n, 4), dtype float
+      ``[u1, u2, u1^-, u2^-]``, one block per lane.
+  B : Tensor, shape (2, 2) or (P, 2, 2), dtype float
+      The bandwidths selected from the jittered ranks.
+  z_data : Tensor, shape (n, 2) or (P, n, 2), dtype float
+      The ranks on the normal scale.
+  lanes : sequence of int, or None
+      The discrete lanes of a stack; ``None`` means every lane.
+
+  Returns
+  -------
+  Tensor
+      ``z_data``'s shape, discrete lanes replaced.
+  """
+  from ..core.extend import to_numpy
+  from ..pyvinecopulib_ext import find_latent_sample
+
+  stacked = discrete_data.ndim == 3
+  data = discrete_data if stacked else discrete_data.unsqueeze(0)
+  bw = B if stacked else B.unsqueeze(0)
+  idx = list(range(data.shape[0])) if lanes is None else list(lanes)
+  host = to_numpy(data[idx])
+  # The product crosses to the host and the root is taken there, as the
+  # single-pair fit always took it, so a lane draws with the same `b` either
+  # way.
+  prods = (bw[idx, 0, 0] * bw[idx, 1, 1]).tolist()
+
+  def draw(k: int) -> np.ndarray:
+    return find_latent_sample(host[k], float(prods[k]) ** 0.25)
+
+  if len(idx) == 1:
+    latents = [draw(0)]
+  else:
+    workers = min(len(idx), os.cpu_count() or 1)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+      latents = list(pool.map(draw, range(len(idx))))
+  z = _qnorm(
+    torch.as_tensor(np.stack(latents), dtype=z_data.dtype, device=z_data.device)
+  )
+  if not stacked:
+    return z[0]
+  at = torch.tensor(idx, dtype=torch.long, device=z_data.device)
+  return z_data.index_copy(0, at, z)
+
+
 def fit_tll_constant(
   u: Tensor,
   grid_size: int = 30,
@@ -602,6 +681,7 @@ def fit_tll_constant(
   grid_type: str = "normal",
   discrete_data: Tensor | None = None,
   compile_fit: bool = False,
+  discrete_lanes: Sequence[int] | None = None,
 ) -> tuple[Tensor, Tensor]:
   """Fit a TLL pair-copula via local-constant kernel density estimation.
 
@@ -610,16 +690,18 @@ def fit_tll_constant(
   Args:
     u: ``(n, 2)`` pseudo-observations in ``(0, 1)``, or ``(P, n, 2)`` to fit
       ``P`` pairs together -- they share the grid, the window length and the
-      eval points. A discrete edge is refused a pair axis.
+      eval points.
     grid_size: number of grid points per axis (default 30; matches C++).
     mult: bandwidth multiplier passed through to ``select_bandwidth``;
       the C++ default is 1.
     discrete_data: the ``(n, 4)`` layout ``[u1, u2, u1^-, u2^-]`` of a discrete
-      or mixed edge. When given, the fit runs on the *latent* sample recovered
-      from it rather than on the ranks, which is what ``TllBicop::fit`` does:
-      the bandwidth is selected from the jittered ranks and only then is the
-      latent sample drawn, with ``(B00 * B11) ** 0.25`` as its own bandwidth and
-      ``B`` left as selected.
+      or mixed edge, or ``(P, n, 4)`` alongside a stacked ``u``. When given,
+      the fit runs on the *latent* sample recovered from it rather than on the
+      ranks, which is what ``TllBicop::fit`` does: the bandwidth is selected
+      from the jittered ranks and only then is the latent sample drawn, with
+      ``(B00 * B11) ** 0.25`` as its own bandwidth and ``B`` left as selected.
+    discrete_lanes: which lanes of a stacked ``u`` are discrete, so that only
+      those draw a latent sample; ``None`` means every lane.
     compile_fit: fuse the bandwidth search's per-pass body with
       ``torch.compile``. Off by default: the first call compiles for seconds,
       which only a caller fitting many pairs in one process earns back. See
@@ -644,7 +726,7 @@ def fit_tll_constant(
     share the grid, the window length and the eval points, and the two
     convergence loops in :func:`_ace` advance every lane at once, freezing
     each as it converges. ``grid_points`` is shared, so it is returned
-    once. A discrete edge is refused with a pair axis -- see below.
+    once.
   """
   if u.ndim not in (2, 3) or u.shape[-1] != 2:
     raise ValueError(
@@ -672,32 +754,13 @@ def fit_tll_constant(
   # ``discrete_data``. Contiguous, because the bandwidth search reduces along
   # the sample and a strided column sums in another order: the same ranks
   # would select another bandwidth by how their tensor was laid out.
-  z_data = _qnorm(_to_pseudo_obs(u, discrete_data)).contiguous()
+  z_data = _qnorm(_to_pseudo_obs(u, discrete_data, discrete_lanes)).contiguous()
 
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data, compile_step=compile_fit) * mult
 
   if discrete_data is not None:
-    # Reuse the compiled draw, as structure selection reuses `wdm`: it is a
-    # stochastic iterative reconstruction over a spatial index, and reproducing
-    # it in torch would put the torch<->C++ grid parity at the mercy of a
-    # reimplementation rather than of the same code.
-    from ..pyvinecopulib_ext import find_latent_sample
-
-    if u.ndim != 2:
-      raise ValueError(
-        "a discrete edge cannot be fitted with a leading pair axis: "
-        "`find_latent_sample` is a compiled per-pair draw over a spatial "
-        "index with a fixed-seed generator, so it has no batch axis to "
-        "give. Fit discrete edges one at a time."
-      )
-    from ..core.extend import to_numpy
-
-    latent = find_latent_sample(
-      to_numpy(discrete_data),
-      float((B[0, 0] * B[1, 1]).item() ** 0.25),
-    )
-    z_data = _qnorm(torch.as_tensor(latent, dtype=dtype, device=device))
+    z_data = _latent_z(discrete_data, B, z_data, discrete_lanes)
 
   # Storage and KDE-eval grids come from the centralized factory on
   # InterpolationGrid2D so any future grid type lives in one place.

@@ -40,7 +40,7 @@ from ._vinecop_discrete import (
 )
 from ._vinecop_reorient import _slot_key, _SlotKey, reorientation
 from .bicop_independence import IndependenceBicop
-from .protocols import ArrayT, BicopLike, array_namespace
+from .protocols import ArrayT, BicopLike, Namespace, array_namespace
 from .vinecop_context import ConditioningContext, SimplifiedContext
 
 __all__ = ["FitEdge", "FitLevel", "fit_parts", "select_parts"]
@@ -124,9 +124,11 @@ FitEdge = Callable[..., BicopLike[Any]]
 #: carries a leading pair axis. ``u_level`` stacks the level's edges in
 #: ascending edge order and ``types`` gives each edge's pair of variable types,
 #: so the callback needs no structural knowledge. A subclass that supplies one
-#: gets it preferred over ``fit_edge``; everything else keeps working, since a
-#: level is only ever fitted this way when every one of its edges is
-#: continuous -- a mixed level cannot stack, its edges having different widths.
+#: gets it preferred over ``fit_edge`` wherever the level carries no
+#: conditioning context. A level with a discrete edge stacks in the
+#: four-column layout ``[u1, u2, u1^-, u2^-]`` throughout -- a continuous
+#: edge's left limits are its own values, as ``Bicop::format_data`` has them
+#: -- and an all-continuous level in the plain two columns.
 # Written out rather than quoted: a string inside a type *alias* is resolved in
 # whichever module uses the alias, so quoting it made `Sequence` a name every
 # importer had to keep in scope -- and dropping that import broke the docs
@@ -150,6 +152,33 @@ def _declared(
     return pair
   declare = getattr(pair, "with_var_types", None)
   return pair if declare is None else declare(var_types)
+
+
+def stack_level(xp: Namespace[ArrayT], inputs: list[ArrayT]) -> ArrayT:
+  """A level's edge inputs, stacked along a leading pair axis for ``fit_level``.
+
+  Edges of one level differ in width when some have a discrete argument, so a
+  continuous edge is widened to the four-column layout with its values as its
+  own left limits -- the same convention the cascades use to hand it one.
+
+  Parameters
+  ----------
+  xp : module
+      The array namespace of the inputs.
+  inputs : list of array, shape (n, 2) or (n, 4)
+      The level's edge inputs, in ascending edge order.
+
+  Returns
+  -------
+  array, shape (P, n, 2) or (P, n, 4), dtype float
+      Four columns wherever any edge has four, two otherwise.
+  """
+  arrays: list[Any] = list(inputs)
+  if any(int(a.shape[1]) == 4 for a in arrays):
+    arrays = [
+      a if int(a.shape[1]) == 4 else xp.concat([a, a], axis=1) for a in arrays
+    ]
+  return xp.stack(arrays, axis=0)
 
 
 def _fit_edge_call(
@@ -224,12 +253,11 @@ def fit_parts(
       variable order; ``None`` means all continuous.
   fit_level : callable, or None, optional
       ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree
-      level at once; see ``FitLevel``. Preferred over ``fit_edge``
-      for a level whose edges are all continuous and unconditional,
-      which is the only shape that stacks -- a discrete edge is four
-      columns wide where a continuous one is two. ``None`` fits every
-      edge separately, which is what every caller did before the hook
-      existed.
+      level at once; see ``FitLevel``. Preferred over ``fit_edge`` for a
+      level whose edges are unconditional, which is the only shape that
+      stacks. A level with a discrete edge reaches it in the four-column
+      layout throughout, a continuous edge carrying its values as its own
+      left limits. ``None`` fits every edge separately.
   tree_criterion : str, default "tau"
       Dependence measure ``threshold`` compares against, as on
       ``FitControlsVinecop``. Read only when ``threshold`` is positive.
@@ -353,11 +381,10 @@ def fit_parts(
       fit_level is not None
       and to_fit
       and all(contexts[e] is None for e in to_fit)
-      and all("d" not in level_types[e] for e in to_fit)
     ):
       got = fit_level(
         tree,
-        xp.stack([inputs[e] for e in to_fit], axis=0),
+        stack_level(xp, [inputs[e] for e in to_fit]),
         [level_types[e] for e in to_fit],
       )
       fitted = dict(zip(to_fit, got, strict=False))
@@ -705,11 +732,10 @@ def select_parts(
       fit_level is not None
       and to_fit
       and all(contexts[i] is None for i in to_fit)
-      and all("d" not in level_types[i] for i in to_fit)
     ):
       got = fit_level(
         len(trees),
-        xp.stack([survivors[i] for i in to_fit], axis=0),
+        stack_level(xp, [survivors[i] for i in to_fit]),
         [level_types[i] for i in to_fit],
       )
       fitted_level = dict(zip(to_fit, got, strict=False))

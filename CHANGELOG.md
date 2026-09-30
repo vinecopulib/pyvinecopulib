@@ -2,10 +2,15 @@
 
 ## 1.0.1 (unreleased)
 
+### Breaking API changes in `pyvinecopulib`
+
+- Hand `fit_level` every unconditional level, a level with a discrete edge as one `(P, n, 4)` stack in which a continuous edge's left limits are its values; it saw only all-continuous levels, and a mixed level went edge by edge (#NNN).
+
 ### New features in `pyvinecopulib`
 
 - Rank partly as tied the distinct values closer than `scale` in `to_pseudo_obs(..., scale=...)`, so that pseudo-observations move continuously with the data; the default, `0`, ranks by value (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
-- Evaluate a `TorchVinecop` with discrete variables on the batched fast path: `pdf` / `logpdf` / `rosenblatt` carry the left-limit cascade one stacked tree level at a time, and `inverse_rosenblatt` / `sample` batch as on a continuous vine. A discrete vine declined `batched=True` and ran edge by edge, on CUDA too (#NNN).
+- Evaluate and fit a `TorchVinecop` with discrete variables on the batched fast path: the cascades carry the left-limit scratch one stacked tree level at a time, `batched_fit` stacks a level with a discrete edge, and `TorchTllBicop.from_data_batched` takes per-pair `var_types`. A discrete vine declined both and ran edge by edge, on CUDA too (#NNN).
+- Read a discrete `TorchTllBicop` edge's atom probabilities in constant time per query off compensated prefix tables, rather than by a quadrature over the whole grid: 2.3-2.5x faster on CUDA at `n >= 20000`, and exact to `2.8e-15` on a `1.2e-4`-wide rectangle where the quadrature reached `2.9e-12` (#NNN).
 
 ### Bug fixes in `pyvinecopulib`
 
@@ -23,6 +28,7 @@
 - Fit a `TorchTllBicop` the same way whatever the memory layout of its data; a strided view selected a bandwidth a few ulps apart (#351).
 - Draw uniforms on a grid of `2^-53` in `sample_uniform` and every seeded simulation, quasi-random ones included, where a million draws repeated about 110 values per column; seeded draws change once (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
 - Order each column's ties by seeds of its own in `to_pseudo_obs(..., "random", seeds=...)`, so that columns tied in the same rows are no longer ordered alike (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
+- The gradient of a non-simplified vine's `logpdf` or `rosenblatt` with respect to `u` includes its path through the conditioning values: on torch before 2.13 their copy was detached, and on 2.13 it warned (#NNN).
 - `TorchVinecop.inverse_rosenblatt(batched=True)` agrees bit for bit with `batched=False` where an intermediate quantile lands on 0 or 1: the batched waves skipped the clamp each pair applies to its input, and differed by up to `5e-8` (#NNN).
 
 ### Build / packaging

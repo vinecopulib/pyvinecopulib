@@ -27,6 +27,7 @@ FitControlsTorchBicop : Fit-time controls.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, ClassVar, cast
 
 import numpy as np
@@ -374,6 +375,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     u: Tensor,
     controls: FitControlsTorchBicop | None = None,
     *,
+    var_types: Sequence[Sequence[str]] | None = None,
     cache_integrals: bool | None = None,
     device: torch.types.Device = None,
     dtype: torch.dtype | None = None,
@@ -387,13 +389,18 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     Parameters
     ----------
-    u : Tensor, shape (P, n, 2), dtype float
-        Copula-scale observations, one ``(n, 2)`` block per pair. Continuous
-        arguments only; an edge with atoms is fitted on its own through
-        ``TorchTllBicop.from_data()``.
+    u : Tensor, shape (P, n, 2) or (P, n, 4), dtype float
+        Copula-scale observations, one block per pair: ``[u1, u2]``, or
+        ``[u1, u2, u1^-, u2^-]`` throughout when ``var_types`` marks any pair
+        discrete, a continuous pair's left limits being its own values.
     controls : FitControlsTorchBicop, or None, optional
         Fit controls, shared by every pair. ``None`` is
         ``FitControlsTorchBicop()``.
+    var_types : sequence of sequence of str, or None, optional
+        Each pair's two types, ``"c"`` or ``"d"``, as ``TorchTllBicop.from_data()``
+        takes them; ``None`` means every pair continuous. A discrete pair is
+        fitted on its latent sample, as there, and every pair returned is a
+        continuous grid.
     cache_integrals : bool, or None, optional
         As on ``TorchTllBicop``, for each pair returned; ``None`` reads
         ``controls``, then ``True``.
@@ -411,7 +418,8 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Raises
     ------
     ValueError
-        If ``u`` is not 3-d with two value columns.
+        If ``u`` is not 3-d, if ``var_types`` does not have one entry per
+        pair, or if ``u``'s width does not match ``var_types``.
 
     Notes
     -----
@@ -433,18 +441,42 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       controls, cache_integrals, device, dtype, u
     )
     u_t = torch.as_tensor(u, dtype=dtype, device=device)
-    if u_t.ndim != 3 or u_t.shape[-1] != 2:
-      raise ValueError(f"u must have shape (P, n, 2); got {tuple(u_t.shape)}")
+    if u_t.ndim != 3:
+      raise ValueError(
+        f"u must have shape (P, n, 2 or 4); got {tuple(u_t.shape)}"
+      )
+    n_pairs = int(u_t.shape[0])
+    types = (
+      [("c", "c")] * n_pairs
+      if var_types is None
+      else [tuple(t) for t in var_types]
+    )
+    if len(types) != n_pairs:
+      raise ValueError(
+        f"var_types has {len(types)} entries for {n_pairs} pairs"
+      )
+    lanes = [k for k, t in enumerate(types) if "d" in t]
+    width = 4 if lanes else 2
+    if u_t.shape[-1] != width:
+      raise ValueError(
+        f"u must have shape (P, n, {width}) for these var_types; "
+        f"got {tuple(u_t.shape)}"
+      )
+    # As in `from_data`: trimmed before the ranks, so values beyond the clamp
+    # form the tie group they form there. Every lane then ranks its ties as
+    # the single-pair fit does, inside `fit_tll_constant`.
     u_t = trim(u_t, TENSOR_NS)
 
     from ._bicop_fit_tll import fit_tll_constant
 
     grid_points, values = fit_tll_constant(
-      u_t,
+      u_t[..., :2],
       grid_size=controls.grid_size,
       mult=controls.mult,
       grid_type=controls.grid_type,
       compile_fit=controls.compile_fit,
+      discrete_data=u_t if lanes else None,
+      discrete_lanes=lanes,
     )
     # `values` is `(P, m, m)`; each pair takes its own slice. The slice is
     # contiguous, so the grid each pair holds is its own buffer rather than
