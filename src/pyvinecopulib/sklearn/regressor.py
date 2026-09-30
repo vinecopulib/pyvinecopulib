@@ -39,7 +39,6 @@ class VineRegressor(RegressorMixin, VineBase):
     "quantiles": ["array-like", None],
     "use_grid": ["boolean"],
     "n_nodes": [Interval(Integral, 2, None, closed="left")],
-    "normalize_weights": ["boolean"],
   }
 
   def __init__(
@@ -53,7 +52,6 @@ class VineRegressor(RegressorMixin, VineBase):
     batch_size: int = 100,
     use_grid: bool = True,
     n_nodes: int = 401,
-    normalize_weights: bool = True,
     random_state: int | np.random.RandomState | None = None,
     n_jobs: int | None = None,
   ) -> None:
@@ -115,12 +113,6 @@ class VineRegressor(RegressorMixin, VineBase):
         under the model's own error; predicted quantiles are resolved
         to about one node spacing, so raise it when they are the
         output of interest.
-    normalize_weights : bool, default=True
-        If ``True`` (default), each row of
-        :meth:`VineRegressor.conditional_weights` is rescaled to sum to one.
-        A prediction is a ratio of those weights, so it is the same either
-        way; what the flag is for is a caller combining several fitted
-        estimators, who rescales once after combining rather than per member.
     random_state : int, RandomState instance, or None, optional
         Seeds the RNG used by stochastic operations. Resolved via
         `sklearn.utils.check_random_state` inside `fit`.
@@ -149,7 +141,6 @@ class VineRegressor(RegressorMixin, VineBase):
     self.quantiles = quantiles
     self.use_grid = use_grid
     self.n_nodes = n_nodes
-    self.normalize_weights = normalize_weights
 
   def fit(
     self,
@@ -234,13 +225,13 @@ class VineRegressor(RegressorMixin, VineBase):
     p = np.array([0.5 * (1.0 + math.erf(zi / root_two)) for zi in z])
     # The full weight, not just its z-dependent part: the constant
     # `dz / sqrt(2 pi)` cancels under row normalization but is what makes the
-    # rule integrate to one, and `normalize_weights=False` has nothing else to
+    # rule integrate to one, and the unnormalized weights have nothing else to
     # supply it.
     dz = 2.0 * _PROBIT_HALF_WIDTH / (int(self.n_nodes) - 1)
     weights = np.exp(-0.5 * z**2) * (dz / math.sqrt(2.0 * math.pi))
     return p, weights[np.newaxis, :]
 
-  def copula_marginal_density(
+  def _copula_marginal_density(
     self,
     X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
     log: bool = False,
@@ -317,10 +308,9 @@ class VineRegressor(RegressorMixin, VineBase):
 
     The estimator itself, before it is summarized: :meth:`predict` is these
     weights against ``y_nodes_``, as a ratio for the mean and through
-    :func:`numpy.quantile` for a level. Public because a caller combining
-    several fitted vines needs them -- which is also what
-    ``normalize_weights=False`` is for, since a prediction is a ratio and
-    never depends on it. Each weight pairs one
+    :func:`numpy.quantile` for a level. Each row is the discretized
+    conditional distribution of the response given that row's covariates.
+    Each weight pairs one
     node :math:`y_k` -- a training response when ``use_grid=False``,
     else :math:`\\hat F_Y^{-1}(p_k)` -- with
 
@@ -332,9 +322,8 @@ class VineRegressor(RegressorMixin, VineBase):
     where :math:`u_k` is :math:`\\hat F_Y(y_k)` over training rows
     and :math:`p_k` on the probability grid, and :math:`\\Delta_k` is
     the node spacing there (constant, hence absent, over training
-    rows). Row-normalized when ``normalize_weights=True``, which divides out
-    the copula density's own departure from integrating to one; without it the
-    weights are the plain quadrature rule.
+    rows). Each row is normalized to sum to one, which divides out the copula
+    density's own departure from integrating to one.
 
     Parameters
     ----------
@@ -356,13 +345,42 @@ class VineRegressor(RegressorMixin, VineBase):
       [w for w, _, _ in self._iter_weights(np.asarray(X))], axis=0
     )
 
-  def _weights_for_batch(self, X_batch: np.ndarray) -> np.ndarray:
+  def _raw_conditional_weights(
+    self, X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]]
+  ) -> np.ndarray:
+    """:meth:`conditional_weights` before each row is normalized.
+
+    The plain quadrature rule, for a caller that combines several fitted
+    regressors and normalizes once across them rather than per member.
+
+    Parameters
+    ----------
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
+        Test covariates. Must match the training schema.
+
+    Returns
+    -------
+    ndarray, shape (n_samples, n_nodes), dtype float
+        One row of unnormalized weights per query, against ``y_nodes_``.
+    """
+    check_is_fitted(self, attributes=["_vine"])
+    X = self._validate_input(X, reset=False)
+    return np.concatenate(
+      [w for w, _, _ in self._iter_weights(np.asarray(X), normalize=False)],
+      axis=0,
+    )
+
+  def _weights_for_batch(
+    self, X_batch: np.ndarray, *, normalize: bool = True
+  ) -> np.ndarray:
     """Weights for one batch of already-validated rows.
 
     Parameters
     ----------
     X_batch : ndarray, shape (batch, n_features), dtype float
         Test covariates, validated and expanded.
+    normalize : bool, default=True
+        Rescale each row to sum to one.
 
     Returns
     -------
@@ -379,12 +397,12 @@ class VineRegressor(RegressorMixin, VineBase):
     w = to_numpy(self._threaded("pdf")(u_test), dtype=float).reshape(m, n_nodes)
     if self._node_weights is not None:
       w = w * self._node_weights
-    if self.normalize_weights:
+    if normalize:
       w /= np.sum(w, axis=1, keepdims=True)
     return w
 
   def _iter_weights(
-    self, X: np.ndarray
+    self, X: np.ndarray, *, normalize: bool = True
   ) -> Iterator[tuple[np.ndarray, int, int]]:
     """Yields ``(weights, start, end)`` per batch for `_predict_from_iter`.
 
@@ -395,6 +413,8 @@ class VineRegressor(RegressorMixin, VineBase):
     ----------
     X : ndarray, shape (n_test, n_features), dtype float
         Test covariates on the original (un-transformed) scale.
+    normalize : bool, default=True
+        Rescale each row to sum to one.
 
     Yields
     ------
@@ -409,7 +429,8 @@ class VineRegressor(RegressorMixin, VineBase):
     n_test = X.shape[0]
     for start in range(0, n_test, self.batch_size):
       end = min(start + self.batch_size, n_test)
-      yield self._weights_for_batch(X[start:end]), start, end
+      w = self._weights_for_batch(X[start:end], normalize=normalize)
+      yield w, start, end
 
   def _predict_from_iter(self, X: np.ndarray) -> np.ndarray:
     """Combines batched weights with the response nodes into predictions.
@@ -439,9 +460,8 @@ class VineRegressor(RegressorMixin, VineBase):
       if self.mean:
         # A ratio, not a plain dot product: the conditional mean is
         # `sum(w y) / sum(w)` whatever the weights' scale, so it does not
-        # depend on `normalize_weights` -- which exists so a caller combining
-        # several vines can normalize once, across all of them. `np.quantile`
-        # below normalizes internally for the same reason.
+        # depend on how the weights are normalized. `np.quantile` below
+        # normalizes internally for the same reason.
         totals = w.sum(axis=1)
         if not np.all(totals > 0.0):
           raise ValueError(
