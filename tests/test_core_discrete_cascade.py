@@ -25,6 +25,7 @@ from pyvinecopulib.core import (
   BicopLike,
   VinecopBase,
 )
+from pyvinecopulib.core.extend import NotBatchable
 
 from .conftest import GaussianBicop, HostedVinecop
 
@@ -102,14 +103,17 @@ class _ListVinecop(HostedVinecop):
         pair.var_types = list(self.pair_var_types(tree, edge))
 
 
-class _NeverBatchedVinecop(_ListVinecop):
-  """A vine that advertises the batched fast path but must never be asked."""
+class _DecliningVinecop(_ListVinecop):
+  """A vine that advertises the batched fast path and then declines it."""
+
+  asked = 0
 
   def _default_batched(self) -> bool:
     return True
 
   def _build_batched(self) -> Any:
-    raise AssertionError("the batched fast path was entered")
+    type(self).asked += 1
+    raise NotBatchable("no grid state")
 
 
 def _gaussian_pairs() -> list[list[pv.Bicop]]:
@@ -318,26 +322,26 @@ def test_discrete_vine_rejects_the_bare_value_layout(
 
 
 # ---------------------------------------------------------------------------
-# The batched fast path declines
+# The batched fast path is the subclass's to decline
 # ---------------------------------------------------------------------------
 
 
-def test_batched_declines_on_a_discrete_vine() -> None:
-  # The batched wavefront has no left-limit lane, so the dispatcher resolves
-  # `batched` to False rather than silently evaluating a continuous density. A
-  # raise is not an option: `batched=None` resolves to a device-dependent
-  # subclass default, so an ordinary pdf(u) call would start failing.
-  mine, ref = _both(["d", "c", "c", "c"], cls=_NeverBatchedVinecop)
+def test_a_discrete_vine_asks_the_subclass_for_the_batched_path() -> None:
+  # Discreteness does not decline in the dispatcher: the batched loops carry
+  # the left-limit scratch, so whether a vine batches is for its
+  # `_build_batched` to answer. One that cannot declines through
+  # `NotBatchable`, and the per-edge cascade answers instead -- never a raise,
+  # since `batched=None` resolves to a subclass default the caller did not
+  # choose.
+  mine, ref = _both(["d", "c", "c", "c"], cls=_DecliningVinecop)
   u = _expanded_data(["d", "c", "c", "c"], seed=10)
+  _DecliningVinecop.asked = 0
   _assert_parity(mine.pdf(u, batched=True), ref.pdf(u))
   _assert_parity(
     mine.rosenblatt(u, batched=True, randomize_discrete=False),
     ref.rosenblatt(u, randomize_discrete=False),
   )
-  # The same vine without discrete variables does reach the fast path.
-  cont, _ = _both(["c"] * _D, cls=_NeverBatchedVinecop)
-  with pytest.raises(AssertionError, match="batched fast path"):
-    cont.pdf(u[:, :_D], batched=True)
+  assert _DecliningVinecop.asked == 2
 
 
 def test_the_continuous_reading_of_a_foreign_pair_is_itself() -> None:
