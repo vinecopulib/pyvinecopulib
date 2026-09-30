@@ -952,6 +952,35 @@ def test_ace_freezes_each_lane_independently() -> None:
   torch.testing.assert_close(_ace(mixed)[0], _ace(alone)[0], atol=0.0, rtol=0.0)
 
 
+@pytest.mark.parametrize("n", [600, 601])
+def test_ace_drops_converged_lanes_exactly(
+  n: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Dropping a batch's converged lanes on cpu moves no lane at all.
+
+  Near-independent lanes grind on long after dependent ones converge, so the
+  batched search drops the frozen lanes from its working set. That is exact
+  only because the cpu kernels treat each row alike however many rows they
+  run over, which is what this pins, at an aligned and an unaligned row
+  length.
+  """
+  from pyvinecopulib.torch import _bicop_fit_tll
+  from pyvinecopulib.torch._bicop_fit_tll import _ace
+
+  rng = np.random.default_rng(0)
+  slow = [rng.uniform(size=(n, 2)) for _ in range(2)]
+  fast = [
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
+      n, seeds=[k]
+    )
+    for k, r in enumerate([0.8, 0.7, 0.9, 0.85, 0.75, 0.6])
+  ]
+  x = torch.special.ndtri(torch.from_numpy(np.stack([slow[0], *fast, slow[1]])))
+  dropped = _ace(x)
+  monkeypatch.setattr(_bicop_fit_tll, "_ACE_SHRINK", 0.0)
+  torch.testing.assert_close(dropped, _ace(x), atol=0.0, rtol=0.0)
+
+
 @pytest.mark.parametrize("n", [500, 2000])
 def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
   """Stacking pairs into one fit does not change what any of them gets.
