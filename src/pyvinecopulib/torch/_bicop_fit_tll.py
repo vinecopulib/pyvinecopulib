@@ -61,14 +61,14 @@ def _merge_near_ties(x: Tensor, tol: float = _NEAR_TIE_TOL) -> Tensor:
 
   Parameters
   ----------
-  x : Tensor, shape (..., n, 2), dtype float
+  x : Tensor, shape (..., n, 2) or (..., n, 4), dtype float
       One sample per lane.
   tol : float, default=_NEAR_TIE_TOL
       Absolute merge distance.
 
   Returns
   -------
-  Tensor, shape (..., n, 2), dtype float
+  Tensor, shape (..., n, 2) or (..., n, 4), dtype float
       ``x`` with near-ties made exact; ``NaN`` left in place.
   """
   n = x.shape[-2]
@@ -643,8 +643,11 @@ def fit_tll_constant(
 
   # Pseudo-observations + qnorm to z-space.
   # On a discrete edge these ranks only select the bandwidth; see
-  # ``discrete_data``.
-  z_data = _qnorm(_to_pseudo_obs(_merge_near_ties(u)))
+  # ``discrete_data``. Its near-ties are merged first, as ``TllBicop::fit``
+  # merges them: the latent draw turns any change in the random tie-breaking
+  # into another sample.
+  tied = u if discrete_data is None else _merge_near_ties(u)
+  z_data = _qnorm(_to_pseudo_obs(tied))
 
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data, compile_step=compile_fit) * mult
@@ -666,7 +669,7 @@ def fit_tll_constant(
     from ..core.extend import to_numpy
 
     latent = find_latent_sample(
-      to_numpy(discrete_data),
+      to_numpy(_merge_near_ties(discrete_data)),
       float((B[0, 0] * B[1, 1]).item() ** 0.25),
     )
     z_data = _qnorm(torch.as_tensor(latent, dtype=dtype, device=device))
