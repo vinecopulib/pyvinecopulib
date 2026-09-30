@@ -208,33 +208,40 @@ it, there is no entry to write.
 - **Dependence measures** — `wdm` (`lib/wdm`).
 - **Quasi-random sampling** — `sobol`, `ghalton`, `sample_uniform`.
 - **Pseudo-observations** — `to_pseudo_obs`.
-- **Estimator ensembling / model averaging.** Combining several
-  fitted vines — bagging, averaging over candidate structures,
-  post-hoc selection among them — is left to downstream packages.
-  The library ships single-vine estimators, and what such a package needs is
-  the *public* surface: `distribution=` / `controls=` / `structure=` name the
-  model to fit, and `sklearn.base.clone` deep-copies a non-estimator
-  parameter, so `clone(est).set_params(structure=...)` derives a member
-  without touching the parent. `#339` deleted the copy-on-write `with_*`
-  builders that predated that realization.
+- **Fitting or scoring many vines is out of scope; one vine is in.**
+  Combining several fitted vines -- bagging, forests, averaging over
+  candidate structures, fitting many vines in lockstep -- belongs to a
+  downstream package (the `vinesforest` research code). The test is single
+  vine versus many, not what motivated a change: an improvement to fitting or
+  evaluating *one* vine belongs here even when an ensemble is why it was
+  written, while public API whose only use is combining vines does not. Two
+  such names shipped in 1.0.0 and were removed in 1.0.1:
+  `VineRegressor(normalize_weights=)` and `VineRegressor.copula_marginal_density`.
 
-  Two behaviors here exist for ensembling and are not incidental: a
-  pre-settable `schema_` is honored across a *refit*, not only the first
-  `fit` (a wrapper refits its survivors, and re-inferring the types there
-  silently changes the model), and `VineRegressor.conditional_weights` is
-  public, since the weights are what a wrapper averages and a prediction is
-  already a ratio of them -- which is also what `normalize_weights` is for,
-  a real `__init__` parameter so it survives `clone`. It reached a private
-  `_weights_for_batch` before, and the prediction step took the weight source
-  as an argument for a caller that never existed.
+  What a multi-vine package needs from the library stays, as an *enabler*:
+  public where it is also a single-vine feature, private where it is not.
+  - `sklearn.base.clone` deep-copies a non-estimator parameter, so
+    `clone(est).set_params(structure=...)` derives a variant without touching
+    the original. Standard scikit-learn, and single-vine.
+  - A pre-set `schema_` is honored across a refit, not only the first `fit`.
+    It is how an array user declares discrete columns and bounds, and
+    re-inferring it on a second fit would silently change the model.
+  - `VineRegressor.conditional_weights` and `y_nodes_` are public: each row is
+    the discretized conditional distribution of the response, which `predict`
+    summarizes.
+  - `VineRegressor._raw_conditional_weights` (the weights before each row is
+    normalized, so several regressors can be normalized once, together) and
+    `_copula_marginal_density` (the `c_X` term of the conditional
+    log-likelihood) are private enablers.
+  - `fit_level` and `TorchTllBicop.from_data_batched` read their leading axis
+    as independent pairs, so levels from several vines concatenate into one
+    call.
 
-  **No underscore-prefixed name is protected.** An earlier version of this
-  file listed private hooks that must not be removed "as unused" because a
-  downstream package reached for them. That rule is withdrawn: it froze
-  internals by decree and let a private hook substitute for API worth
-  designing. An internal with no in-library caller is a candidate for
-  deletion, and a downstream need is an argument for making something
-  *public*, not for pinning a private name.
+  **A private enabler carries no stability promise, but is not dead code.**
+  Downstream research code may depend on any internal and adapts when it
+  changes. An internal with no in-library caller is otherwise a candidate for
+  deletion; the enablers listed above are the exception, because their
+  callers live downstream by design.
 
 - **Scikit-learn-compatible estimators** — `VineDensity`,
   `VineRegressor`, fitting whichever `VinedistBase` subclass they are
@@ -1606,8 +1613,8 @@ derivations are all gone: once `VinecopLike` declared `structure` and both
 lanes accepted `num_threads`, every one of them restated something the
 distribution classes already declare. `sklearn.clone` deep-copies a
 non-estimator parameter, so it supplies the copy-on-write the `with_*`
-builders were written for, and `clone(est).set_params(structure=...)` is the
-ensembling idiom.
+builders were written for, and `clone(est).set_params(structure=...)` derives a
+variant without touching the original.
 
 Two consequences worth knowing. **`sklearn` imports `torch` nowhere at all** --
 the opt-in is the caller importing `TorchVinedist` to name it, which is why
