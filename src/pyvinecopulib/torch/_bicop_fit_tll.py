@@ -318,6 +318,12 @@ def _compiled_ace_step() -> _AceStep:
   return _COMPILED_ACE_STEP
 
 
+#: Working-set fraction below which the batched ACE search drops its converged
+#: lanes. Dropping costs one gather per state tensor, so doing it on every
+#: pass would cost more than the frozen lanes it removes.
+_ACE_SHRINK: float = 0.5
+
+
 def _ace(
   data: Tensor,
   *,
@@ -350,8 +356,11 @@ def _ace(
   at a fixed shape.
 
   A batch runs until its slowest lane converges, so it trades the sum of the
-  lanes' iterations for their maximum while doing the full batch's arithmetic
-  at every step. How much that wins depends on how alike the lanes are, and
+  lanes' iterations for their maximum. On cpu it drops its converged lanes
+  once they are the majority, so the slowest lane does not carry the whole
+  batch's arithmetic with it; that is bit for bit, pinned by
+  ``test_ace_drops_converged_lanes_exactly``. Elsewhere it does the full
+  batch's arithmetic at every step. How much that wins depends on how alike the lanes are, and
   iteration counts rise as dependence falls -- with no signal to find, the
   outer criterion grinds against its own rounding noise until it hits
   ``outer_iter_max``. One near-independent lane therefore paces a whole
@@ -371,6 +380,8 @@ def _ace(
     ``(..., n, 2)`` tensor of the ACE-transformed scores ``phi``.
   """
   n = data.shape[-2]
+  shape = data.shape
+  data = data.reshape(-1, n, 2)
   batch = data.shape[:-2]
   dtype, device = data.dtype, data.device
   if outer_abs_tol is None:
@@ -413,7 +424,33 @@ def _ace(
   )
   outer_live = (outer_iter <= outer_iter_max) & (outer_abs_err > outer_abs_tol)
 
-  while bool(outer_live.any()):
+  # The lanes still iterating, and where each writes back its final state.
+  # Dropping the converged ones is bit for bit on cpu, whose per-row kernels
+  # do not depend on how many rows they run over; on an accelerator they do,
+  # in the last bits, and there launches rather than arithmetic bound the
+  # search, so dropping would cost exactness and buy nothing.
+  compact = device.type == "cpu"
+  out0, out1 = phi0, phi1
+  work = torch.arange(batch[0], device=device)
+  width = batch[0]
+  while True:
+    alive = int(outer_live.sum())
+    if alive == 0:
+      break
+    if compact and alive <= _ACE_SHRINK * width:
+      out0, out1 = out0.clone(), out1.clone()
+      out0[work], out1[work] = phi0, phi1
+      keep = outer_live.nonzero().squeeze(-1)
+      work = work[keep]
+      phi0, phi1, ind0, ind1, ranks0, ranks1 = (
+        t[keep] for t in (phi0, phi1, ind0, ind1, ranks0, ranks1)
+      )
+      outer_eps, outer_abs_err, outer_iter, outer_live = (
+        t[keep] for t in (outer_eps, outer_abs_err, outer_iter, outer_live)
+      )
+      width = alive
+      always = always[keep]
+      ones, longs = ones[keep], longs[keep]
     inner_eps, inner_abs_err = ones.clone(), ones.clone()
     inner_iter = longs.clone()
     inner_live = (
@@ -456,7 +493,11 @@ def _ace(
       outer_abs_tol,
     )
 
-  return torch.stack([phi0, phi1], dim=-1)
+  if width < batch[0]:
+    out0, out1 = out0.clone(), out1.clone()
+    out0[work], out1[work] = phi0, phi1
+    phi0, phi1 = out0, out1
+  return torch.stack([phi0, phi1], dim=-1).reshape(shape)
 
 
 def _pearson_cor(x: Tensor) -> Tensor:
