@@ -198,8 +198,8 @@ default="tau"
       rather than a claim that batching cannot pay there. Either way the
       torch fit is far from competitive with ``Vinecop`` on cpu.
 
-      A level carrying a discrete edge or a conditioning context is always
-      fitted edge at a time: those cannot stack.
+      A level carrying a conditioning context is always fitted edge at a
+      time. A level with a discrete edge stacks like any other.
 
       The batched result agrees with the per-edge one to floating point on
       every device -- not bit for bit, on cpu included. A lane's iterations
