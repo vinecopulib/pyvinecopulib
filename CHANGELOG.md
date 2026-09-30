@@ -6,6 +6,7 @@
 
 - Evaluate a discrete or mixed `Bicop` or `Vinecop` read from JSON, a file or a pickle with its variable types, not as continuous (#352, [vinecopulib#789](https://github.com/vinecopulib/vinecopulib/pull/789)).
 - Fix a crash in discrete fits and `find_latent_sample` when built against Eigen 5 (#352, [vinecopulib#792](https://github.com/vinecopulib/vinecopulib/pull/792)).
+- Fit a mixed or discrete `tll` vine the same way on every build from the second tree on: values equal up to rounding are made exact ties before the fit's seeded random ranks, which ordered them by their last bits and moved the fit by far more; all-continuous fits are unchanged (#352, [vinecopulib#798](https://github.com/vinecopulib/vinecopulib/pull/798)).
 - Keep a `Kde1d` density positive between the smallest and largest observation; a wide gap, or ties at `degree=2`, gave exactly zero (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Select the same `Kde1d` bandwidth on every build; on tied data the plug-in estimate was `NaN` on some builds only (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Make a `degree=1` `Kde1d` fit scale equivariant, which changes every `degree=1` estimate (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
