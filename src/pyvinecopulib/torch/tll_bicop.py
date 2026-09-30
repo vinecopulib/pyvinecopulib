@@ -39,7 +39,7 @@ from ..core._trim import trim
 from ..core._validation import reject_covariates
 from ..pyvinecopulib_ext import Bicop
 from ..pyvinecopulib_ext import tll as _TLL_FAMILY
-from ._bicop_interp import InterpolationGrid2D
+from ._bicop_interp import InterpolationGrid2D, prefix_tables
 from ._placement import TENSOR_NS
 from .controls import FitControlsTorchBicop
 
@@ -271,23 +271,36 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       values = torch.as_tensor(values, dtype=dtype, device=device)
       norm_maxiter_eff = norm_maxiter
 
-    self.interp_grid = InterpolationGrid2D(
+    grid = InterpolationGrid2D(
       grid_points=grid_points,
       values=values,
       norm_maxiter=norm_maxiter_eff,
       is_linear=is_linear,
     )
+    tables = (
+      grid.build_caches() if cache_integrals and not self.is_indep else None
+    )
+    self._setup(grid, tables)
 
-    self._cache_integrals = bool(cache_integrals)
+  def _setup(
+    self, grid: InterpolationGrid2D, tables: tuple[Tensor, ...] | None
+  ) -> None:
+    """Hold ``grid``, with the prefix tables ``tables`` or none.
+
+    The one place a pair's state is set, shared by the constructor and by the
+    batched fit's stacked construction.
+    """
+    self.interp_grid = grid
+    self._cache_integrals = tables is not None
     #: Bumped whenever the grid is replaced, so a vine that copied the grid
     #: of it can tell. Not part of `state_dict`: a load replaces the
     #: buffers, which `TorchVinecop.load_state_dict` already reacts to.
     self._revision = 0
-    if self._cache_integrals and not self.is_indep:
+    if tables is not None:
       # Detached, because a buffer is a cache and holding a graph in one would
       # keep it alive for the module's lifetime. `_tables` rebuilds them inside
       # the graph whenever a gradient is actually being taken.
-      sy, sx, pref = (t.detach() for t in self.interp_grid.build_caches())
+      sy, sx, pref = (t.detach() for t in tables)
       self.register_buffer("_sy", sy)
       self.register_buffer("_sx", sx)
       self.register_buffer("_prefix", pref)
@@ -295,6 +308,57 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       self._sy = None
       self._sx = None
       self._prefix = None
+
+  @classmethod
+  def _from_stack(
+    cls,
+    grid_points: Tensor,
+    values: Tensor,
+    *,
+    cache_integrals: bool,
+    is_linear: bool,
+  ) -> list[TorchTllBicop]:
+    """One pair per grid of a stack; what ``P`` constructor calls give.
+
+    The grids are checked and normalized as one tensor
+    (``InterpolationGrid2D._stack``) and their prefix tables built in one
+    pass, so a batched fit's construction costs a few kernels per pair rather
+    than two device reads and a few dozen kernels.
+
+    Parameters
+    ----------
+    grid_points : Tensor, shape (m,), dtype float
+        The shared grid.
+    values : Tensor, shape (P, m, m), dtype float
+        Unnormalized density grids, one per pair.
+    cache_integrals : bool
+        As on the constructor.
+    is_linear : bool
+        As on the constructor.
+
+    Returns
+    -------
+    list of TorchTllBicop
+        One pair per grid, each holding its own buffers.
+    """
+    grids = InterpolationGrid2D._stack(
+      grid_points, values, norm_maxiter=2000, is_linear=is_linear
+    )
+    tables = None
+    if cache_integrals:
+      stacked = torch.stack([g.values for g in grids])
+      tables = prefix_tables(stacked, grids[0]._dgrid)
+    pairs = []
+    for k, grid in enumerate(grids):
+      # the state `__init__` sets, through the same `_setup`; the module base
+      # still needs its own initializer
+      pair = cls.__new__(cls)
+      torch.nn.Module.__init__(pair)  # noqa: PLC2801
+      pair.is_indep = False
+      own = None if tables is None else tuple(t[k].clone() for t in tables)
+      pair._setup(grid, own)
+      pairs.append(pair)
+    return pairs
 
   # --------------------------------------------------------------------- #
   # Constructors                                                           #
@@ -478,24 +542,12 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       discrete_data=u_t if lanes else None,
       discrete_lanes=lanes,
     )
-    # `values` is `(P, m, m)`; each pair takes its own slice. The slice is
-    # contiguous, so the grid each pair holds is its own buffer rather than
-    # a view into a tensor the others share.
-    return [
-      cls(
-        grid_points=grid_points,
-        # A slice of the stack is a view; `contiguous` gives each pair a
-        # buffer of its own so the stack can be freed and `state_dict` does
-        # not carry P-1 unrelated grids per pair.
-        values=values[i].contiguous(),
-        cache_integrals=cache_integrals,
-        norm_maxiter=2000,
-        is_linear=(controls.grid_type == "linear"),
-        device=device,
-        dtype=dtype,
-      )
-      for i in range(values.shape[0])
-    ]
+    return cls._from_stack(
+      grid_points,
+      values,
+      cache_integrals=cache_integrals,
+      is_linear=(controls.grid_type == "linear"),
+    )
 
   @classmethod
   def from_data(
