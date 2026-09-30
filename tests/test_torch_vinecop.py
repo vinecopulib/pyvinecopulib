@@ -1005,6 +1005,106 @@ def test_the_discrete_pair_fit_reproduces_the_compiled_grid(
   )
 
 
+def _many_level_data(n: int, seed: int) -> tuple[np.ndarray, list[str]]:
+  """A mixed ``(n, d + k)`` sample shaped like the wind data set.
+
+  Three discrete variables with 12, 31 and 10 levels, then five continuous
+  ones. Many-level atoms put a crowd of distinct h-function values just below
+  the upper bound from the second tree on, which is where the two lanes'
+  last bits used to reorder the fit's ranks.
+  """
+  rng = np.random.default_rng(seed)
+  d = 8
+  a = rng.standard_normal((d, d))
+  cov = a @ a.T + d * np.eye(d)
+  sd = np.sqrt(np.diag(cov))
+  z = rng.multivariate_normal(np.zeros(d), cov / np.outer(sd, sd), size=n)
+  values, limits = [], []
+  for j, levels in enumerate([12, 31, 10, 0, 0, 0, 0, 0]):
+    p = pv.to_pseudo_obs(z[:, [j]]).ravel()
+    if levels:
+      k = np.floor(levels * p)
+      values.append((k + 1) / levels)
+      limits.append(k / levels)
+    else:
+      values.append(p)
+  return np.column_stack(values + limits), ["d"] * 3 + ["c"] * 5
+
+
+@pytest.mark.parametrize("select", [True, False])
+def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree(
+  select: bool,
+) -> None:
+  """Both lanes fit the same mixed vine, edge by edge, past the first tree.
+
+  A ``tll`` fit breaks rank ties at random in value order, so h-function
+  values equal up to rounding must be merged into exact ties first, in both
+  lanes (vinecopulib#798). Selection is compared with selection and a fixed
+  structure with a fixed structure: a selected pair is fitted before it is
+  flipped into place, and a flipped ``tll`` pair's discrete h-functions agree
+  with the original's only to ~1e-10.
+  """
+  u, var_types = _many_level_data(n=2000, seed=8)
+  structure = pv.Vinecop.from_data(
+    u, var_types=var_types, controls=_TLL_CONTROLS
+  ).structure
+  fixed = None if select else structure
+  cop = pv.Vinecop.from_data(
+    u, _TLL_CONTROLS, structure=fixed, var_types=var_types
+  )
+  vine = TorchVinecop.from_data(
+    torch.from_numpy(u),
+    structure=fixed,
+    var_types=var_types,
+    controls=FitControlsTorchVinecop(),
+  )
+  np.testing.assert_array_equal(vine.matrix, cop.matrix)
+  for tree in range(vine.trunc_lvl):
+    for edge in range(vine.d - tree - 1):
+      np.testing.assert_allclose(
+        vine._pair_module(tree, edge).interp_grid.values.numpy(),
+        np.asarray(cop.get_pair_copula(tree, edge).parameters),
+        rtol=1e-10,
+        atol=1e-10,
+        err_msg=f"tree {tree}, edge {edge}",
+      )
+  np.testing.assert_allclose(
+    vine.pdf(torch.from_numpy(u)).numpy(), cop.pdf(u), rtol=1e-10
+  )
+
+
+def test_a_discrete_pair_fit_ignores_rounding_noise_within_an_atom() -> None:
+  """An atom's rows a few ulps apart fit the same pair as exact ones.
+
+  The mirror of vinecopulib's own test, against both the exact fit and the
+  compiled fit of the same noisy data.
+  """
+  rng = np.random.default_rng(3)
+  z = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=3000)
+  u = pv.to_pseudo_obs(z)
+  k = np.floor(31 * u[:, 0])
+  exact = np.column_stack([(k + 1) / 31, u[:, 1], k / 31, u[:, 1]])
+  noisy = exact.copy()
+  step = (np.arange(len(u)) % 9 - 4) * np.finfo(float).eps
+  noisy[:, 0] = np.minimum(exact[:, 0] * (1 + step), 1.0)
+  noisy[:, 2] = exact[:, 2] * (1 - step)
+
+  def fit(x: np.ndarray) -> np.ndarray:
+    pair = TorchTllBicop.from_data(
+      torch.from_numpy(x), var_types=["d", "c"], cache_integrals=False
+    )
+    return pair.interp_grid.values.numpy()
+
+  torch_noisy = fit(noisy)
+  np.testing.assert_allclose(torch_noisy, fit(exact), rtol=1e-10, atol=1e-10)
+  compiled = pv.Bicop.from_data(
+    noisy[:, :3], controls=_TLL_BICOP, var_types=["d", "c"]
+  )
+  np.testing.assert_allclose(
+    torch_noisy, np.asarray(compiled.parameters), rtol=1e-10, atol=1e-10
+  )
+
+
 @pytest.mark.parametrize("var_types", [["d", "c", "c"], ["d", "d", "d"]])
 def test_from_data_matches_discrete_vinecop(var_types: list[str]) -> None:
   # End to end: the torch TLL fit on data with atoms, against the compiled vine
