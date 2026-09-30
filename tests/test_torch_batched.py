@@ -25,6 +25,7 @@ from pyvinecopulib.torch._vinecop_batched import (
   integrate_1d_batched,
   integrate_2d_batched,
   interpolate_batched,
+  mass_tables,
   rect_mass_batched,
 )
 
@@ -113,9 +114,9 @@ def test_integrate_2d_batched_matches_unbatched() -> None:
 def test_grid_masses_batched_match_unbatched() -> None:
   """Stacked rectangle and interval probabilities vs the per-pair methods.
 
-  The per-pair methods are a batch of one through the same kernels, so
-  stacking changes nothing about any one pair beyond the order ``bmm`` sums
-  in: measured 1.4e-17 absolute. The bounds straddle cells, share a cell,
+  The per-pair methods are a batch of one through the same kernels, on tables
+  built from one grid rather than three, so stacking changes nothing about
+  any one pair beyond summation order. The bounds straddle cells, share a cell,
   touch zero, and come in either order, which are the four regimes the
   quadrature weights distinguish.
   """
@@ -134,7 +135,8 @@ def test_grid_masses_batched_match_unbatched() -> None:
   a1, a2 = bounds[:, 0], bounds[:, 2]
   b1, b2 = other[:, 0], other[:, 2]
 
-  rect = rect_mass_batched(grid_points, values, a1, b1, a2, b2)
+  tables = mass_tables(grid_points, values)
+  rect = rect_mass_batched(grid_points, tables, a1, b1, a2, b2)
   for k, bc in enumerate(bcs):
     torch.testing.assert_close(
       rect[k],
@@ -144,7 +146,7 @@ def test_grid_masses_batched_match_unbatched() -> None:
     )
   for cond_var in (1, 2):
     cim = cond_interval_mass_batched(
-      grid_points, values, bounds[:, 1], a1, b1, cond_var
+      grid_points, tables, bounds[:, 1], a1, b1, cond_var
     )
     for k, bc in enumerate(bcs):
       torch.testing.assert_close(
