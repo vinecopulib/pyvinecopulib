@@ -49,6 +49,45 @@ def _qnorm(p: Tensor) -> Tensor:
   return cast("Tensor", torch.special.ndtri(p))
 
 
+#: ``tools_stats::merge_near_ties``' default; the lanes rank alike only if equal.
+_NEAR_TIE_TOL: float = 1e-11
+
+
+def _merge_near_ties(x: Tensor, tol: float = _NEAR_TIE_TOL) -> Tensor:
+  """Make values of each column that are equal up to rounding exactly equal.
+
+  ``tools_stats::merge_near_ties``, per lane and column: every run of sorted
+  values, each within ``tol`` of its predecessor, takes the run's first value.
+
+  Parameters
+  ----------
+  x : Tensor, shape (..., n, 2), dtype float
+      One sample per lane.
+  tol : float, default=_NEAR_TIE_TOL
+      Absolute merge distance.
+
+  Returns
+  -------
+  Tensor, shape (..., n, 2), dtype float
+      ``x`` with near-ties made exact; ``NaN`` left in place.
+  """
+  n = x.shape[-2]
+  lines = x.movedim(-1, -2).reshape(-1, n)
+  order = lines.argsort(dim=-1, stable=True)
+  srt = lines.gather(-1, order)
+  nan = srt.isnan()
+  starts = torch.ones_like(srt, dtype=torch.bool)
+  starts[:, 1:] = (
+    ~((srt[:, 1:] - srt[:, :-1]) <= tol) | nan[:, 1:] | nan[:, :-1]
+  )
+  position = torch.arange(n, device=x.device).expand_as(srt)
+  first = torch.where(starts, position, 0).cummax(dim=-1).values
+  merged = torch.empty_like(lines).scatter_(-1, order, srt.gather(-1, first))
+  merged = torch.where(lines.isnan(), lines, merged)
+  moved = x.movedim(-1, -2).shape
+  return merged.reshape(moved).movedim(-2, -1)
+
+
 def _to_pseudo_obs(x: Tensor) -> Tensor:
   """Empirical CDF ``rank/(n+1)`` of each column, per lane.
 
@@ -605,7 +644,7 @@ def fit_tll_constant(
   # Pseudo-observations + qnorm to z-space.
   # On a discrete edge these ranks only select the bandwidth; see
   # ``discrete_data``.
-  z_data = _qnorm(_to_pseudo_obs(u))
+  z_data = _qnorm(_to_pseudo_obs(_merge_near_ties(u)))
 
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data, compile_step=compile_fit) * mult
