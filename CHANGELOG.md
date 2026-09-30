@@ -4,7 +4,7 @@
 
 ### Breaking API changes in `pyvinecopulib`
 
-- Remove `VineRegressor`'s API for combining several regressors, which belongs downstream: `normalize_weights` is gone and `conditional_weights` always normalizes each row, `copula_marginal_density` is private, and `predict` is unchanged (#NNN).
+- Remove `VineRegressor`'s API for combining several regressors, which belongs downstream: `normalize_weights` is gone and `conditional_weights` always normalizes each row, `copula_marginal_density` is private, and `predict` is unchanged (#355).
     - `VineRegressor(normalize_weights=False).conditional_weights(X)` -> `VineRegressor()._raw_conditional_weights(X)`
     - `reg.copula_marginal_density(X, log=True)` -> `reg._copula_marginal_density(X, log=True)`
 - Hand `fit_level` every unconditional level, a level with a discrete edge as one `(P, n, 4)` stack in which a continuous edge's left limits are its values; it saw only all-continuous levels, and a mixed level went edge by edge (#354).
