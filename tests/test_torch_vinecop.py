@@ -1506,8 +1506,12 @@ def test_batched_fit_matches_the_per_edge_fit_on_a_discrete_vine(
 
   The level reaches the batched fit as one four-column stack. Each discrete
   lane ranks its ties and draws its latent sample exactly as the single-pair
-  fit does, from its own lane's bandwidth, so the stacked fit moves the model
-  no further than `batched_fit` moves a continuous one.
+  fit does, from its own lane's bandwidth. The two schedules still differ in
+  the bandwidth search's last bits, and a discrete edge carries those on with
+  a gain a continuous one lacks: its soft ranks move with the data at a slope
+  of up to ``1 / sqrt(eps)``. One ulp of noise on every h-value these fits
+  propagate moves the log-density by up to ``1.2e-11``, so the bound is
+  ``1e-10``, where a continuous vine's is ``1e-11``.
   """
   u = _discrete_data(var_types, n=600, seed=4)
   u_t = torch.from_numpy(u)
@@ -1526,7 +1530,7 @@ def test_batched_fit_matches_the_per_edge_fit_on_a_discrete_vine(
     np.asarray(fits[False].structure.matrix),
   )
   torch.testing.assert_close(
-    fits[True].logpdf(u_t), fits[False].logpdf(u_t), atol=1e-11, rtol=1e-9
+    fits[True].logpdf(u_t), fits[False].logpdf(u_t), atol=1e-10, rtol=1e-9
   )
 
 

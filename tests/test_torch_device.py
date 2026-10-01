@@ -410,7 +410,10 @@ def test_discrete_batched_fit_matches_the_per_edge_fit_on_device(
 
   Each discrete lane draws its latent sample from its own lane's bandwidth,
   so stacking moves that draw's input by the last bits the bandwidth search
-  moves, and the fitted model by no more than a continuous one moves.
+  moves. A discrete edge carries those on with the gain of its soft ranks, up
+  to ``1 / sqrt(eps)``: one ulp of noise on every h-value this fit propagates
+  moves the log-density by up to ``6e-12``, and the schedules differ by a few
+  ulps, so the bound is ``1e-10`` rather than a continuous vine's ``1e-11``.
   """
   u = _discrete_u(var_types, n=1200, seed=23)
   structure = pv.Vinecop.from_data(
@@ -432,7 +435,7 @@ def test_discrete_batched_fit_matches_the_per_edge_fit_on_device(
     _np(fits[True].logpdf(u_t)),
     _np(fits[False].logpdf(u_t)),
     rtol=1e-9,
-    atol=1e-11,
+    atol=1e-10,
   )
 
 
