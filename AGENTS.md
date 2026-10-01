@@ -1825,7 +1825,11 @@ Key surface:
   under strong dependence the passes alone need thousands. Both lanes keep the
   normalization transposition-equivariant bit for bit: a pass and a Newton step
   each treat rows and columns alike, so a grid and its transpose normalize to
-  transposes of each other.
+  transposes of each other. A Newton step pins one scaling per block of the
+  grid's support: a grid that falls apart into blocks leaves the system
+  singular once per block, which a single rank-one pin would leave unsolvable.
+  On a connected grid -- every fit -- the per-block pins are that rank-one
+  term.
 
 ### Top-level `pyvinecopulib`
 

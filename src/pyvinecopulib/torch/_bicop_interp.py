@@ -53,6 +53,56 @@ _NEWTON_AFTER: int = 25
 _NEWTON_STEPS: int = 50
 
 
+def _block_pins(p: Tensor, q: Tensor) -> tuple[Tensor, Tensor]:
+  """The terms that pin a Newton step's two systems, one per block of the grid.
+
+  Row ``i`` and column ``j`` are linked when ``p`` or ``q`` holds an entry
+  between them, and a block is what the links join. A block can scale its rows
+  against its columns without changing the grid, which leaves each eliminated
+  system singular along that scaling; the pins fix each one with ``1 / |B|``
+  between two rows, or two columns, of a block ``B``. On a connected grid both
+  are the rank-one ``1 / m``. The blocks are those
+  ``InterpolationGrid::newton_margins`` finds.
+
+  Parameters
+  ----------
+  p : Tensor, shape (..., m, m), dtype float
+      ``diag(1 / r) V W``, rows by columns.
+  q : Tensor, shape (..., m, m), dtype float
+      ``diag(1 / c) V' W``, columns by rows.
+
+  Returns
+  -------
+  pin_rows : Tensor, shape (..., m, m), dtype float
+      The pin of the system in the row scalings.
+  pin_cols : Tensor, shape (..., m, m), dtype float
+      The pin of the system in the column scalings.
+  """
+  m = p.shape[-1]
+  linked = (p > 0.0) | (q.transpose(-1, -2) > 0.0)
+  # Consecutive rows that share a column chain every row into one block, which
+  # every column with an entry joins: the grid of any fit, at the cost of a
+  # few reductions rather than a closure.
+  chained = (linked[..., :-1, :] & linked[..., 1:, :]).any(-1).all(-1)
+  if bool((chained & linked.any(-2).all(-1)).all()):
+    pin = torch.full_like(p, 1.0 / m)
+    return pin, pin
+  eye = torch.eye(m, dtype=torch.bool, device=p.device)
+
+  def blocks(adjacent: Tensor) -> Tensor:
+    # squaring doubles the paths the reach covers, and none is longer than m
+    reach = adjacent | eye
+    for _ in range(math.ceil(math.log2(m))):
+      f = reach.to(p.dtype)
+      reach = (f @ f) > 0.0
+    f = reach.to(p.dtype)
+    return f / f.sum(-1, keepdim=True)
+
+  f = linked.to(p.dtype)
+  f_t = f.transpose(-1, -2)
+  return blocks((f @ f_t) > 0.0), blocks((f_t @ f) > 0.0)
+
+
 def _newton_margins(
   values: Tensor, w: Tensor, max_steps: int
 ) -> tuple[Tensor, bool]:
@@ -62,10 +112,13 @@ def _newton_margins(
   and column scalings. Scaling row ``i`` by ``e^{a_i}`` and column ``j`` by
   ``e^{b_j}`` moves the log margins by ``a + P b`` and ``b + Q a`` to first
   order, with ``P = diag(1 / r) V W`` and ``Q = diag(1 / c) V' W`` row
-  stochastic. Both eliminations of the system are solved and their steps
+  stochastic. Eliminating either unknown leaves an ``m x m`` system, singular
+  along the scalings of rows against columns that leave the grid as it is,
+  which :func:`_block_pins` pins. Both eliminations are solved and their steps
   averaged, so a step commutes with transposition exactly, as a pass does, and
-  each step is halved until it reduces the residual. Entries of ``P`` and ``Q``
-  below ``1e-150`` are dropped, so their products never form subnormal numbers.
+  each step is halved until it reduces the residual; a step the solver could
+  not form is not finite, and never does. Entries of ``P`` and ``Q`` below
+  ``1e-150`` are dropped, so their products never form subnormal numbers.
 
   Args:
     values: ``(m, m)`` density grid.
@@ -80,7 +133,6 @@ def _newton_margins(
   m = values.shape[-1]
   exact = 8 * torch.finfo(values.dtype).eps
   rounding, min_mass = 1e-12, 1e-20
-  pin = torch.full((m, m), 1.0 / m, dtype=values.dtype, device=values.device)
   eye = torch.eye(m, dtype=values.dtype, device=values.device)
 
   def residual(v: Tensor, v_t: Tensor) -> tuple[Tensor, Tensor, float]:
@@ -101,9 +153,10 @@ def _newton_margins(
       return values, True
     lr, lc = r.log(), c.log()
     p, q = stochastic(r, values), stochastic(c, vt)
-    b1 = torch.linalg.solve(eye - q @ p + pin, q @ lr - lc)
+    pin_rows, pin_cols = _block_pins(p, q)
+    b1 = torch.linalg.solve_ex(eye - q @ p + pin_cols, q @ lr - lc).result
     a1 = -lr - p @ b1
-    a2 = torch.linalg.solve(eye - p @ q + pin, p @ lc - lr)
+    a2 = torch.linalg.solve_ex(eye - p @ q + pin_rows, p @ lc - lr).result
     b2 = -lc - q @ a2
     a, b = (a1 + a2) / 2.0, (b1 + b2) / 2.0
     t = 1.0
