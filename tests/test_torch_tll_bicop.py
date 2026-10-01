@@ -520,6 +520,45 @@ def test_normalize_margins_converges_on_a_concentrated_grid(
   torch.testing.assert_close(swapped.t(), ig.values, rtol=0.0, atol=0.0)
 
 
+def test_a_stack_normalizes_each_grid_as_it_would_alone() -> None:
+  """A grid normalizes in a stack bit for bit as it does alone, flipped or not.
+
+  A batched fit normalizes its pairs as one stack and the constructor one grid
+  at a time, so this is what makes a stacked pair the constructor's pair. The
+  stack mixes grids that converge in a few passes with grids that need Newton
+  steps, connected or not, so a grid's neighbors stop at different times.
+  """
+  from pyvinecopulib.torch._bicop_interp import (
+    InterpolationGrid2D,
+    normalize_stack,
+  )
+
+  m = 30
+  grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
+  rng = torch.Generator().manual_seed(0)
+  distance = (grid[:, None] - grid[None, :]).abs()
+  grids = []
+  for concentration in (5.0, 40.0, 400.0):
+    noise = torch.rand(m, m, generator=rng, dtype=torch.float64)
+    surface = torch.exp(-concentration * distance) * (1.0 + noise)
+    corner = surface.clone()
+    corner[0, 1:] = 0.0
+    corner[1:, 0] = 0.0
+    grids += [surface, corner]
+  stack = torch.stack(grids)
+  stack = torch.cat([stack, stack.transpose(-1, -2)])
+
+  weights = InterpolationGrid2D(grid, stack[0], norm_maxiter=0).trap_weights
+  stacked = normalize_stack(stack, weights, 2000)
+  for k in range(stack.shape[0]):
+    alone = InterpolationGrid2D(grid, stack[k]).values
+    torch.testing.assert_close(stacked[k], alone, rtol=0.0, atol=0.0)
+  half = len(grids)
+  torch.testing.assert_close(
+    stacked[half:].transpose(-1, -2), stacked[:half], rtol=0.0, atol=0.0
+  )
+
+
 def test_normalize_margins_leaves_a_normalized_grid_alone() -> None:
   """An already-uniform grid costs one margin check and no scaling."""
   from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
