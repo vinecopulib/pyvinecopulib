@@ -1813,10 +1813,12 @@ Key surface:
   - `batched_fit` — fits a whole tree level in one call instead of edge at a
     time, through the fit engines' optional `fit_level` hook
     (`TorchTllBicop.from_data_batched` is the pair-level entry point,
-    taking `(P, n, 2)`, or `(P, n, 4)` with per-pair `var_types`). Resolved
-    per device like the cascade's `batched`, and by one class hook,
-    `_resolve_fit_level`, which `fit`, `select` and `from_data` all call --
-    so a refit batches exactly as a construction does.
+    taking `(P, n, 2)`, or `(P, n, 4)` with per-pair `var_types`), and
+    evaluates each fitted level's h-functions through `eval_level` in stacked
+    calls, bit for bit what the per-edge evaluation gives. Resolved per
+    device like the cascade's `batched`, and by one pair of class hooks,
+    `_resolve_fit_level` / `_resolve_eval_level`, which `fit`, `select` and
+    `from_data` all call -- so a refit batches exactly as a construction does.
     The engines prefer a level fitter wherever one applies, so a lane's own
     must not be supplied beside a caller's `fit_edge`, or that callback is
     never called. The hook does not know what the
