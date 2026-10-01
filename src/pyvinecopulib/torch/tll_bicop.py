@@ -186,11 +186,12 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       reading a table only to locate the cell they invert in, and are the one
       member whose two modes differ by rounding. ``pdf``, ``rect_prob`` and
       ``cond_interval_prob`` do not depend on the setting.
-  norm_maxiter : int, default=25
+  norm_maxiter : int, default=2000
       Cap on the passes that rescale ``values`` until both margins integrate
-      to 1; they stop as soon as both do, to within ``1e-10``. ``25`` is the
-      cap a ``tll`` fit of ``Bicop`` allows. Pass ``0`` for a grid that is
-      already normalized, which leaves the values exactly as given.
+      to 1; they stop at convergence, well before the cap unless the
+      dependence is extreme, as a ``tll`` fit of ``Bicop`` does. Pass ``0`` for
+      a grid that is already normalized, which leaves the values exactly as
+      given.
   is_linear : bool, default=False
       Declare ``grid_points`` uniform on ``[0, 1]``, which makes locating a
       cell ``O(1)`` instead of a search. The fitting factories set it from
@@ -242,7 +243,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     grid_points: Tensor | None = None,
     values: Tensor | None = None,
     cache_integrals: bool = True,
-    norm_maxiter: int = 25,
+    norm_maxiter: int = 2000,
     is_linear: bool = False,
     device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
@@ -456,7 +457,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
         # not carry P-1 unrelated grids per pair.
         values=values[i].contiguous(),
         cache_integrals=cache_integrals,
-        norm_maxiter=25,
+        norm_maxiter=2000,
         is_linear=(controls.grid_type == "linear"),
         device=device,
         dtype=dtype,
@@ -561,7 +562,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       grid_points=grid_points,
       values=values,
       cache_integrals=cache_integrals,
-      norm_maxiter=25,
+      norm_maxiter=2000,
       is_linear=(controls.grid_type == "linear"),
       device=device,
       dtype=dtype,

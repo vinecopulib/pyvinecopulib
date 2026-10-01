@@ -92,7 +92,7 @@ class InterpolationGrid2D(torch.nn.Module):
     self,
     grid_points: Tensor,
     values: Tensor,
-    norm_maxiter: int = 25,
+    norm_maxiter: int = 2000,
     is_linear: bool = False,
   ) -> None:
     super().__init__()
@@ -258,10 +258,16 @@ class InterpolationGrid2D(torch.nn.Module):
     transpose is materialized rather than left as a view, so both margins are
     the same reduction and transposing the grid swaps them bit for bit.
 
+    The passes run to convergence, as ``InterpolationGrid`` runs them: they
+    stop once the margins' residual is at machine precision or, already at the
+    level of rounding, no longer shrinks. A grid left short of uniform margins
+    is not a copula density, and its distribution function, which rescales one
+    argument's margin only, then depends on which argument is first by as much
+    as the residual.
+
     Args:
       max_iter: maximum number of rescaling passes; ``0`` leaves the values
-        untouched. Rescaling also stops as soon as both margins integrate to 1
-        within ``1e-10``.
+        untouched.
     """
     m = self.grid_points.shape[0]
     if max_iter < 1 or m < 2:
@@ -276,14 +282,17 @@ class InterpolationGrid2D(torch.nn.Module):
     if on_host:
       values, w = values.cpu(), w.cpu()
 
-    tol, min_mass = 1e-10, 1e-20
+    exact = 8 * torch.finfo(values.dtype).eps
+    rounding, min_mass = 1e-12, 1e-20
+    previous = math.inf
     for _ in range(max_iter):
       vt = values.t().contiguous()
       r = (values @ w).clamp_min(min_mass)
       c = (vt @ w).clamp_min(min_mass)
-      err = torch.maximum((r - 1.0).abs().max(), (c - 1.0).abs().max())
-      if bool(err < tol):
+      err = float(torch.maximum((r - 1.0).abs().max(), (c - 1.0).abs().max()))
+      if err <= exact or (err < rounding and err >= previous):
         break
+      previous = err
       r2 = (values @ (w / c)).clamp_min(min_mass)
       c2 = (vt @ (w / r)).clamp_min(min_mass)
       sr = (r * r2).sqrt().reciprocal()
