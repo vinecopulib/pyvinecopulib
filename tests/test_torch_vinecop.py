@@ -2030,8 +2030,11 @@ def test_batched_fit_keeps_a_callers_fit_edge(
 
   The engines prefer a level fitter wherever one applies, so installing the
   built-in one beside a caller's `fit_edge` would fit every level without
-  calling it. Every pair here is fitted by the same callback either way, so
-  the two vines agree bit for bit.
+  calling it. What `batched_fit` does still change is how the fitted pairs'
+  h-functions -- the next tree's input -- are evaluated: a level at a time,
+  in stacked calls. Every pair here is fitted by the same callback either
+  way, so the two vines agreeing bit for bit is what says the stacked
+  evaluation is the per-edge one, on discrete edges included.
   """
   if var_types is None:
     u = banded_pseudo_obs(d=5, n=600, seed=93)
