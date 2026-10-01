@@ -166,7 +166,7 @@ def _newton_stack(
 
   def mv(a: Tensor, x: Tensor) -> Tensor:
     # a reduction rather than a batched product, whose kernel, and so whose
-    # rounding, depends on how many grids are still iterating
+    # rounding, can depend on how many grids are still iterating
     return (a * x.unsqueeze(-2)).sum(-1)
 
   vt, r, c, err = margins(values)
@@ -265,8 +265,10 @@ def normalize_stack(
   Each pair stops where the single grid stops -- once its margins' residual is
   at machine precision or, already at the level of rounding, no longer
   shrinks -- so a pair's passes, and its Newton steps after the first
-  ``_NEWTON_AFTER`` passes, are the ones its own grid earns, and a grid
-  normalizes in a stack exactly as it does alone.
+  ``_NEWTON_AFTER`` passes, are the ones its own grid earns. A grid
+  normalizes in a stack as it does alone up to rounding, which kernels sized
+  by the stack can order differently; a grid and its transpose in one stack
+  normalize to transposes of each other, bit for bit.
 
   Parameters
   ----------
@@ -310,7 +312,7 @@ def normalize_stack(
       previous[idx] = math.inf
       continue
     # reductions rather than batched products, whose kernel, and so whose
-    # rounding, depends on how many grids the stack holds
+    # rounding, can depend on how many grids the stack holds
     r2 = (values * (w / c).unsqueeze(-2)).sum(-1).clamp_min(min_mass)
     c2 = (vt * (w / r).unsqueeze(-2)).sum(-1).clamp_min(min_mass)
     sr = (r * r2).sqrt().reciprocal()
