@@ -1829,7 +1829,12 @@ Key surface:
   grid's support: a grid that falls apart into blocks leaves the system
   singular once per block, which a single rank-one pin would leave unsolvable.
   On a connected grid -- every fit -- the per-block pins are that rank-one
-  term.
+  term. Both lanes also fit a pair in its own order (`swaps_pair`) and
+  transpose the grid back, since the kernel estimate's arithmetic is not
+  symmetric in its arguments: a pair and its flip are then the same fit bit
+  for bit, and a continuous vine's selection equals a refit of its structure.
+  The torch fit makes its ranks contiguous first, because a strided column
+  reduces in another order and would select another bandwidth.
 
 ### Top-level `pyvinecopulib`
 

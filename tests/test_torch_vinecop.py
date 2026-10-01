@@ -1122,34 +1122,99 @@ def test_a_discrete_pair_fit_moves_continuously_with_its_data() -> None:
 
 
 @pytest.mark.parametrize("seed", [7, 18, 30, 36])
-def test_a_discrete_pair_fit_does_not_depend_on_argument_order(
-  seed: int,
+@pytest.mark.parametrize("types", [["c", "c"], ["d", "c"], ["d", "d"]])
+def test_a_pair_fit_does_not_depend_on_argument_order(
+  seed: int, types: list[str]
 ) -> None:
   """A pair fitted with its arguments swapped and then flipped is the same fit.
 
-  Near independence, where the maximal correlation behind the bandwidth used
-  to depend on which argument ACE updated first. Checked against the compiled
-  fit as well, which orders the pair the same way (vinecopulib#799).
+  Bit for bit, since both lanes fit a pair in its own order and transpose the
+  grid back, and near independence, where the maximal correlation behind the
+  bandwidth used to depend on which argument ACE updated first. Checked
+  against the compiled fit as well, which orders the pair the same way
+  (vinecopulib#799).
   """
   u = np.random.default_rng(seed).uniform(size=(1000, 2))
-  k = np.ceil(12 * u[:, 0])
-  data = np.column_stack([k / 12, u[:, 1], (k - 1) / 12, u[:, 1]])
-  swapped = data[:, [1, 0, 3, 2]]
+  upper, lower = np.ceil(12 * u) / 12, np.floor(12 * u) / 12
+  if types == ["c", "c"]:
+    data = u
+  elif types == ["d", "c"]:
+    data = np.column_stack([upper[:, 0], u[:, 1], lower[:, 0], u[:, 1]])
+  else:
+    data = np.column_stack([upper, lower])
+  swapped = data[:, [1, 0, 3, 2]] if data.shape[1] == 4 else data[:, [1, 0]]
 
-  def fit(x: np.ndarray, types: list[str]) -> TorchTllBicop:
-    return TorchTllBicop.from_data(
-      torch.from_numpy(x), var_types=types, cache_integrals=False
+  def fit(x: np.ndarray, var_types: list[str]) -> np.ndarray:
+    pair = TorchTllBicop.from_data(
+      torch.from_numpy(x), var_types=var_types, cache_integrals=False
     )
+    return pair.interp_grid.values.numpy()
 
-  direct = fit(data, ["d", "c"]).interp_grid.values.numpy()
-  reversed_ = fit(swapped, ["c", "d"]).interp_grid.values.numpy().T
-  np.testing.assert_allclose(reversed_, direct, rtol=1e-12, atol=1e-12)
-  compiled = pv.Bicop.from_data(
-    data[:, :3], controls=_TLL_BICOP, var_types=["d", "c"]
-  )
+  direct = fit(data, types)
+  reversed_ = fit(swapped, types[::-1]).T
+  np.testing.assert_array_equal(reversed_, direct)
+  compiled = pv.Bicop.from_data(data, controls=_TLL_BICOP, var_types=types)
   np.testing.assert_allclose(
     direct, np.asarray(compiled.parameters), rtol=1e-10, atol=1e-10
   )
+
+
+@pytest.mark.parametrize("batched_fit", [False, True])
+def test_a_selected_vine_equals_a_refit_of_its_structure(
+  batched_fit: bool,
+) -> None:
+  """Selection and a refit of the selected structure hold the same pairs.
+
+  Selection fits each pair in the search's orientation and flips it into the
+  structure's. A pair is fitted in its own order, so on continuous data the
+  two agree bit for bit, every h-function passed on included.
+  """
+  rng = np.random.default_rng(3)
+  mix = np.full((5, 5), 0.4)
+  np.fill_diagonal(mix, 1.0)
+  u = torch.as_tensor(pv.to_pseudo_obs(rng.standard_normal((500, 5)) @ mix))
+  controls = FitControlsTorchVinecop(batched_fit=batched_fit)
+  selected = TorchVinecop.from_data(u, controls)
+  refit = TorchVinecop.from_data(u, controls, structure=selected.structure)
+  for t in range(selected.trunc_lvl):
+    for e in range(selected.dim - t - 1):
+      torch.testing.assert_close(
+        refit._pair_module(t, e).interp_grid.values,
+        selected._pair_module(t, e).interp_grid.values,
+        rtol=0.0,
+        atol=0.0,
+      )
+
+
+@pytest.mark.parametrize("types", [["c", "c"], ["d", "c"], ["d", "d"]])
+def test_a_pair_fit_does_not_depend_on_its_data_layout(
+  types: list[str],
+) -> None:
+  """The same data, contiguous or as a strided view, give the same fit.
+
+  The bandwidth search reduces along the sample, and a strided column sums in
+  another order, so the layout of a tensor would otherwise choose between two
+  bandwidths a few ulps apart -- which a discrete edge's later trees amplify.
+  """
+  u = np.random.default_rng(18).uniform(size=(1000, 2))
+  upper, lower = np.ceil(12 * u) / 12, np.floor(12 * u) / 12
+  if types == ["c", "c"]:
+    data = torch.from_numpy(u)
+  elif types == ["d", "c"]:
+    data = torch.from_numpy(
+      np.column_stack([upper[:, 0], u[:, 1], lower[:, 0], u[:, 1]])
+    )
+  else:
+    data = torch.from_numpy(np.column_stack([upper, lower]))
+  strided = data.t().contiguous().t()
+  assert not strided.is_contiguous()
+
+  def fit(x: torch.Tensor) -> torch.Tensor:
+    return TorchTllBicop.from_data(
+      x, var_types=types, cache_integrals=False
+    ).interp_grid.values
+
+  torch.testing.assert_close(fit(strided), fit(data), rtol=0.0, atol=0.0)
 
 
 @pytest.mark.parametrize("noisy_column", [0, 1])
