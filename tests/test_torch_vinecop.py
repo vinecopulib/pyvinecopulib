@@ -1037,8 +1037,10 @@ def _many_level_data(n: int, seed: int) -> tuple[np.ndarray, list[str]]:
 def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree() -> None:
   """Selected or refitted on its structure, in either lane, a mixed vine is one.
 
-  The first tree agrees as single pairs do: to rounding within a lane, and
-  across lanes to the parity ``test_from_data_matches_cpp`` holds a pair to.
+  Within the core lane the refit equals the selection bit for bit: a pair is
+  fitted in its own order and its masses are read symmetrically. Across lanes
+  the first tree agrees to the parity ``test_from_data_matches_cpp`` holds a
+  pair to.
   From the second tree on, each discrete edge carries such a difference on
   with the gain of its soft ranks, about ``1e5`` on this vine -- a first-tree
   difference of ``7e-14`` between the lanes reaches ``5e-9`` by the fourth
@@ -1074,7 +1076,9 @@ def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree() -> None:
     np.testing.assert_array_equal(fit.matrix, cop.matrix, err_msg=name)
     for tree in range(cop.trunc_lvl):
       for edge in range(cop.dim - tree - 1):
-        bound = 1e-11 if tree == 0 else 1e-6
+        bound = (
+          0.0 if name == "compiled refit" else 1e-11 if tree == 0 else 1e-6
+        )
         np.testing.assert_allclose(
           grid(fit, tree, edge),
           grid(cop, tree, edge),
