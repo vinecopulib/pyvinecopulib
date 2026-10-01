@@ -1818,7 +1818,9 @@ Key surface:
     namespace rather than round-tripping a compiled `pv.Vinecop`.
 - `InterpolationGrid2D` (`torch/_bicop_interp.py`) — the 2-d bilinear grid
   backing `TorchTllBicop`; **internal** (not re-exported). Margin
-  normalization uses Sinkhorn iterations to drive marginals to uniform.
+  normalization uses Sinkhorn iterations to drive marginals to uniform, run
+  to convergence as `InterpolationGrid` runs them: a flipped pair evaluates as
+  the original only to within the residual left.
 
 ### Top-level `pyvinecopulib`
 
