@@ -1382,3 +1382,32 @@ def test_rect_prob_and_cond_interval_prob_reject_a_bad_axis() -> None:
   one = torch.full((1,), 0.5, dtype=torch.float64)
   with pytest.raises(ValueError, match="cond_var must be 1 or 2"):
     bc.cond_interval_prob(one, one * 0.1, one * 0.9, 3)
+
+
+@pytest.mark.parametrize("var_types", [["d", "d"], ["c", "d"], ["d", "c"]])
+def test_a_pair_without_mass_at_an_atom_answers_as_bicop_does(
+  var_types: list[str],
+) -> None:
+  """Where a pair has no mass, its density is the smallest normal float.
+
+  ``Bicop.pdf`` clamps every density to ``[DBL_MIN, DBL_MAX]``, so a vine's
+  log-density stays finite at an observation whose atom one of its pairs gives
+  no mass. The grid is zero over a corner block, and the first atom lies in it;
+  the second, where the grid has mass, is unaffected by the clamp.
+  """
+  grid = np.linspace(0.0, 1.0, 30)
+  values = np.exp(-40.0 * np.abs(grid[:, None] - grid[None, :]))
+  values[:8, 22:] = 0.0
+  values[22:, :8] = 0.0
+  cop = pv.Bicop.from_family(
+    pv.families.tll, parameters=values, var_types=var_types
+  )
+  pair = TorchTllBicop.from_bicop(cop).with_var_types(var_types)
+  u = np.array([[0.03, 0.99, 0.01, 0.96], [0.5, 0.5, 0.45, 0.45]])
+  got = pair.pdf(torch.from_numpy(u)).numpy()
+  want = cop.pdf(u)
+  tiny = np.finfo(np.float64).tiny
+  assert got[0] == tiny
+  assert want[0] == tiny
+  np.testing.assert_allclose(got[1], want[1], rtol=1e-12)
+  assert np.isfinite(pair.logpdf(torch.from_numpy(u)).numpy()).all()
