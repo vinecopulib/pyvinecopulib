@@ -1093,6 +1093,8 @@ def test_a_discrete_pair_fit_moves_continuously_with_its_data() -> None:
   below 1 with gaps around ``1e-11``, refitted after a relative error of up to
   ``1e-13`` keyed on each value, as rounding is. Any threshold on those gaps
   would be straddled, and a redrawn latent sample moved the grid by about 10.
+  Both lanes move it by up to ``2e-6`` relative over eight such errors, hence
+  the relative bound: the grid spans thirty orders of magnitude.
   """
   rng = np.random.default_rng(11)
   z = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.7], [0.7, 1.0]], size=2000)
@@ -1116,7 +1118,7 @@ def test_a_discrete_pair_fit_moves_continuously_with_its_data() -> None:
     xi = (key >> np.uint64(11)).astype(np.float64) / 2.0**53 * 2 - 1
     noisy = np.minimum(data * (1 + 1e-13 * xi), 1.0)
     noisy[:, 3] = noisy[:, 1]
-    np.testing.assert_allclose(fit(noisy), base, rtol=0.0, atol=1e-6)
+    np.testing.assert_allclose(fit(noisy), base, rtol=1e-5, atol=0.0)
 
 
 @pytest.mark.parametrize("seed", [7, 18, 30, 36])

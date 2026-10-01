@@ -1820,7 +1820,12 @@ Key surface:
   backing `TorchTllBicop`; **internal** (not re-exported). Margin
   normalization uses Sinkhorn iterations to drive marginals to uniform, run
   to convergence as `InterpolationGrid` runs them: a flipped pair evaluates as
-  the original only to within the residual left.
+  the original only to within the residual left. After 25 passes Newton's
+  method on the row and column scalings finishes, as upstream's does, since
+  under strong dependence the passes alone need thousands. Both lanes keep the
+  normalization transposition-equivariant bit for bit: a pass and a Newton step
+  each treat rows and columns alike, so a grid and its transpose normalize to
+  transposes of each other.
 
 ### Top-level `pyvinecopulib`
 
