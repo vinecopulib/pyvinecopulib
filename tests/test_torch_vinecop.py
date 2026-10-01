@@ -2092,6 +2092,73 @@ def test_batched_fit_runs_one_call_per_tree(
   )
   assert seen == list(range(d - 1, 0, -1)), f"select did not batch: {seen}"
 
+  # A vine that already exists reads the same setting when refitted.
+  vine = TorchVinecop.from_data(torch.from_numpy(u_fit), structure=structure)
+  for method in ("fit", "select"):
+    seen.clear()
+    getattr(vine, method)(
+      torch.from_numpy(u_fit), FitControlsTorchVinecop(batched_fit=True)
+    )
+    assert seen == list(range(d - 1, 0, -1)), f"{method} did not batch: {seen}"
+
+
+@pytest.mark.parametrize("select", [False, True], ids=["fit", "select"])
+@pytest.mark.parametrize(
+  "var_types", [None, ["d", "c", "d", "c", "c"]], ids=["continuous", "discrete"]
+)
+def test_batched_fit_keeps_a_callers_fit_edge(
+  var_types: list[str] | None, select: bool
+) -> None:
+  """`batched_fit` batches the built-in fitter, never a caller's own.
+
+  The engines prefer a level fitter wherever one applies, so installing the
+  built-in one beside a caller's `fit_edge` would fit every level without
+  calling it. Every pair here is fitted by the same callback either way, so
+  the two vines agree bit for bit.
+  """
+  if var_types is None:
+    u = banded_pseudo_obs(d=5, n=600, seed=93)
+    structure = fit_tll_vinecop(u).structure
+  else:
+    u = _discrete_data(var_types, n=600, seed=5)
+    structure = _discrete_vinecop(var_types, u).structure
+  u_t = torch.from_numpy(u)
+  calls: dict[bool, list[tuple[int, int]]] = {False: [], True: []}
+
+  def fitter(flag: bool) -> Callable[..., TorchTllBicop]:
+    def fit_edge(
+      tree: int,
+      edge: int,
+      u_e: torch.Tensor,
+      x_e: torch.Tensor | None,
+      var_types: tuple[str, str] = ("c", "c"),
+    ) -> TorchTllBicop:
+      del x_e
+      calls[flag].append((tree, edge))
+      return TorchTllBicop.from_data(u_e, var_types=list(var_types))
+
+    return fit_edge
+
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t,
+      controls=FitControlsTorchVinecop(batched_fit=flag),
+      structure=None if select else structure,
+      var_types=var_types,
+      fit_edge=fitter(flag),
+    )
+    for flag in (False, True)
+  }
+  assert len(calls[True]) == 10
+  assert calls[True] == calls[False]
+  np.testing.assert_array_equal(
+    np.asarray(fits[True].structure.matrix),
+    np.asarray(fits[False].structure.matrix),
+  )
+  torch.testing.assert_close(
+    fits[True].logpdf(u_t), fits[False].logpdf(u_t), atol=0.0, rtol=0.0
+  )
+
 
 @pytest.mark.parametrize(
   ("kwargs", "why"),
