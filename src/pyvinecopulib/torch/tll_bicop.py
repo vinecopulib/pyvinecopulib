@@ -491,9 +491,11 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     Notes
     -----
-    A pair's fit is unaffected by *which* other pairs share its call: each
-    lane's bandwidth search freezes as it converges, so the iterations a pair
-    takes are the ones its own data earns.
+    Each lane's bandwidth search freezes as it converges, so the iterations a
+    pair takes are the ones its own data earns, and on cpu its fit is
+    unaffected by *which* other pairs share its call. On an accelerator its
+    last bits also depend on when theirs converge, since the search then runs
+    over fewer rows and the row count picks the kernels.
 
     It is affected by *how many*, in the last bits. Torch selects elementwise
     kernels by element count, so stacking ``P`` pairs agrees with fitting them
