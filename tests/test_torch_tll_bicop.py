@@ -647,11 +647,11 @@ def test_cached_integrals_carry_a_grid_gradient() -> None:
 def _exact_rect_prob(
   grid: list[Fraction], values: list[list[Fraction]], rect: tuple[Fraction, ...]
 ) -> Fraction:
-  """The four-corner difference of the renormalized distribution function.
+  """The rectangle's mass under the bilinear interpolant, exactly.
 
-  Exact rational arithmetic throughout, so it is the reference the float routes
-  are measured against. ``C(u1, u2) = M(u1, u2) * u2 / M(1, u2)``, the object
-  ``integrate_2d`` computes.
+  Rational arithmetic throughout, so it is the reference the float routes are
+  measured against. It is also the four-corner difference of the distribution
+  function ``integrate_2d`` computes, which is the same mass from the origin.
   """
   m = len(grid)
 
@@ -696,36 +696,26 @@ def _exact_rect_prob(
       Fraction(0),
     )
 
-  def cdf(u1: Fraction, u2: Fraction) -> Fraction:
-    total = mass(Fraction(0), Fraction(1), Fraction(0), u2)
-    return (
-      Fraction(0)
-      if total == 0
-      else mass(Fraction(0), u1, Fraction(0), u2) * u2 / total
-    )
-
-  a1, b1, a2, b2 = rect
-  return cdf(b1, b2) - cdf(a1, b2) - cdf(b1, a2) + cdf(a1, a2)
+  return mass(*rect)
 
 
-# Both bounds move with the width, which is the point: differencing four
-# distribution values amplifies any absolute error by ~4 / (w1 w2), where
-# `rect_mass` amplifies by 1 / w2 alone -- one power instead of two, because
-# only its `lam` difference cancels and that multiplies a term of order w1.
-# Measuring both in one run is what shows the gap is the construction rather
-# than the test data: the two agree at 3/8 and are 3000x apart at 1/8192.
-# Dyadic endpoints keep `float(x) == x`, so the comparison is against the
-# algorithm and not against how the query points round.
+# Differencing four distribution values amplifies any absolute error by
+# ~4 / (w1 w2), while `rect_mass` sums nonnegative terms and cancels nothing, so
+# its error does not grow with the width at all. Measuring both in one run is
+# what shows the gap is the construction rather than the test data: the two
+# agree at 3/8 and are six orders apart at 1/8192. Dyadic endpoints and values
+# keep `float(x) == x`, so the comparison is against the algorithm and not
+# against how the inputs round.
 @pytest.mark.parametrize(
   "width,tol_rect,tol_diff",
   [
-    # One decade of tolerance per decade of width for `rect_mass`, two for the
+    # Flat for `rect_mass`, two decades per decade of width for the
     # difference -- which is the finding, stated as the shape of the table.
-    (Fraction(3, 8), 3e-15, 3e-15),
-    (Fraction(1, 16), 3e-14, 1e-13),
-    (Fraction(1, 64), 1e-13, 3e-12),
-    (Fraction(1, 1024), 2e-12, 1e-9),
-    (Fraction(1, 8192), 1e-11, 3e-8),
+    (Fraction(3, 8), 1e-14, 1e-14),
+    (Fraction(1, 16), 1e-14, 1e-13),
+    (Fraction(1, 64), 1e-14, 3e-12),
+    (Fraction(1, 1024), 1e-14, 1e-9),
+    (Fraction(1, 8192), 1e-14, 3e-8),
   ],
 )
 def test_rect_mass_is_exact_at_every_atom_width(
@@ -738,11 +728,15 @@ def test_rect_mass_is_exact_at_every_atom_width(
 
   m = 30
   grid_f = [Fraction(i, m - 1) for i in range(m)]
+  # scaled by a power of two, so the total mass stays below one and the
+  # distribution function inside its clamp
   raw = np.random.default_rng(4).integers(1, 4000, size=(m, m))
-  values_f = [[Fraction(int(raw[i, j])) for j in range(m)] for i in range(m)]
+  values_f = [
+    [Fraction(int(raw[i, j]), 2048) for j in range(m)] for i in range(m)
+  ]
 
   gp = torch.tensor([float(x) for x in grid_f], dtype=torch.float64)
-  vals = torch.tensor(raw, dtype=torch.float64)
+  vals = torch.tensor(raw, dtype=torch.float64) / 2048
   grid = InterpolationGrid2D(gp, vals, norm_maxiter=0, is_linear=True)
 
   rng = np.random.default_rng(5)

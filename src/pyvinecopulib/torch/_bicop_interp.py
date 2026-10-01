@@ -390,9 +390,8 @@ class InterpolationGrid2D(torch.nn.Module):
     The normalization runs to convergence, as ``InterpolationGrid`` runs it:
     it stops once the margins' residual is at machine precision or, already at
     the level of rounding, no longer shrinks. A grid left short of uniform
-    margins is not a copula density, and its distribution function, which
-    rescales one argument's margin only, then depends on which argument is
-    first by as much as the residual. Passes converge slowly under strong
+    margins is not a copula density: its masses are not probabilities, by as
+    much as the residual. Passes converge slowly under strong
     dependence, so after the first few dozen :func:`_newton_margins` finishes,
     in a handful of steps.
 
@@ -498,10 +497,9 @@ class InterpolationGrid2D(torch.nn.Module):
     """Bivariate CDF: ``int_0^{u1} int_0^{u2} c(s, t) dt ds``.
 
     Trapezoidally integrate each grid row up to ``u2`` to get an
-    ``(n, m)`` strip, then integrate that strip up to ``u1``,
-    renormalizing by the full-strip outer integral so C(1, u2) = u2
-    holds exactly (post-vinecopulib#667 C++ behavior). Clamped strictly
-    inside ``[0, 1]``. Thin ``N=1`` wrapper over
+    ``(n, m)`` strip, then integrate that strip up to ``u1``: the mass of the
+    interpolated density below and left of ``u``. Clamped strictly inside
+    ``[0, 1]``. Thin ``N=1`` wrapper over
     :func:`._batched.integrate_2d_batched`.
     """
     return integrate_2d_batched(
@@ -603,9 +601,8 @@ class InterpolationGrid2D(torch.nn.Module):
     a fixed linear combination of two columns of ``values`` -- so integrating it
     over the first argument reads ``sx`` rather than needing its own table.
 
-    The result carries the same ``* u2 / total`` renormalization and domain
-    clamp as :meth:`integrate_2d`, so it is that function's
-    value and not a different definition of it.
+    The result carries the same domain clamp as :meth:`integrate_2d`, so it is
+    that function's value and not a different definition of it.
 
     Parameters
     ----------
@@ -620,7 +617,6 @@ class InterpolationGrid2D(torch.nn.Module):
         Distribution values.
     """
     g = self.grid_points
-    m = g.shape[0]
     uu = u.clamp(0.0, 1.0)
     u1, u2 = uu[:, 0], uu[:, 1]
     ic = self._cell_index(u1)
@@ -644,10 +640,7 @@ class InterpolationGrid2D(torch.nn.Module):
     out = out + be * s_partial(
       self.values[ic, jc + 1], self.values[ic + 1, jc + 1]
     )
-    # the same expression at u1 = 1, where both first-argument partials vanish
-    last = torch.full_like(jc, m - 1)
-    total = p[last, jc] + al * sx[last, jc] + be * sx[last, jc + 1]
-    return trim(out * u2 / total.clamp_min(_MIN_MASS), TENSOR_NS)
+    return trim(out, TENSOR_NS)
 
   def _interval_weights(self, lo: Tensor, hi: Tensor) -> Tensor:
     """Nonnegative quadrature weights for ``int_lo^hi`` on the grid.
@@ -707,36 +700,6 @@ class InterpolationGrid2D(torch.nn.Module):
       w = w.scatter_add(1, col.unsqueeze(1), val.unsqueeze(1))
     return w
 
-  def _row_cum(self) -> Tensor:
-    """Each grid line's cumulative integral along the second argument.
-
-    The ``sy`` of :meth:`build_caches`, which this repeats rather than reads:
-    the rectangle routines run in both cache modes, and it is ``O(m^2)`` where
-    a per-query sweep along every line would be ``O(n m^2)``.
-    """
-    inc = 0.5 * (self.values[:, :-1] + self.values[:, 1:]) * self._dgrid
-    return torch.cat([torch.zeros_like(inc[:, :1]), inc.cumsum(dim=1)], dim=1)
-
-  def _row_integrals(self, u: Tensor) -> Tensor:
-    """Every grid line's integral over ``[0, u]``, one row per query.
-
-    Parameters
-    ----------
-    u : Tensor, shape (n,), dtype float
-        Upper limits, clamped to ``[0, 1]``.
-
-    Returns
-    -------
-    Tensor, shape (n, m), dtype float
-        One integral per grid line.
-    """
-    y = u.clamp(0.0, 1.0)
-    j, frac, s = _locate(self.grid_points, y, self._is_linear)
-    vt = self.values.t()
-    v0, v1 = vt[j], vt[j + 1]
-    part = (2.0 * v0 + (v1 - v0) * frac[:, None]) * s[:, None] / 2.0
-    return self._row_cum().t()[j] + part
-
   def cond_interval_mass(
     self, u_cond: Tensor, lo: Tensor, hi: Tensor, cond_var: int
   ) -> Tensor:
@@ -782,24 +745,15 @@ class InterpolationGrid2D(torch.nn.Module):
     return (w * line).sum(dim=1) / total
 
   def rect_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
-    """The exact probability of ``(a1, b1] x (a2, b2]``, without the cancellation.
+    """The exact mass of ``(a1, b1] x (a2, b2]``, without the cancellation.
 
-    The value the four-corner difference of :meth:`cdf_cached` defines, arranged
-    so that almost none of it cancels. Differencing those four values turns an
-    absolute error ``eps`` into ``~4 eps / (w1 w2)`` in the rectangle's widths;
-    this route amplifies by ``1 / w2`` alone, one power instead of two. On a
-    ``1.2e-4``-wide rectangle that is ``2.9e-12`` against the difference's
-    ``8.7e-9``.
-
-    ``cdf`` renormalizes each line of the grid by its own total, so the
-    probability is not simply the mass. Writing ``lam(y) = y / M(1, y)`` for that
-    factor, ``R`` for the rectangle's own mass and ``S`` for the mass of
-    ``(a1, b1] x (0, a2]``, the four-corner difference is
-    ``lam(b2) R + (lam(b2) - lam(a2)) S``. ``R`` and ``S`` are sums of
-    nonnegative terms and do not cancel at all; only the ``lam`` difference
-    does, and expanded over the common denominator it cancels against
-    ``b2 - a2`` rather than against one -- formed as ``lam(b2) - lam(a2)`` it
-    would swamp the first term on a low-mass rectangle.
+    ``wx' V wy`` for the nonnegative quadrature weights of the two intervals,
+    a sum of nonnegative terms, so nothing cancels however narrow the
+    rectangle: differencing four values of the distribution function would
+    turn an absolute error ``eps`` into ``~4 eps / (w1 w2)`` in its widths. It
+    is the probability of the rectangle wherever the margins are uniform, which
+    they are for every fitted grid. Summed with either argument first and
+    averaged, so a grid and its transpose give the same value bit for bit.
 
     Parameters
     ----------
@@ -810,32 +764,18 @@ class InterpolationGrid2D(torch.nn.Module):
     Returns
     -------
     Tensor, shape (n,), dtype float
-        Rectangle probabilities.
+        Rectangle masses.
     """
     # Rotating the data can leave a left limit above its own value.
     x0, x1 = torch.minimum(a1, b1), torch.maximum(a1, b1)
     y0, y1 = torch.minimum(a2, b2), torch.maximum(a2, b2)
-
     wx = self._interval_weights(x0, x1)
-    below = self._row_integrals(y0)
-    # With nothing below to subtract the cumulative integrals are the strip
-    # itself, which is the case every discrete h-function hits.
-    strip = torch.where(
-      (y0 > 0.0).unsqueeze(-1),
-      self._interval_weights(y0, y1) @ self.values.t(),
-      self._row_integrals(y1),
-    )
-
-    w = self.trap_weights
-    m_strip = strip @ w
-    m_below = (below @ w).clamp_min(_MIN_MASS)
-    # Formed additively, so that the two terms below are consistent: an
-    # independent quadrature of the whole column would not cancel against the
-    # strip it is supposed to contain.
-    total = (m_below + m_strip).clamp_min(_MIN_MASS)
-    dlam = ((y1 - y0) * m_below - y0 * m_strip) / (total * m_below)
-    out = y1 * (wx * strip).sum(dim=1) / total
-    out = out + dlam * (wx * below).sum(dim=1)
+    wy = self._interval_weights(y0, y1)
+    # The transpose materialized, so that either order is a product against a
+    # contiguous grid, and a transposed grid runs the other one bit for bit.
+    rows = (wx * (wy @ self.values.t().contiguous())).sum(dim=1)
+    cols = (wy * (wx @ self.values)).sum(dim=1)
+    out = 0.5 * (rows + cols)
     empty = ~((x1 > x0) & (y1 > y0))
     return torch.where(empty, torch.zeros_like(out), out)
 
