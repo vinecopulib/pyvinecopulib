@@ -1037,12 +1037,14 @@ def _many_level_data(n: int, seed: int) -> tuple[np.ndarray, list[str]]:
 def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree() -> None:
   """Selected or refitted on its structure, in either lane, a mixed vine is one.
 
-  The two lanes' h-functions, and a selection's against a refit's, differ in
-  their last bits: selection fits a pair in the search's orientation and
-  stores it flipped, a refit fits it in place. A discrete fit moves
-  continuously with its data (vinecopulib#799), so the fits agree to about
-  that noise over the ranks' scale, the square root of the machine epsilon
-  -- not to rounding, but never by the jump a redrawn latent sample was.
+  The first tree agrees as single pairs do: to rounding within a lane, and
+  across lanes to the parity ``test_from_data_matches_cpp`` holds a pair to.
+  From the second tree on, each discrete edge carries such a difference on
+  with the gain of its soft ranks, about ``1e5`` on this vine -- a first-tree
+  difference of ``7e-14`` between the lanes reaches ``5e-9`` by the fourth
+  tree on x86, and the fourth tree reaches ``2e-8`` on macOS arm64. So the
+  whole vine agrees to ``1e-6``: continuously, never by the jump a redrawn
+  latent sample was.
   """
   u, var_types = _many_level_data(n=2000, seed=8)
   cop = pv.Vinecop.from_data(u, var_types=var_types, controls=_TLL_CONTROLS)
@@ -1072,17 +1074,18 @@ def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree() -> None:
     np.testing.assert_array_equal(fit.matrix, cop.matrix, err_msg=name)
     for tree in range(cop.trunc_lvl):
       for edge in range(cop.dim - tree - 1):
+        bound = 1e-11 if tree == 0 else 1e-6
         np.testing.assert_allclose(
           grid(fit, tree, edge),
           grid(cop, tree, edge),
-          rtol=1e-8,
-          atol=1e-8,
+          rtol=bound,
+          atol=bound,
           err_msg=f"{name}: tree {tree}, edge {edge}",
         )
   np.testing.assert_allclose(
     torch_fits["selection"].pdf(torch.from_numpy(u)).numpy(),
     cop.pdf(u),
-    rtol=1e-8,
+    rtol=1e-6,
   )
 
 
