@@ -279,6 +279,52 @@ class TorchVinecop(
     return True if cache_integrals is None else bool(cache_integrals)
 
   @classmethod
+  def _batches_fit(cls, controls: ControlsLike | None, u: object) -> bool:
+    """Whether a fit works a level at a time: ``controls.batched_fit``.
+
+    ``None`` resolves per device, as the evaluation cascade's ``batched``
+    does: a level-wide call buys launch amortization, which cpu has none of.
+    """
+    batched = getattr(controls, "batched_fit", None)
+    if batched is None:
+      return isinstance(u, Tensor) and u.device.type == "cuda"
+    return bool(batched)
+
+  @classmethod
+  def _resolve_fit_level(
+    cls,
+    fit_level: FitLevel | None,
+    fit_edge: FitEdge | None,
+    controls: ControlsLike | None,
+    u: Tensor,
+  ) -> FitLevel | None:
+    """The caller's level fitter, else the stacked TLL fit where it batches.
+
+    A caller's ``fit_edge`` keeps the built-in level fitter out, since the
+    engines would otherwise fit every simplified level without calling it.
+    """
+    if fit_level is not None or fit_edge is not None:
+      return fit_level
+    pair_cls = cls.bicop_class
+    if not (
+      isinstance(pair_cls, type)
+      and issubclass(pair_cls, TorchTllBicop)
+      and cls._batches_fit(controls, u)
+    ):
+      return None
+    tll_cls = pair_cls
+
+    def fit_level_tll(
+      tree: int, u_level: Tensor, types: list[tuple[str, str]]
+    ) -> Sequence[BicopLike[Tensor]]:
+      del tree  # a level reaching here is simplified
+      return tll_cls.from_data_batched(
+        u_level, cast("Any", controls), var_types=types
+      )
+
+    return fit_level_tll
+
+  @classmethod
   def from_vinecop(
     cls,
     cop: Vinecop,
@@ -527,82 +573,10 @@ class TorchVinecop(
     # `var_types` that fixes the dimension.
     d = len(var_types) if var_types else int(u_t.shape[1])
 
-    # The vine's controls are pair controls: `FitControlsTorchVinecop`
-    # derives from `FitControlsTorchBicop`, as its core counterparts do.
-    bc_controls = resolved
-    cache_integrals = cls._resolve_cache_integrals(resolved.cache_integrals)
-
-    def fit_edge_tll(
-      tree: int,
-      edge: int,
-      u_e: Tensor,
-      x_e: Tensor | None,
-      var_types: Sequence[str] = ("c", "c"),
-    ) -> BicopLike[Tensor]:
-      # `var_types` here is *this edge's* two types, which the fit engines pass
-      # by that keyword; the vine's own list is the enclosing argument.
-      # Simplified (unconditional) TLL fit — x_e is None here.
-      del tree, edge, x_e
-      bc = TorchTllBicop.from_data(
-        u_e,
-        bc_controls,
-        cache_integrals=cache_integrals,
-        device=u_t.device,
-        dtype=eff_dtype,
-        var_types=list(var_types),
-      )
-      # A discrete edge propagates through the mixed-discrete surface, which
-      # is also what the next tree's four-column input is built from. The pair
-      # carries the declaration itself, so nothing wraps it.
-      return bc.with_var_types(var_types)
-
-    if fit_edge is not None:
-      # A caller who brings their own pair fitter overrides the built-in TLL
-      # one; this is also what makes the signature a widening of
-      # `VinecopBase.from_data`, whose `fit_edge` is required.
-      pair_fitter: FitEdge = fit_edge
-    else:
-      pair_fitter = fit_edge_tll
-
-    # `None` resolves per device, as the evaluation cascade's `batched` does:
-    # the per-level fitter buys launch amortization, which cpu has none of.
-    batched_fit = resolved.batched_fit
-    if batched_fit is None:
-      batched_fit = u_t.device.type == "cuda"
-
-    def fit_level_tll(
-      tree: int, u_level: Tensor, types: list[tuple[str, str]]
-    ) -> Sequence[BicopLike[Tensor]]:
-      """Fit a whole tree level in one call.
-
-      Parameters
-      ----------
-      tree : int
-          Tree index; unused, the fit needing no structural context.
-      u_level : Tensor, shape (N_t, n, 2) or (N_t, n, 4)
-          The level's edges, stacked in ascending edge order; four columns
-          throughout when any edge is discrete.
-      types : list of tuple of str
-          Each edge's variable types.
-
-      Returns
-      -------
-      sequence of BicopLike
-          One fitted pair copula per edge, in the same order.
-      """
-      del tree  # a level reaching here is simplified
-      return TorchTllBicop.from_data_batched(
-        u_level,
-        bc_controls,
-        var_types=types,
-        cache_integrals=cache_integrals,
-        device=u_t.device,
-        dtype=eff_dtype,
-      )
-
-    # A caller's own level fitter wins, as their `fit_edge` does; otherwise
-    # the built-in one, and only where batching is worth its launch overhead.
-    level_hook = fit_level or (fit_level_tll if batched_fit else None)
+    # The same resolution `fit` and `select` run: a caller's fitters win, and
+    # the stacked TLL fit applies where the controls batch.
+    pair_fitter = cls._resolve_fit_edge(fit_edge, resolved)
+    level_hook = cls._resolve_fit_level(fit_level, fit_edge, resolved, u_t)
     cond_order: dict[tuple[int, int], tuple[int, ...]] = {}
 
     if structure is None:
