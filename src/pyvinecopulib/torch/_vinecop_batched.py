@@ -482,15 +482,39 @@ def _prefix(x: Tensor, dim: int) -> tuple[Tensor, Tensor]:
   return torch.cat([zero, hi], dim), torch.cat([zero, lo], dim)
 
 
+def _row_tables(grid_points: Tensor, values: Tensor) -> list[Tensor]:
+  """The compensated tables of each grid line along the second argument.
+
+  ``sy`` and its error along every row, and ``p``, the double prefix built
+  rows first, with its error. The same function on the transposed grid gives
+  the tables along the first argument, so the two sets are mirror images of
+  each other bit for bit.
+  """
+  dg = grid_points[1:] - grid_points[:-1]
+  cy = 0.5 * (values[..., :-1] + values[..., 1:]) * dg
+  cell = 0.5 * (cy[:, :-1, :] + cy[:, 1:, :]) * dg[:, None]
+  sy, sy_lo = _prefix(cy, 2)
+  rows, rows_lo = _prefix(cell, 2)
+  p, p_lo = _prefix(rows, 1)
+  zero = torch.zeros_like(rows_lo[:, :1, :])
+  p_lo = p_lo + torch.cat([zero, rows_lo.cumsum(1)], 1)
+  return [sy, sy_lo, p, p_lo]
+
+
 def mass_tables(grid_points: Tensor, values: Tensor) -> Tensor:
   """What :func:`rect_mass_batched` and :func:`cond_interval_mass_batched` read.
 
-  Per pair, the density grid and its three prefix-integral tables -- ``sy``
-  along the second argument, ``sx`` along the first, and ``p`` over both, the
-  tables of ``InterpolationGrid2D.build_caches`` -- summed cell by cell and
-  compensated (:func:`_prefix`). A probability is then a few reads of a 4x4
-  stencil around its interval's ends instead of a quadrature over every grid
-  node, which is what made it ``O(m)`` per query.
+  Per pair, the density grid; ``sy`` and ``sx``, the cumulative integrals of
+  every grid line along the second and along the first argument; and ``p``,
+  the double prefix over both -- each summed cell by cell and compensated
+  (:func:`_prefix`). A mass is then a few reads of a 4x4 stencil around its
+  interval's ends instead of a quadrature over every grid node, which is what
+  made it ``O(m)`` per query.
+
+  The tables along the first argument are those along the second of the
+  transposed grid, and ``p`` is the mean of the double prefix built rows first
+  and columns first, so the tables of a transposed grid are the transposed
+  tables, bit for bit.
 
   Parameters
   ----------
@@ -505,18 +529,12 @@ def mass_tables(grid_points: Tensor, values: Tensor) -> Tensor:
       The channels ``_V`` .. ``_P_LO``, flattened over the grid row-major.
   """
   n_batch, m, _ = values.shape
-  dg = grid_points[1:] - grid_points[:-1]
-  # Cell by cell: each line's trapezoids along either argument, and the
-  # bilinear cell masses, all nonnegative.
-  cy = 0.5 * (values[..., :-1] + values[..., 1:]) * dg
-  cx = 0.5 * (values[:, :-1, :] + values[:, 1:, :]) * dg[:, None]
-  cell = 0.5 * (cy[:, :-1, :] + cy[:, 1:, :]) * dg[:, None]
-  sy, sy_lo = _prefix(cy, 2)
-  sx, sx_lo = _prefix(cx, 1)
-  rows, rows_lo = _prefix(cell, 2)
-  p, p_lo = _prefix(rows, 1)
-  zero = torch.zeros_like(rows_lo[:, :1, :])
-  p_lo = p_lo + torch.cat([zero, rows_lo.cumsum(1)], 1)
+  sy, sy_lo, p_r, p_r_lo = _row_tables(grid_points, values)
+  flipped = _row_tables(grid_points, values.transpose(-1, -2).contiguous())
+  sx, sx_lo, p_c, p_c_lo = (t.transpose(-1, -2) for t in flipped)
+  # the mean of the two orders, its rounding kept exactly
+  total, err = _two_sum(p_r, p_c)
+  p, p_lo = 0.5 * total, 0.5 * (err + (p_r_lo + p_c_lo))
   out = torch.stack([values, sy, sy_lo, sx, sx_lo, p, p_lo], dim=-1)
   return out.reshape(n_batch, m * m, 7)
 
@@ -673,7 +691,9 @@ def cond_interval_mass_batched(
   if cond_var == 1:
     st, ch = _stencil(tables, lines, free, m), _SY
   else:
-    st, ch = _stencil(tables, free, lines, m).transpose(-1, -2), _SX
+    # contiguous, so that both orientations reduce the same layout
+    st = _stencil(tables, free, lines, m).transpose(-1, -2).contiguous()
+    ch = _SX
   # (7, N, n, 2 lines, 5 free nodes): partial cells, then the whole ones.
   line_mass = (w.unsqueeze(-2) * st[_V, ..., :4]).sum(-1)
   d = _whole(st, -1)
@@ -682,6 +702,11 @@ def cond_interval_mass_batched(
   total = st[ch, ..., 4] + st[ch + 1, ..., 4]
   mass = torch.lerp(line_mass[..., 0], line_mass[..., 1], t)
   return mass / torch.lerp(total[..., 0], total[..., 1], t).clamp_min(_MIN_MASS)
+
+
+def _sum4(t: Tensor) -> Tensor:
+  """The four entries along the last axis, added in a fixed order."""
+  return ((t[..., 0] + t[..., 1]) + t[..., 2]) + t[..., 3]
 
 
 def rect_mass_batched(
@@ -693,29 +718,22 @@ def rect_mass_batched(
   b2: Tensor,
   is_linear: bool = False,
 ) -> Tensor:
-  """The exact probability of ``(a1, b1] x (a2, b2]``, without the cancellation.
+  """The exact mass of ``(a1, b1] x (a2, b2]``, without the cancellation.
 
-  The value the four-corner difference of the cached distribution function
-  defines, arranged so that almost none of it cancels. Differencing those four
-  values turns an absolute error ``eps`` into ``~4 eps / (w1 w2)`` in the
-  rectangle's widths; this route amplifies by ``1 / w2`` alone, one power
-  instead of two.
+  The mass of the interpolated density over the rectangle, which is its
+  probability once the margins are uniform, as a fitted grid's are to
+  rounding. Differencing four values of the distribution function would turn
+  an absolute error ``eps`` into ``~4 eps / (w1 w2)`` in the rectangle's
+  widths; this sums nonnegative terms and cancels nothing.
 
-  The distribution function renormalizes each line of the grid by its own
-  total, so the probability is not simply the mass. Writing
-  ``lam(y) = y / M(1, y)`` for that factor, ``R`` for the rectangle's own mass
-  and ``S`` for the mass of ``(a1, b1] x (0, a2]``, the four-corner difference
-  is ``lam(b2) R + (lam(b2) - lam(a2)) S``. ``R`` and ``S`` are sums of
-  nonnegative terms and do not cancel at all; only the ``lam`` difference
-  does, and expanded over the common denominator it cancels against
-  ``b2 - a2`` rather than against one -- formed as ``lam(b2) - lam(a2)`` it
-  would swamp the first term on a low-mass rectangle.
-
-  Each mass is its partial cells, summed directly, plus its whole cells, read
+  The mass is its partial cells, summed directly, plus its whole cells, read
   as compensated differences of the prefix tables (:func:`mass_tables`), so
   the cost per query does not depend on the grid size. The tables are exact to
   ``~1e-32`` absolute, so a mass is accurate relative to itself down to about
-  ``1e-16`` and absolutely below that.
+  ``1e-16`` and absolutely below that. Every piece is read with either
+  argument first, or from mirror-image tables, and the two orders meet in
+  commutative sums, so a grid and its transpose give the same value bit for
+  bit.
 
   Parameters
   ----------
@@ -732,83 +750,40 @@ def rect_mass_batched(
   Returns
   -------
   Tensor, shape (N, n), dtype float
-      Rectangle probabilities.
+      Rectangle masses.
   """
   # Rotating the data can leave a left limit above its own value.
   x0, x1 = torch.minimum(a1, b1), torch.maximum(a1, b1)
   y0, y1 = torch.minimum(a2, b2), torch.maximum(a2, b2)
-  g = grid_points
-  m = g.shape[0]
+  m = grid_points.shape[0]
   nodes, w, inner = _pieces(
-    g, torch.stack([x0, y0]), torch.stack([x1, y1]), is_linear
+    grid_points, torch.stack([x0, y0]), torch.stack([x1, y1]), is_linear
   )
   (px, py), (wx, wy), (in_x, in_y) = nodes, w, inner
-  # The first argument's stencil and the last node, which is where `sx` and
-  # `p` hold the masses over all of the first argument.
-  rows = torch.cat([px, torch.full_like(px[..., :1], m - 1)], dim=-1)
-  st = _stencil(tables, rows, py, m)  # (7, N, n, 5, 4)
-  v = st[_V, ..., :4, :]
-  # Whole cells in the second argument, per first-argument node, and in the
-  # first, per second-argument node.
-  dy = _whole(st, -1)  # (7, N, n, 5)
-  dx = _whole(st, -2)  # (7, N, n, 4)
+  st = _stencil(tables, px, py, m)  # (7, N, n, 4, 4)
+  v = st[_V]
 
-  # R, the rectangle's own mass: partial cells in both arguments, partial in
-  # one and whole in the other, and whole in both.
-  pp = (wx.unsqueeze(-1) * wy.unsqueeze(-2) * v).sum((-1, -2))
-  x_part = (wx * (dy[_SY, ..., :4] + dy[_SY_LO, ..., :4])).sum(-1)
-  y_whole = dx[_SX] + dx[_SX_LO]
-  x_whole = (wy * y_whole).sum(-1)
-  # The whole-by-whole block is a four-corner difference of `p`, so its first
-  # stage keeps its rounding error exactly and the second cannot cancel
-  # against it.
-  s1, e1 = _two_sum(st[_P, ..., 2, 1:3], -st[_P, ..., 1, 1:3])
-  both = (s1[..., 1] - s1[..., 0]) + (
-    (e1[..., 1] - e1[..., 0]) + (dx[_P_LO, ..., 2] - dx[_P_LO, ..., 1])
-  )
-  r = (
-    pp
-    + torch.where(in_y, x_part, 0.0)
-    + torch.where(in_x, x_whole + torch.where(in_y, both, 0.0), 0.0)
-  )
-
-  # `y0` falls in the stencil's first cell, so the mass below it is read at
-  # nodes 0 and 1: the prefix at node 0 plus the partial cell up to `y0`,
-  # whose two node weights are `cdf_cached`'s `al` / `be`.
-  j0 = py[..., 0]
-  s = y0.clamp(0.0, 1.0) - g[j0]
-  f = s / (g[j0 + 1] - g[j0])
-  al, be = s / 2.0 * (2.0 - f), s / 2.0 * f
-  below_line = (
-    st[_SY, ..., :4, 0]
-    + st[_SY_LO, ..., :4, 0]
-    + al.unsqueeze(-1) * v[..., 0]
-    + be.unsqueeze(-1) * v[..., 1]
-  )
-  s_part = (wx * below_line).sum(-1)
-  # The whole cells in the first argument below `y0`: their prefix mass up to
-  # node 0, plus the same partial cell, taken across them.
-  p_below = dx[_P, ..., 0] + dx[_P_LO, ..., 0]
-  s_mass = s_part + torch.where(
-    in_x, p_below + al * y_whole[..., 0] + be * y_whole[..., 1], 0.0
-  )
-
-  # The masses over the whole first argument, off its last node.
-  sx_last = st[_SX, ..., 4, :] + st[_SX_LO, ..., 4, :]
-  m_strip = (wy * sx_last).sum(-1) + torch.where(
-    in_y, dy[_P, ..., 4] + dy[_P_LO, ..., 4], 0.0
-  )
-  p_last = st[_P, ..., 4, 0] + st[_P_LO, ..., 4, 0]
-  m_below = (p_last + al * sx_last[..., 0] + be * sx_last[..., 1]).clamp_min(
-    _MIN_MASS
-  )
-
-  # Formed additively, so that the two terms below are consistent: an
-  # independent quadrature of the whole column would not cancel against the
-  # strip it is supposed to contain.
-  total = (m_below + m_strip).clamp_min(_MIN_MASS)
-  dlam = ((y1 - y0) * m_below - y0 * m_strip) / (total * m_below)
-  out = y1 * r / total + dlam * s_mass
+  # Partial cells in both arguments, summed rows first and columns first.
+  rows = _sum4(wx * _sum4(v * wy.unsqueeze(-2)))
+  cols = _sum4(wy * _sum4(v.transpose(-1, -2) * wx.unsqueeze(-2)))
+  pp = 0.5 * (rows + cols)
+  # Partial in one argument and whole in the other, off the line tables along
+  # the whole cells' argument.
+  dy, dx = _whole(st, -1), _whole(st, -2)  # (7, N, n, 4)
+  x_part = _sum4(wx * (dy[_SY] + dy[_SY_LO]))
+  y_part = _sum4(wy * (dx[_SX] + dx[_SX_LO]))
+  strips = torch.where(in_y, x_part, 0.0) + torch.where(in_x, y_part, 0.0)
+  # Whole in both: a four-corner difference of `p`, its two diagonals paired
+  # so the first stage keeps its rounding error exactly and the second cannot
+  # cancel against it.
+  corner = st[_P, ..., 1:3, 1:3]
+  corner_lo = st[_P_LO, ..., 1:3, 1:3]
+  on, e_on = _two_sum(corner[..., 1, 1], corner[..., 0, 0])
+  off, e_off = _two_sum(corner[..., 0, 1], corner[..., 1, 0])
+  lo_on = corner_lo[..., 1, 1] + corner_lo[..., 0, 0]
+  lo_off = corner_lo[..., 0, 1] + corner_lo[..., 1, 0]
+  both = (on - off) + ((e_on - e_off) + (lo_on - lo_off))
+  out = pp + (strips + torch.where(in_x & in_y, both, 0.0))
   empty = ~((x1 > x0) & (y1 > y0))
   return torch.where(empty, torch.zeros_like(out), out)
 
