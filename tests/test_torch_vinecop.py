@@ -2308,3 +2308,32 @@ def test_a_pickle_does_not_carry_the_batched_cache() -> None:
   torch.testing.assert_close(
     back.pdf(u, batched=True), vine.pdf(u, batched=True)
   )
+
+
+@pytest.mark.parametrize("batched", [False, True])
+def test_a_vine_without_mass_at_an_atom_answers_as_vinecop_does(
+  batched: bool,
+) -> None:
+  """Where a discrete pair has no mass, the vine's density is as ``Vinecop``'s.
+
+  Both cascades clamp a discrete pair's density to the smallest normal float,
+  as ``Bicop.pdf`` does, so the vine's log-density stays finite at an
+  observation whose atom the pair gives no mass. The pair's grid is zero over
+  a corner block, and the first atom lies in it.
+  """
+  grid = np.linspace(0.0, 1.0, 30)
+  values = np.exp(-40.0 * np.abs(grid[:, None] - grid[None, :]))
+  values[:8, 22:] = 0.0
+  values[22:, :8] = 0.0
+  pair = pv.Bicop.from_family(pv.families.tll, parameters=values)
+  cop = pv.Vinecop.from_structure(
+    pv.DVineStructure([1, 2]), pair_copulas=[[pair]], var_types=["d", "d"]
+  )
+  vine = TorchVinecop.from_vinecop(cop)
+  u = np.array([[0.03, 0.99, 0.01, 0.96], [0.5, 0.5, 0.45, 0.45]])
+  got = vine.pdf(torch.from_numpy(u), batched=batched).numpy()
+  want = cop.pdf(u)
+  # the vine's density is an exp of summed logs, so the floor comes back to
+  # rounding rather than exactly
+  np.testing.assert_allclose(got, want, rtol=1e-12)
+  np.testing.assert_allclose(got[0], np.finfo(np.float64).tiny, rtol=1e-12)
