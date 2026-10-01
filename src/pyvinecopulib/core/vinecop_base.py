@@ -83,6 +83,7 @@ from ._vinecop_discrete import (
   stack_edge,
 )
 from ._vinecop_fit_engines import (
+  EvalLevel,
   FitEdge,
   FitLevel,
   fit_parts,
@@ -2077,6 +2078,30 @@ class VinecopBase(
     del fit_edge, controls, u
     return fit_level
 
+  @classmethod
+  def _resolve_eval_level(
+    cls, controls: ControlsLike | None, u: ArrayT
+  ) -> EvalLevel | None:
+    """The stacked h-function evaluator a fit uses, or ``None``.
+
+    ``None`` here, so a fit evaluates each fitted pair on its own. A lane
+    that can evaluate a level's pairs together overrides this.
+
+    Parameters
+    ----------
+    controls : ControlsLike, or None
+        The fit configuration.
+    u : array
+        The data the fit reads.
+
+    Returns
+    -------
+    callable, or None
+        The level evaluator.
+    """
+    del controls, u
+    return None
+
   #: The two fit engines, module functions in ``_vinecop_fit_engines`` --
   #: neither
   #: reads ``self`` or ``cls``. Bound here because these are the names `fit`,
@@ -2185,6 +2210,7 @@ class VinecopBase(
         fit_level=self._resolve_fit_level(
           fit_level, fit_edge, controls, placed
         ),
+        eval_level=self._resolve_eval_level(controls, placed),
         tree_criterion=options.get("tree_criterion", "tau"),
         threshold=options.get("threshold", 0.0),
         weights=options.get("weights"),
@@ -2254,6 +2280,7 @@ class VinecopBase(
       x=x,
       var_types=types,
       fit_level=self._resolve_fit_level(fit_level, fit_edge, controls, placed),
+      eval_level=self._resolve_eval_level(controls, placed),
       **_selection_options(controls),
     )
     self._bind_vine(structure, self._context, var_types=types)
@@ -2324,6 +2351,7 @@ class VinecopBase(
     """
     resolved = cls._resolve_fit_edge(fit_edge, controls)
     level_fitter = cls._resolve_fit_level(fit_level, fit_edge, controls, u)
+    level_evaluator = cls._resolve_eval_level(controls, u)
     cond_order: dict[tuple[int, int], tuple[int, ...]] = {}
     if structure is None:
       cls._check_selectable(fit_edge)
@@ -2333,6 +2361,7 @@ class VinecopBase(
         x=x,
         var_types=var_types,
         fit_level=level_fitter,
+        eval_level=level_evaluator,
         **_selection_options(controls),
       )
     else:
@@ -2344,6 +2373,7 @@ class VinecopBase(
         x=x,
         var_types=var_types,
         fit_level=level_fitter,
+        eval_level=level_evaluator,
         tree_criterion=options.get("tree_criterion", "tau"),
         threshold=options.get("threshold", 0.0),
         weights=options.get("weights"),
