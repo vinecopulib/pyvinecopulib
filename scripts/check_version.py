@@ -4,6 +4,12 @@ The source of truth is ``[project].version`` in ``pyproject.toml``. Everything
 else must match it: the top ``CHANGELOG.md`` heading, and ``CITATION.cff`` /
 ``.zenodo.json`` when they carry a version.
 
+While a cycle is open -- the heading reads ``(unreleased)`` -- the project
+version carries a ``.devN`` suffix, so a build from it reports ``1.0.1.dev0``
+and cannot be mistaken for the ``1.0.1`` release. The heading and the citation
+metadata name the release itself, without the suffix; a dated heading requires
+the suffix to be gone.
+
 Reports every mismatch in one run, rather than stopping at the first.
 
 Usage
@@ -29,6 +35,9 @@ ROOT = Path(__file__).resolve().parent.parent
 _HEADING = re.compile(
   r"^##\s+(?P<version>\d+\.\d+\.\d+)\s*(?:\((?P<state>[^)]*)\))?\s*$"
 )
+
+#: ``1.0.1`` or ``1.0.1.dev0``: a release, or a build from its open cycle.
+_PROJECT_VERSION = re.compile(r"^(?P<release>\d+\.\d+\.\d+)(?P<dev>\.dev\d+)?$")
 
 
 def _project_version() -> str:
@@ -77,12 +86,24 @@ def main() -> int:
   version = _project_version()
   problems: list[str] = []
 
+  parsed = _PROJECT_VERSION.match(version)
+  if parsed is None:
+    # Nothing else can be compared against a version that does not parse.
+    print(
+      f"error: pyproject.toml version {version!r} is neither X.Y.Z nor "
+      "X.Y.Z.devN",
+      file=sys.stderr,
+    )
+    return 1
+  release, is_dev = parsed["release"], parsed["dev"] is not None
+
   heading = _changelog_heading()
   if heading is None:
     problems.append("CHANGELOG.md has no '## X.Y.Z' heading")
   else:
     changelog_version, state = heading
-    if changelog_version != version:
+    unreleased = state.lower() == "unreleased"
+    if changelog_version != release:
       problems.append(
         f"CHANGELOG.md top heading is {changelog_version}, "
         f"pyproject.toml says {version}"
@@ -93,12 +114,23 @@ def main() -> int:
         "'(unreleased)' nor a release date, so a released version cannot be "
         "told from an unreleased one"
       )
-    elif args.released and state.lower() == "unreleased":
+    elif args.released and unreleased:
       problems.append(
         f"CHANGELOG.md still marks {changelog_version} as unreleased; "
         "date the heading before tagging"
       )
-    elif not args.released and state.lower() != "unreleased":
+    elif unreleased and not is_dev:
+      problems.append(
+        f"CHANGELOG.md marks {changelog_version} as unreleased, so "
+        f"pyproject.toml must say {changelog_version}.devN, not {version}: "
+        "a build from an open cycle must not report the release's version"
+      )
+    elif not unreleased and is_dev:
+      problems.append(
+        f"CHANGELOG.md dates {changelog_version}, so pyproject.toml must say "
+        f"{changelog_version}, not {version}"
+      )
+    elif not args.released and not unreleased:
       # Not fatal: the release pull request dates the heading before the tag
       # exists, so this state is expected for exactly one commit.
       print(
@@ -111,8 +143,8 @@ def main() -> int:
     ("CITATION.cff", _citation_version()),
     (".zenodo.json", _zenodo_version()),
   ):
-    if found is not None and found != version:
-      problems.append(f"{name} says {found}, pyproject.toml says {version}")
+    if found is not None and found != release:
+      problems.append(f"{name} says {found}, expected {release}")
 
   if args.tag is not None:
     expected = f"v{version}"

@@ -161,6 +161,7 @@ def test_bicopbase_requires_row_aligned_covariates() -> None:
         call()
 
 
+@pytest.mark.usefixtures("no_show")
 def test_bicopbase_plot_runs() -> None:
   """The inherited ``plot`` delegates to the shared helper without error (Agg)."""
   import matplotlib.pyplot as plt
@@ -366,6 +367,7 @@ def test_prep_args_checks_the_width_and_clamps_the_domain() -> None:
     pair._prep_args(np.zeros((4, 3)))
 
 
+@pytest.mark.usefixtures("no_show")
 def test_plot_places_its_grid_on_a_torch_pairs_namespace() -> None:
   """Issue #327: a torch pair must plot without converting inside ``pdf``.
 

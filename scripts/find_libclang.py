@@ -8,8 +8,10 @@ none found). Resolution order:
      - any path passed via --search-paths (scikit-build-core's
        CMAKE_PREFIX_PATH, used for isolated builds where libclang lives
        in the build env, NOT in the target Python's site-packages).
-  3. The active conda env at CONDA_PREFIX/lib/libclang.so (used for
-     `pip install -e . --no-build-isolation` against a conda dev env).
+  3. The active conda env at CONDA_PREFIX/lib/libclang.so, or on Windows at
+     CONDA_PREFIX/Library/bin/libclang-<major>.dll, which is how conda-forge
+     names it (used for `pip install -e . --no-build-isolation` against a
+     conda dev env, and by the conda-forge build).
 """
 
 import argparse
@@ -25,6 +27,7 @@ PATTERNS = [
   "libclang-*.so*",
   "libclang.dylib",
   "libclang.dll",
+  "libclang-*.dll",
 ]
 
 
