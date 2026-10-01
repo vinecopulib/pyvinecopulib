@@ -246,6 +246,14 @@ class MinimalBicop(BicopBase[Any]):
 
 
 @pytest.fixture
+def no_show(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Make ``plt.show`` a no-op, which the non-interactive backend warns on."""
+  import matplotlib.pyplot as plt
+
+  monkeypatch.setattr(plt, "show", lambda *args, **kwargs: None)
+
+
+@pytest.fixture
 def random_state() -> np.random.RandomState:
   """Fixed random state for reproducibility across estimator tests."""
   return np.random.RandomState(42)
