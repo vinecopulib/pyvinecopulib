@@ -199,7 +199,9 @@ default="tau"
       torch fit is far from competitive with ``Vinecop`` on cpu.
 
       A level carrying a conditioning context is always fitted edge at a
-      time. A level with a discrete edge stacks like any other.
+      time. A level with a discrete edge stacks like any other. Only the
+      built-in fit is batched: a ``fit_edge`` of the caller's is still called
+      once per edge.
 
       The batched result agrees with the per-edge one to floating point on
       every device -- not bit for bit, on cpu included. A lane's iterations
