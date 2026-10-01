@@ -444,11 +444,9 @@ def test_simulate_rejects_nonpositive_n() -> None:
 def test_normalize_margins_balances_both_margins() -> None:
   """Both margins end up uniform, and equally so.
 
-  The old scheme was three fixed row-then-column sweeps, which left the second
-  margin exact and dumped the whole residual on the first -- up to 3.3e-2 at
-  strong dependence, so a fitted grid was not a copula density in one direction.
-  Averaging the two sweep orders splits the residual, which is what makes the
-  balance assertion meaningful rather than tautological.
+  A pass is the mean of the two sweep orders, so neither margin can carry the
+  whole residual: a sweep that leaves one margin exact puts all of it on the
+  other.
   """
   from pyvinecopulib.torch._bicop_interp import (
     InterpolationGrid2D,
@@ -474,8 +472,7 @@ def test_normalize_margins_commutes_with_transposition() -> None:
 
   This is what makes `flip` correct: it transposes an already-normalized grid
   without renormalizing, so if the normalization were not equivariant then
-  `fit(a, b).flip()` and `fit(b, a)` would be different models. Under the old
-  three-sweep scheme they differed by 2.7e-4.
+  `fit(a, b).flip()` and `fit(b, a)` would be different models.
   """
   from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
 
@@ -487,6 +484,43 @@ def test_normalize_margins_commutes_with_transposition() -> None:
   direct = InterpolationGrid2D(grid, values).values
   swapped = InterpolationGrid2D(grid, values.t().contiguous()).values
   torch.testing.assert_close(direct, swapped.t(), rtol=1e-13, atol=1e-15)
+
+
+@pytest.mark.parametrize("shape", ["connected", "halves", "corner"])
+@pytest.mark.parametrize("concentration", [40.0, 200.0, 400.0])
+def test_normalize_margins_converges_on_a_concentrated_grid(
+  shape: str, concentration: float
+) -> None:
+  """Uniform margins on a concentrated grid, connected or not; exact flips.
+
+  A concentrated surface needs more passes than any bound on them would allow,
+  and Newton's method finishes it. A grid whose support falls apart into
+  blocks -- two halves of the diagonal, or a corner of its own -- can scale
+  each block's rows against its columns without changing, which leaves every
+  Newton step singular once per block rather than once.
+  """
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
+
+  m = 30
+  grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
+  values = (
+    torch.exp(-concentration * (grid[:, None] - grid[None, :]).abs())
+    + 1e-3 * grid[:, None]
+  )
+  if shape == "halves":
+    values[:15, 15:] = 0.0
+    values[15:, :15] = 0.0
+  elif shape == "corner":
+    values[0, 1:] = 0.0
+    values[1:, 0] = 0.0
+
+  ig = InterpolationGrid2D(grid, values)
+  w = ig.trap_weights
+  r = (ig.values @ w - 1.0).abs().max().item()
+  c = (ig.values.t().contiguous() @ w - 1.0).abs().max().item()
+  assert max(r, c) < 1e-13
+  swapped = InterpolationGrid2D(grid, values.t().contiguous()).values
+  torch.testing.assert_close(swapped.t(), ig.values, rtol=0.0, atol=0.0)
 
 
 def test_normalize_margins_leaves_a_normalized_grid_alone() -> None:
