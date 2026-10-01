@@ -10,7 +10,7 @@
 
 - Rank partly as tied the distinct values closer than `scale` in `to_pseudo_obs(..., scale=...)`, so that pseudo-observations move continuously with the data; the default, `0`, ranks by value (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
 - Evaluate and fit a `TorchVinecop` with discrete variables on the batched fast path: the cascades carry the left-limit scratch one stacked tree level at a time, `batched_fit` stacks a level with a discrete edge, and `TorchTllBicop.from_data_batched` takes per-pair `var_types`. A discrete vine declined both and ran edge by edge, on CUDA too (#354).
-- Fit a wide tree level faster with `batched_fit`: `TorchTllBicop.from_data_batched` builds and normalizes its pairs as one stack, 2.4x faster at 400 pairs on CUDA; a cpu level drops its converged bandwidth searches; `compile_fit` fuses the kernel density sum; and each fitted level's h-functions are evaluated in stacked calls (#354).
+- Fit a wide tree level faster with `batched_fit`: `TorchTllBicop.from_data_batched` builds and normalizes its pairs as one stack, 3.5x faster at 400 pairs of 2000 observations on CUDA; a cpu level drops its converged bandwidth searches; `compile_fit` fuses the kernel density sum; and each fitted level's h-functions are evaluated in stacked calls (#354).
 - Read a discrete `TorchTllBicop` edge's atom probabilities in constant time per query off compensated prefix tables, rather than by a quadrature over the whole grid: 2.3-2.5x faster on CUDA at `n >= 20000`, and exact to `2.8e-15` on a `1.2e-4`-wide rectangle where the quadrature reached `2.9e-12` (#354).
 
 ### Bug fixes in `pyvinecopulib`
