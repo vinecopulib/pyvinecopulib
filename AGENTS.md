@@ -2042,8 +2042,9 @@ Round-trip / parity properties to preserve when touching numerics:
   so a machine that vectorizes sooner diverges where another does not. Do
   not pin a fit comparison at `atol=rtol=0` on the strength of one machine
   agreeing; the exact claims available are that a lane's answer is
-  independent of *which* lanes it travelled with (at a fixed shape) and that
-  the selected structure matches, the tree criterion reading ranks rather
+  independent of *which* lanes it travelled with (at a fixed shape, on cpu:
+  the bandwidth search drops converged lanes, and on an accelerator the row
+  count picks the kernels) and that the selected structure matches, the tree criterion reading ranks rather
   than last bits.
 - `sklearn.base.clone()` round-trip: every estimator clones cleanly
   with all `__init__` parameters preserved verbatim.
