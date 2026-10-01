@@ -530,6 +530,12 @@ def test_a_stack_normalizes_each_grid_as_it_would_alone() -> None:
   stack is reduced with are chosen by its size, and differ between machines
   (AGENTS.md). A grid and its transpose in one stack go through the same
   kernels, and normalize to transposes of each other bit for bit.
+
+  Rounding is measured on the grid's own scale, not each entry's. The sharpest
+  surface's far corner is ``exp(-400)`` of its diagonal and tied to it only
+  through neighbors a millionth as large, so moving the input by one ulp moves
+  that corner by ``3e-9`` of itself, while no entry moves by more than
+  ``5e-16`` of the grid's largest.
   """
   from pyvinecopulib.torch._bicop_interp import (
     InterpolationGrid2D,
@@ -555,7 +561,9 @@ def test_a_stack_normalizes_each_grid_as_it_would_alone() -> None:
   stacked = normalize_stack(stack, weights, 2000)
   for k in range(stack.shape[0]):
     alone = InterpolationGrid2D(grid, stack[k]).values
-    torch.testing.assert_close(stacked[k], alone, rtol=1e-12, atol=0.0)
+    torch.testing.assert_close(
+      stacked[k], alone, rtol=0.0, atol=1e-14 * float(alone.max())
+    )
   half = len(grids)
   torch.testing.assert_close(
     stacked[half:].transpose(-1, -2), stacked[:half], rtol=0.0, atol=0.0
