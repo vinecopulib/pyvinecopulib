@@ -1162,23 +1162,32 @@ def test_a_pair_fit_does_not_depend_on_argument_order(
   )
 
 
+@pytest.mark.parametrize("mixed", [False, True])
 @pytest.mark.parametrize("batched_fit", [False, True])
 def test_a_selected_vine_equals_a_refit_of_its_structure(
-  batched_fit: bool,
+  batched_fit: bool, mixed: bool
 ) -> None:
   """Selection and a refit of the selected structure hold the same pairs.
 
   Selection fits each pair in the search's orientation and flips it into the
-  structure's. A pair is fitted in its own order, so on continuous data the
-  two agree bit for bit, every h-function passed on included.
+  structure's. A pair is fitted in its own order, and its masses treat the two
+  arguments alike, so the two agree bit for bit, every h-function passed on
+  included -- discrete variables too.
   """
-  rng = np.random.default_rng(3)
-  mix = np.full((5, 5), 0.4)
-  np.fill_diagonal(mix, 1.0)
-  u = torch.as_tensor(pv.to_pseudo_obs(rng.standard_normal((500, 5)) @ mix))
+  if mixed:
+    data, var_types = _many_level_data(n=600, seed=3)
+    u = torch.as_tensor(data)
+  else:
+    rng = np.random.default_rng(3)
+    mix = np.full((5, 5), 0.4)
+    np.fill_diagonal(mix, 1.0)
+    u = torch.as_tensor(pv.to_pseudo_obs(rng.standard_normal((500, 5)) @ mix))
+    var_types = None
   controls = FitControlsTorchVinecop(batched_fit=batched_fit)
-  selected = TorchVinecop.from_data(u, controls)
-  refit = TorchVinecop.from_data(u, controls, structure=selected.structure)
+  selected = TorchVinecop.from_data(u, controls, var_types=var_types)
+  refit = TorchVinecop.from_data(
+    u, controls, structure=selected.structure, var_types=var_types
+  )
   for t in range(selected.trunc_lvl):
     for e in range(selected.dim - t - 1):
       torch.testing.assert_close(

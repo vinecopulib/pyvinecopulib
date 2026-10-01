@@ -775,8 +775,9 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     Notes
     -----
-    Each grid line is rescaled by its own total, so ``C(1, u2) = u2`` holds
-    exactly.
+    The mass of the interpolated density below and left of ``u``, so
+    ``C(1, u2) = u2`` holds to the margins' residual, which a fitted grid holds
+    to rounding.
     """
     del x  # declared so the pair can sit in a conditional vine
     if self.is_indep:
@@ -813,10 +814,11 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     Overrides the four-corner difference
     :meth:`~pyvinecopulib.core.BicopBase.rect_prob` reads it as, which
-    amplifies an absolute error by ``~4 / (w1 w2)`` in the rectangle's widths
-    where this route amplifies by ``1 / w2`` alone. Available in both cache
-    modes -- it reads the density grid, not the prefix tables -- and
-    cancellation-free only because ``values`` is nonnegative.
+    amplifies an absolute error by ``~4 / (w1 w2)`` in the rectangle's widths;
+    this route sums nonnegative terms and cancels nothing. Available in both
+    cache modes -- it reads the density grid, not the prefix tables -- and
+    cancellation-free only because ``values`` is nonnegative. A pair and its
+    flip give the same probabilities, bit for bit.
 
     Parameters
     ----------
@@ -834,8 +836,8 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     Notes
     -----
-    A probability, not the density grid's own mass over the rectangle: the two
-    differ by the rescaling ``TorchTllBicop.cdf()`` applies.
+    The density grid's own mass over the rectangle, which is its probability
+    once the grid's margins are uniform, as a fitted grid's are to rounding.
     """
     del x
     a1, b1, a2, b2 = self._as_grid(a1, b1, a2, b2)
