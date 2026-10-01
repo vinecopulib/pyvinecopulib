@@ -870,8 +870,9 @@ class InterpolationGrid2D(torch.nn.Module):
 
     A batch of one through :func:`rect_mass_batched`, where the arrangement
     that avoids the four-corner cancellation is written down. On a
-    ``1.2e-4``-wide rectangle it errs by ``2.8e-15`` against exact truth,
-    where the difference errs by ``1.8e-8``.
+    ``1.2e-4``-wide rectangle it errs by ``4.7e-15`` against exact truth,
+    where the difference errs by ``4.6e-9``. A grid and its transpose give the
+    same value, bit for bit.
 
     Parameters
     ----------
