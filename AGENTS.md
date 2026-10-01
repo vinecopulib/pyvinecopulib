@@ -1811,10 +1811,15 @@ Key surface:
     back to eager. The `batched` flag is **not** a control: it is resolved
     per device on each call, and overridable per call.
   - `batched_fit` — fits a whole tree level in one call instead of edge at a
-    time, through the optional `fit_level` hook on `VinecopBase.fit` /
-    `.select` (`TorchTllBicop.from_data_batched` is the pair-level entry point,
+    time, through the fit engines' optional `fit_level` hook
+    (`TorchTllBicop.from_data_batched` is the pair-level entry point,
     taking `(P, n, 2)`, or `(P, n, 4)` with per-pair `var_types`). Resolved
-    per device like the cascade's `batched`. The hook does not know what the
+    per device like the cascade's `batched`, and by one class hook,
+    `_resolve_fit_level`, which `fit`, `select` and `from_data` all call --
+    so a refit batches exactly as a construction does.
+    The engines prefer a level fitter wherever one applies, so a lane's own
+    must not be supplied beside a caller's `fit_edge`, or that callback is
+    never called. The hook does not know what the
     pairs are for — `P` independent pairs on shared rows — so several vines'
     levels concatenate into the same axis as readily as one vine's. A level
     with a discrete edge stacks in the four-column layout throughout, a
