@@ -2,18 +2,24 @@
 
 ## 1.0.1 (unreleased)
 
+### New features in `pyvinecopulib`
+
+- Rank partly as tied the distinct values closer than `scale` in `to_pseudo_obs(..., scale=...)`, so that pseudo-observations move continuously with the data; the default, `0`, ranks by value (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
+
 ### Bug fixes in `pyvinecopulib`
 
 - Evaluate a discrete or mixed `Bicop` or `Vinecop` read from JSON, a file or a pickle with its variable types, not as continuous (#352, [vinecopulib#789](https://github.com/vinecopulib/vinecopulib/pull/789)).
 - Fix a crash in discrete fits and `find_latent_sample` when built against Eigen 5 (#352, [vinecopulib#792](https://github.com/vinecopulib/vinecopulib/pull/792)).
 - Fit a discrete `tll` pair continuously in its data, in both lanes: two builds, or `Bicop` and `TorchTllBicop`, whose h-functions differ in their last bits fit it to about that precision instead of drawing another latent sample. Continuous pairs change only on data with exact ties (#351, [vinecopulib#798](https://github.com/vinecopulib/vinecopulib/pull/798), [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
-- Make a `tll` pair independent of the order of its arguments, so a vine selected from data equals a refit of its own structure: its grid's margins are normalized to convergence, which left strongly dependent pairs up to `3e-4` short of uniform, and the maximal correlation behind its bandwidth is symmetric (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
+- Make a `tll` pair independent of the order of its arguments, so a vine selected from data equals a refit of its own structure: its grid's margins are normalized to convergence, at the cost of the 25 passes that left strongly dependent pairs up to `3e-4` short of uniform, and the maximal correlation behind its bandwidth is symmetric (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
 - Keep a `Kde1d` density positive between the smallest and largest observation; a wide gap, or ties at `degree=2`, gave exactly zero (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Select the same `Kde1d` bandwidth on every build; on tied data the plug-in estimate was `NaN` on some builds only (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Make a `degree=1` `Kde1d` fit scale equivariant, which changes every `degree=1` estimate (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Break random ties by a fixed key per observation, the same way on every platform and with or without Boost, in `to_pseudo_obs(..., "random")` and Chatterjee's xi, and keep input order for `"first"`; tied-data results change once (#352, #351, [wdm#28](https://github.com/tnagler/wdm/pull/28), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
 - Compute Hoeffding's D correctly on tied data, in `wdm(..., "hoeffding")` and the `"hoeffd"` tree criterion; it could leave the unit interval (#352, [wdm#28](https://github.com/tnagler/wdm/pull/28)).
-- Break ties in `TorchTllBicop.from_data` and `from_data_batched` as `Bicop.from_data` does, at random from a fixed seed rather than by row order (#351).
+- Break ties in `TorchTllBicop.from_data` and `from_data_batched` as `Bicop.from_data` does, in a random order fixed per observation rather than by row order (#351).
+- Draw uniforms on a grid of `2^-53` in `sample_uniform` and every seeded simulation, quasi-random ones included, where a million draws repeated about 110 values per column; seeded draws change once (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
+- Order each column's ties by seeds of its own in `to_pseudo_obs(..., "random", seeds=...)`, so that columns tied in the same rows are no longer ordered alike (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
 
 ### Build / packaging
 
