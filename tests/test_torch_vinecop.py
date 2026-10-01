@@ -1175,8 +1175,13 @@ def test_a_selected_vine_equals_a_refit_of_its_structure(
 
   Selection fits each pair in the search's orientation and flips it into the
   structure's. A pair is fitted in its own order, and its masses treat the two
-  arguments alike, so the two agree bit for bit, every h-function passed on
-  included -- discrete variables too.
+  arguments alike, so the two agree bit for bit when each pair is fitted alone,
+  every h-function passed on included -- discrete variables too. A batched fit
+  stacks a level's pairs, and the kernels a stack is reduced with are chosen by
+  its size and differ between machines (AGENTS.md), so there the two agree to
+  rounding, which a mixed vine's discrete edges carry on as they carry any
+  rounding: up to ``1e-6``, as in
+  ``test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree``.
   """
   if mixed:
     data, var_types = _many_level_data(n=600, seed=3)
@@ -1194,10 +1199,11 @@ def test_a_selected_vine_equals_a_refit_of_its_structure(
   )
   for t in range(selected.trunc_lvl):
     for e in range(selected.dim - t - 1):
+      tolerance = (1e-6 if mixed else 1e-12) if batched_fit else 0.0
       torch.testing.assert_close(
         refit._pair_module(t, e).interp_grid.values,
         selected._pair_module(t, e).interp_grid.values,
-        rtol=0.0,
+        rtol=tolerance,
         atol=0.0,
       )
 

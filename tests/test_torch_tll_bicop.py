@@ -521,12 +521,15 @@ def test_normalize_margins_converges_on_a_concentrated_grid(
 
 
 def test_a_stack_normalizes_each_grid_as_it_would_alone() -> None:
-  """A grid normalizes in a stack bit for bit as it does alone, flipped or not.
+  """A grid normalizes in a stack as it does alone, and flips exactly.
 
   A batched fit normalizes its pairs as one stack and the constructor one grid
-  at a time, so this is what makes a stacked pair the constructor's pair. The
-  stack mixes grids that converge in a few passes with grids that need Newton
-  steps, connected or not, so a grid's neighbors stop at different times.
+  at a time. The stack mixes grids that converge in a few passes with grids
+  that need Newton steps, connected or not, so a grid's neighbors stop at
+  different times. Alone and stacked agree to rounding only: the kernels a
+  stack is reduced with are chosen by its size, and differ between machines
+  (AGENTS.md). A grid and its transpose in one stack go through the same
+  kernels, and normalize to transposes of each other bit for bit.
   """
   from pyvinecopulib.torch._bicop_interp import (
     InterpolationGrid2D,
@@ -552,7 +555,7 @@ def test_a_stack_normalizes_each_grid_as_it_would_alone() -> None:
   stacked = normalize_stack(stack, weights, 2000)
   for k in range(stack.shape[0]):
     alone = InterpolationGrid2D(grid, stack[k]).values
-    torch.testing.assert_close(stacked[k], alone, rtol=0.0, atol=0.0)
+    torch.testing.assert_close(stacked[k], alone, rtol=1e-12, atol=0.0)
   half = len(grids)
   torch.testing.assert_close(
     stacked[half:].transpose(-1, -2), stacked[:half], rtol=0.0, atol=0.0
