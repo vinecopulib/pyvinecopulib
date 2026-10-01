@@ -46,6 +46,82 @@ _NORMAL_GRID_Z_LIMIT: float = 3.25
 GRID_TYPES = ("normal", "linear")
 
 
+#: The passes that converge most grids before :func:`_newton_margins` takes
+#: over, where a pass gains little; and the most steps it takes. Both as in
+#: ``InterpolationGrid::normalize_margins``.
+_NEWTON_AFTER: int = 25
+_NEWTON_STEPS: int = 50
+
+
+def _newton_margins(
+  values: Tensor, w: Tensor, max_steps: int
+) -> tuple[Tensor, bool]:
+  """Newton's method for the scalings that make both margins uniform.
+
+  Port of ``InterpolationGrid::newton_margins``, on the logarithms of the row
+  and column scalings. Scaling row ``i`` by ``e^{a_i}`` and column ``j`` by
+  ``e^{b_j}`` moves the log margins by ``a + P b`` and ``b + Q a`` to first
+  order, with ``P = diag(1 / r) V W`` and ``Q = diag(1 / c) V' W`` row
+  stochastic. Both eliminations of the system are solved and their steps
+  averaged, so a step commutes with transposition exactly, as a pass does, and
+  each step is halved until it reduces the residual. Entries of ``P`` and ``Q``
+  below ``1e-150`` are dropped, so their products never form subnormal numbers.
+
+  Args:
+    values: ``(m, m)`` density grid.
+    w: ``(m,)`` trapezoid weights.
+    max_steps: maximum number of steps.
+
+  Returns:
+    The rescaled grid, and whether its margins converged. A step that fails to
+    reduce the residual stops the method, leaving the grid of the last one
+    that did.
+  """
+  m = values.shape[-1]
+  exact = 8 * torch.finfo(values.dtype).eps
+  rounding, min_mass = 1e-12, 1e-20
+  pin = torch.full((m, m), 1.0 / m, dtype=values.dtype, device=values.device)
+  eye = torch.eye(m, dtype=values.dtype, device=values.device)
+
+  def residual(v: Tensor, v_t: Tensor) -> tuple[Tensor, Tensor, float]:
+    r = (v @ w).clamp_min(min_mass)
+    c = (v_t @ w).clamp_min(min_mass)
+    err = float(torch.maximum((r - 1.0).abs().max(), (c - 1.0).abs().max()))
+    return r, c, err
+
+  def stochastic(margin: Tensor, v: Tensor) -> Tensor:
+    s = margin.reciprocal().unsqueeze(-1) * v * w
+    return torch.where(s < 1e-150, torch.zeros_like(s), s)
+
+  vt = values.t().contiguous()
+  r, c, err = residual(values, vt)
+  previous = math.inf
+  for _ in range(max_steps):
+    if err <= exact or (err < rounding and err >= previous):
+      return values, True
+    lr, lc = r.log(), c.log()
+    p, q = stochastic(r, values), stochastic(c, vt)
+    b1 = torch.linalg.solve(eye - q @ p + pin, q @ lr - lc)
+    a1 = -lr - p @ b1
+    a2 = torch.linalg.solve(eye - p @ q + pin, p @ lc - lr)
+    b2 = -lc - q @ a2
+    a, b = (a1 + a2) / 2.0, (b1 + b2) / 2.0
+    t = 1.0
+    for _ in range(30):
+      trial: Tensor = values * ((a * t).exp().unsqueeze(-1) * (b * t).exp())
+      trial_t: Tensor = trial.t().contiguous()
+      r_try, c_try, err_try = residual(trial, trial_t)
+      if err_try < err:
+        values, vt, r, c = trial, trial_t, r_try, c_try
+        previous, err = err, err_try
+        break
+      t /= 2.0
+    else:
+      # at the floor of rounding, no step can reduce the residual further
+      return values, err < rounding
+  return values, err <= exact or (err < rounding and err >= previous)
+
+
 def _trap_weights(grid_points: Tensor) -> Tensor:
   """Trapezoid weights of ``grid_points``, summing to 1 on ``[0, 1]``.
 
@@ -258,12 +334,14 @@ class InterpolationGrid2D(torch.nn.Module):
     transpose is materialized rather than left as a view, so both margins are
     the same reduction and transposing the grid swaps them bit for bit.
 
-    The passes run to convergence, as ``InterpolationGrid`` runs them: they
-    stop once the margins' residual is at machine precision or, already at the
-    level of rounding, no longer shrinks. A grid left short of uniform margins
-    is not a copula density, and its distribution function, which rescales one
-    argument's margin only, then depends on which argument is first by as much
-    as the residual.
+    The normalization runs to convergence, as ``InterpolationGrid`` runs it:
+    it stops once the margins' residual is at machine precision or, already at
+    the level of rounding, no longer shrinks. A grid left short of uniform
+    margins is not a copula density, and its distribution function, which
+    rescales one argument's margin only, then depends on which argument is
+    first by as much as the residual. Passes converge slowly under strong
+    dependence, so after the first few dozen :func:`_newton_margins` finishes,
+    in a handful of steps.
 
     Args:
       max_iter: maximum number of rescaling passes; ``0`` leaves the values
@@ -285,7 +363,7 @@ class InterpolationGrid2D(torch.nn.Module):
     exact = 8 * torch.finfo(values.dtype).eps
     rounding, min_mass = 1e-12, 1e-20
     previous = math.inf
-    for _ in range(max_iter):
+    for k in range(max_iter):
       vt = values.t().contiguous()
       r = (values @ w).clamp_min(min_mass)
       c = (vt @ w).clamp_min(min_mass)
@@ -293,14 +371,23 @@ class InterpolationGrid2D(torch.nn.Module):
       if err <= exact or (err < rounding and err >= previous):
         break
       previous = err
+      if k == _NEWTON_AFTER:
+        values, converged = _newton_margins(values, w, _NEWTON_STEPS)
+        if converged:
+          break
+        # the passes resume from wherever the steps left the grid
+        previous = math.inf
+        continue
       r2 = (values @ (w / c)).clamp_min(min_mass)
       c2 = (vt @ (w / r)).clamp_min(min_mass)
       sr = (r * r2).sqrt().reciprocal()
       sc = (c * c2).sqrt().reciprocal()
-      values.mul_(sr.unsqueeze(-1)).mul_(sc)
+      # one fused multiply by the outer product, as a pass is in
+      # `InterpolationGrid`: two successive ones would round the two orders
+      # differently and lose the equivariance
+      values = values * (sr.unsqueeze(-1) * sc)
 
-    if on_host:
-      self.values.copy_(values.to(self.values.device))
+    self.values.copy_(values.to(self.values.device))
 
   @torch.no_grad()
   def _cell_index(self, u: Tensor) -> Tensor:
