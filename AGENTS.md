@@ -1962,6 +1962,13 @@ Conventions:
   `filterwarnings` entry in `[tool.pytest.ini_options]` enforces
   this — internal code paths must already be on the post-`#207`
   imports.
+- **No bound instance is created at collection time.** A `parametrize`
+  value lives in pytest's collection tree, which a full run keeps reachable
+  past interpreter shutdown, so a `Bicop`, `Vinecop`, `Kde1d`, structure or
+  controls object there is never destroyed and nanobind reports it as leaked
+  at exit. Parametrize over plain arguments and build the object in the test
+  body; `tests/conftest.py` refuses the collection otherwise. Fixtures stay
+  function-scoped for the same reason.
 - **Example notebooks are test targets.** `make test-examples`
   re-executes `examples/*.ipynb` via `pytest --nbmake`. CI runs this on
   every pull request. The `regenerate_notebooks` job refreshes the stored
