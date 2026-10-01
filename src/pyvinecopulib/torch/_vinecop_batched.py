@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, cast
 import torch
 from torch import Tensor
 
-from ..core._trim import trim
+from ..core._trim import trim, trim_density
 from ..core.bicop_base import DELTA_MIN
 from ..core.extend import NotBatchable
 from ..pyvinecopulib_ext import RVineStructure
@@ -1400,7 +1400,9 @@ class BatchedTreeLevel(torch.nn.Module):
         ),
       )
       pdf = replace(pdf, "idx_dd", val.abs())
-    return pdf, h1, h2, h1_sub, h2_sub
+    # `BicopBase.pdf`'s clamp. A continuous slot's density is floored at 1e-20
+    # already, so only a discrete slot's quotient can move.
+    return trim_density(pdf, TENSOR_NS), h1, h2, h1_sub, h2_sub
 
 
 def inverse_waves(
