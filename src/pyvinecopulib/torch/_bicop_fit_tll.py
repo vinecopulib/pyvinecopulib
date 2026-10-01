@@ -27,6 +27,7 @@ Only the ``constant`` method is supported here; the ``linear`` and
 
 from __future__ import annotations
 
+import functools
 import math
 from collections.abc import Callable
 from typing import cast
@@ -50,15 +51,42 @@ def _qnorm(p: Tensor) -> Tensor:
   return cast("Tensor", torch.special.ndtri(p))
 
 
+@functools.lru_cache(maxsize=8)
+def _tie_key_order(n: int, device: torch.device) -> Tensor:
+  """Each column's observations in the order its ties are broken in.
+
+  ``pair_soft_pseudo_obs`` orders a tie by a key fixed per observation and
+  column, so the order depends on ``n`` alone and is read off the compiled
+  function once: in a column of ties, each observation's rank is its key's.
+
+  Parameters
+  ----------
+  n : int
+      Observations per column.
+  device : torch.device
+      Where to hold the order.
+
+  Returns
+  -------
+  Tensor, shape (2, n), dtype int64
+      Per column of a pair in its own order, the observations by key.
+  """
+  from ..pyvinecopulib_ext import _pair_soft_pseudo_obs
+
+  ranks = np.rint(_pair_soft_pseudo_obs(np.zeros((n, 2)), 0.0) * (n + 1))
+  order = np.argsort(ranks, axis=0, kind="stable").T
+  return torch.as_tensor(np.ascontiguousarray(order), device=device)
+
+
 def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
   """The pseudo-observations ``TllBicop::fit`` selects its bandwidth from.
 
   ``tools_stats::pair_soft_pseudo_obs``, per lane: ties ordered by a fixed key
   per observation, and on a discrete pair values within rounding of each
   other ranked partly by key, so that the ranks move continuously with the
-  data. A lane whose columns have neither is ranked by value on its own
-  device, which is then the same thing; the others are ranked on the host by
-  the compiled function itself, so that the two lanes rank alike.
+  data. A continuous lane is ranked by value and key on its own device, which
+  is the same thing exactly; a discrete one with near-ties is ranked on the
+  host by the compiled function itself, so that the two lanes rank alike.
 
   Parameters
   ----------
@@ -78,30 +106,42 @@ def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
   pairs = u.reshape(-1, n, 2)
   lanes = pairs.shape[0]
   discrete = discrete_data is not None
-  # one row per (lane, column), each ranked by value
+  wide = None if discrete_data is None else discrete_data.reshape(-1, n, 4)
+  # One row per (lane, column), ranked by value and its ties by key. The keys
+  # belong to the columns of the pair in its own order, so a lane that order
+  # swaps reads them the other way round.
+  swapped = _swaps_pair(pairs if wide is None else wide)
+  column = torch.stack([swapped, ~swapped], dim=-1).long().reshape(-1)
+  by_key = _tie_key_order(n, u.device)[column]
   lines = pairs.movedim(-1, -2).reshape(-1, n)
-  order = lines.argsort(dim=-1, stable=True)
-  srt = lines.gather(-1, order)
-  gaps = srt[:, 1:] - srt[:, :-1]
-  reach = 9.0 * _SOFT_RANK_SCALE
-  close = gaps <= reach if discrete else gaps == 0
-  position = torch.arange(1, n + 1, device=u.device, dtype=u.dtype)
+  order = by_key.gather(
+    -1, lines.gather(-1, by_key).argsort(dim=-1, stable=True)
+  )
+  # The compiled function's division, then the lane's own dtype. The divisor
+  # is a tensor because CUDA divides by a Python scalar as a multiply by its
+  # reciprocal, which is an ulp off at some ranks.
+  position = torch.arange(1, n + 1, device=u.device, dtype=torch.float64)
   psobs = torch.empty_like(lines).scatter_(
-    -1, order, (position / (n + 1)).expand_as(lines)
+    -1,
+    order,
+    (position / torch.full_like(position, n + 1)).to(u.dtype).expand_as(lines),
   )
   psobs = psobs.reshape(lanes, 2, n).movedim(-2, -1)
+  if not discrete:
+    return psobs.reshape(u.shape)
 
+  srt = lines.gather(-1, order)
+  close = srt[:, 1:] - srt[:, :-1] <= 9.0 * _SOFT_RANK_SCALE
   host = torch.nonzero(close.reshape(lanes, 2, -1).any(dim=(-1, -2))).flatten()
   if host.numel() > 0:
     from ..core.extend import to_numpy
     from ..pyvinecopulib_ext import _pair_soft_pseudo_obs
 
-    wide = None if discrete_data is None else discrete_data.reshape(-1, n, 4)
-    scale = _SOFT_RANK_SCALE if discrete else 0.0
+    assert wide is not None
     out = psobs.clone()
     for k in host.tolist():
-      data = pairs[k] if wide is None else wide[k]
-      soft = _pair_soft_pseudo_obs(to_numpy(data, dtype=np.float64), scale)
+      data = to_numpy(wide[k], dtype=np.float64)
+      soft = _pair_soft_pseudo_obs(data, _SOFT_RANK_SCALE)
       out[k] = torch.as_tensor(soft, dtype=u.dtype, device=u.device)
     psobs = out
   return psobs.reshape(u.shape)
