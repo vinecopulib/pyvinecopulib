@@ -556,8 +556,9 @@ For any behavior change:
 - **Numpydoc docstring convention.** Public-API docstrings follow the
   [numpydoc spec](https://numpydoc.readthedocs.io/en/latest/format.html):
   short summary as the first line, `Parameters` / `Returns` /
-  `Raises` / `Notes` / `Warnings` / `See Also` / `References` /
-  `Examples` sections in that order, with every parameter and return
+  `Raises` / `Warnings` / `See Also` / `Notes` / `References` /
+  `Examples` sections in that order (numpydoc's `GL07` enforces it), with
+  every parameter and return
   value typed (`name : type` form, e.g.
   `u : ndarray, shape (n, 2), dtype float`). C++-derived docstrings
   inherit the convention through

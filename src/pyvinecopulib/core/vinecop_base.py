@@ -1541,6 +1541,10 @@ class VinecopBase(
         If ``conditioning_set`` is inadmissible as a sampling-order tail; see
         :meth:`reorient`.
 
+    See Also
+    --------
+    pyvinecopulib.core.Vinecop.sample_conditional : The reference sampler.
+
     Notes
     -----
     The free variables are completed with an arbitrary ``0.5`` before the
@@ -1550,10 +1554,6 @@ class VinecopBase(
     set has to *be* the tail -- and why the placeholders are harmless on a
     non-simplified vine too, a tail edge's conditioning columns all lying in the
     tail.
-
-    See Also
-    --------
-    pyvinecopulib.core.Vinecop.sample_conditional : The reference sampler.
     """
     del num_threads
     seeds = list(seeds) if seeds else []
@@ -2115,6 +2115,11 @@ class VinecopBase(
     VinecopBase
         The fitted vine.
 
+    See Also
+    --------
+    fit : Refit an existing vine's pairs.
+    select : Reselect an existing vine's structure and pairs.
+
     Notes
     -----
     It finishes by calling ``cls(pair_copulas, structure, var_types=...)`` --
@@ -2128,11 +2133,6 @@ class VinecopBase(
     :meth:`fit` with ``x``. That keeps this signature to what every vine
     factory can mean, so a subclass shipping its own pair fitter can override
     it.
-
-    See Also
-    --------
-    fit : Refit an existing vine's pairs.
-    select : Reselect an existing vine's structure and pairs.
     """
     resolved = cls._resolve_fit_edge(fit_edge, controls)
     cond_order: dict[tuple[int, int], tuple[int, ...]] = {}
