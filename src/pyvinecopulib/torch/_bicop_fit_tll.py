@@ -567,6 +567,34 @@ def _fit_local_likelihood_constant(
 # --------------------------------------------------------------------------- #
 
 
+def _swaps_pair(data: Tensor) -> Tensor:
+  """``tools_stats::swaps_pair`` for each pair: whether its own order swaps it.
+
+  The first row whose two values differ decides, by which of them is smaller;
+  in the four-column layout of a discrete pair, a row whose values agree
+  decides by its left limits instead. A pair whose columns agree throughout
+  keeps its order.
+
+  Parameters
+  ----------
+  data : Tensor, shape (..., n, 2) or (..., n, 4), dtype float
+      One pair per leading index.
+
+  Returns
+  -------
+  Tensor, shape (...), dtype bool
+      Whether each pair is swapped.
+  """
+  differ = data[..., 0] != data[..., 1]
+  verdict = data[..., 1] < data[..., 0]
+  if data.shape[-1] == 4:
+    verdict = torch.where(differ, verdict, data[..., 3] < data[..., 2])
+    differ = differ | (data[..., 2] != data[..., 3])
+  # `argmax` returns the first of the deciding rows
+  first = differ.to(torch.uint8).argmax(dim=-1, keepdim=True)
+  return (differ & verdict).gather(-1, first).squeeze(-1)
+
+
 def fit_tll_constant(
   u: Tensor,
   grid_size: int = 30,
@@ -628,10 +656,23 @@ def fit_tll_constant(
     raise ValueError(f"mult must be > 0; got {mult}")
   dtype, device = u.dtype, u.device
 
+  # Each pair is fitted in its own order and its grid transposed back, as
+  # ``TllBicop::fit`` does, so a pair and its flip are the same fit: the
+  # estimate's arithmetic is not symmetric in its two arguments, and a vine's
+  # later trees amplify a difference in its last bits.
+  swapped = _swaps_pair(u if discrete_data is None else discrete_data)
+  u = torch.where(swapped[..., None, None], u.flip(-1), u)
+  if discrete_data is not None:
+    discrete_data = torch.where(
+      swapped[..., None, None], discrete_data[..., [1, 0, 3, 2]], discrete_data
+    )
+
   # Pseudo-observations + qnorm to z-space.
   # On a discrete edge these ranks only select the bandwidth; see
-  # ``discrete_data``.
-  z_data = _qnorm(_to_pseudo_obs(u, discrete_data))
+  # ``discrete_data``. Contiguous, because the bandwidth search reduces along
+  # the sample and a strided column sums in another order: the same ranks
+  # would select another bandwidth by how their tensor was laid out.
+  z_data = _qnorm(_to_pseudo_obs(u, discrete_data)).contiguous()
 
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data, compile_step=compile_fit) * mult
@@ -689,6 +730,11 @@ def fit_tll_constant(
   )
   c = f0 / phi_z
   values = c.reshape((*c.shape[:-1], grid_size, grid_size))
+  # contiguous, since `where` keeps a transposed operand's layout and the
+  # normalization reduces along the grid's lines
+  values = torch.where(
+    swapped[..., None, None], values.transpose(-1, -2), values
+  ).contiguous()
 
   # The canonical TorchTllBicop builds an InterpolationGrid2D from
   # (grid_points, values) with norm_maxiter=2000 — that's what matches C++
