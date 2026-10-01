@@ -238,6 +238,7 @@ def test_vinecopbase_dim_and_repr() -> None:
   assert "dim=4" in r and "trunc_lvl=" in r and "order=" in r
 
 
+@pytest.mark.usefixtures("no_show")
 def test_vinecopbase_plot_runs() -> None:
   """The inherited ``plot`` renders the tree structure without error (Agg)."""
   import matplotlib.pyplot as plt

@@ -113,13 +113,18 @@ def _expected_failed_checks(estimator: Any) -> dict[str, str]:
 # ``parametrize_with_checks`` is untyped, so the decorator it returns would
 # erase the signature of whatever it wraps.
 _Check = Callable[[Any, Any], None]
+_checks = parametrize_with_checks(
+  [est for est, _ in _ESTIMATORS],
+  expected_failed_checks=_expected_failed_checks,
+  **_PWC_KWARGS,
+)
+# scikit-learn up to 1.9.0 hands `parametrize` a generator, which pytest 9.1
+# deprecates and pytest 10 refuses; scikit-learn#34448 lists it in the release
+# after. The cases are listed here until the floor reaches that release.
+_argnames, _cases = _checks.args
 _parametrized = cast(
   "Callable[[_Check], _Check]",
-  parametrize_with_checks(
-    [est for est, _ in _ESTIMATORS],
-    expected_failed_checks=_expected_failed_checks,
-    **_PWC_KWARGS,
-  ),
+  pytest.mark.parametrize(_argnames, list(_cases), **_checks.kwargs),
 )
 
 
