@@ -1036,8 +1036,8 @@ def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
   """Stacking pairs into one fit does not change what any of them gets.
 
   The batched fitter advances every lane's bandwidth search together and
-  freezes each as it converges, so *which* lanes a pair travelled with does
-  not change its answer at all -- pinned exactly, on a fixed shape, by
+  freezes each as it converges, so on cpu *which* lanes a pair travelled with
+  does not change its answer at all -- pinned exactly, on a fixed shape, by
   `test_ace_freezes_each_lane_independently`. *How many* it travelled with
   moves the last bits on every device: torch selects an elementwise kernel
   by element count, and the bandwidth search's `pow` takes a vectorized

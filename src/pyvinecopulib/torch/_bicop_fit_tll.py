@@ -345,9 +345,9 @@ def _ace(
 
   Batched over any leading dimensions. Both convergence loops advance every
   lane together and *freeze* each as it converges -- its state, including
-  its two trip counters, stops moving while the others carry on -- so
-  *which* lanes a pair travelled with does not change its answer at all,
-  and its iteration count is the one its own data earns.
+  its two trip counters, stops moving while the others carry on -- so a
+  lane's iteration count is the one its own data earns, and on cpu *which*
+  lanes it travelled with does not change its answer at all.
 
   *How many* it travelled with is a separate matter and does move the last
   bits, here as everywhere in the batched fit: torch selects elementwise
@@ -356,12 +356,14 @@ def _ace(
   at a fixed shape.
 
   A batch runs until its slowest lane converges, so it trades the sum of the
-  lanes' iterations for their maximum. On cpu it drops its converged lanes
-  once they are the majority, so the slowest lane does not carry the whole
-  batch's arithmetic with it; that is bit for bit, pinned by
-  ``test_ace_drops_converged_lanes_exactly``. Elsewhere it does the full
-  batch's arithmetic at every step. How much that wins depends on how alike the lanes are, and
-  iteration counts rise as dependence falls -- with no signal to find, the
+  lanes' iterations for their maximum, and it drops its converged lanes once
+  they are the majority, so the slowest lane does not carry the whole batch's
+  arithmetic with it. On cpu that is bit for bit, pinned by
+  ``test_ace_drops_converged_lanes_exactly``, since a cpu kernel treats each
+  row alike however many rows it runs over. On an accelerator the row count
+  picks the kernel, so there a lane's last bits also depend on when its
+  companions converge. How much batching wins depends on how alike the lanes
+  are, and iteration counts rise as dependence falls -- with no signal to find, the
   outer criterion grinds against its own rounding noise until it hits
   ``outer_iter_max``. One near-independent lane therefore paces a whole
   level, and the deeper trees, whose pairs sit nearer independence, are
@@ -425,11 +427,8 @@ def _ace(
   outer_live = (outer_iter <= outer_iter_max) & (outer_abs_err > outer_abs_tol)
 
   # The lanes still iterating, and where each writes back its final state.
-  # Dropping the converged ones is bit for bit on cpu, whose per-row kernels
-  # do not depend on how many rows they run over; on an accelerator they do,
-  # in the last bits, and there launches rather than arithmetic bound the
-  # search, so dropping would cost exactness and buy nothing.
-  compact = device.type == "cpu"
+  # Frozen lanes would otherwise cost the whole batch's memory traffic at
+  # every step, which is what bounds the search on a GPU with little of it.
   out0, out1 = phi0, phi1
   work = torch.arange(batch[0], device=device)
   width = batch[0]
@@ -437,7 +436,7 @@ def _ace(
     alive = int(outer_live.sum())
     if alive == 0:
       break
-    if compact and alive <= _ACE_SHRINK * width:
+    if alive <= _ACE_SHRINK * width:
       out0, out1 = out0.clone(), out1.clone()
       out0[work], out1[work] = phi0, phi1
       keep = outer_live.nonzero().squeeze(-1)
