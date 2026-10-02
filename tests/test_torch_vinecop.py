@@ -1005,6 +1005,274 @@ def test_the_discrete_pair_fit_reproduces_the_compiled_grid(
   )
 
 
+def _many_level_data(n: int, seed: int) -> tuple[np.ndarray, list[str]]:
+  """A mixed ``(n, d + k)`` sample shaped like the wind data set.
+
+  Three discrete variables with 12, 31 and 10 levels, then five continuous
+  ones, two of which repeat their values as rounded measurements do. From the
+  second tree on, the atoms put a crowd of h-function values within rounding
+  of each other, and the repeated values exact ties, which is where the two
+  lanes' last bits could reorder a discrete fit's ranks or latent draw.
+  """
+  rng = np.random.default_rng(seed)
+  d = 8
+  a = rng.standard_normal((d, d))
+  cov = a @ a.T + d * np.eye(d)
+  sd = np.sqrt(np.diag(cov))
+  z = rng.multivariate_normal(np.zeros(d), cov / np.outer(sd, sd), size=n)
+  values, limits = [], []
+  for j, levels in enumerate([12, 31, 10, 0, 0, 0, 0, 0]):
+    p = pv.to_pseudo_obs(z[:, [j]]).ravel()
+    if levels:
+      k = np.floor(levels * p)
+      values.append((k + 1) / levels)
+      limits.append(k / levels)
+    elif j in (3, 4):
+      values.append((np.floor(200 * p) + 0.5) / 200)
+    else:
+      values.append(p)
+  return np.column_stack(values + limits), ["d"] * 3 + ["c"] * 5
+
+
+def test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree() -> None:
+  """Selected or refitted on its structure, in either lane, a mixed vine is one.
+
+  Within the core lane the refit equals the selection bit for bit: a pair is
+  fitted in its own order and its masses are read symmetrically. Across lanes
+  the first tree agrees to the parity ``test_from_data_matches_cpp`` holds a
+  pair to.
+  From the second tree on, each discrete edge carries such a difference on
+  with the gain of its soft ranks, about ``1e5`` on this vine -- a first-tree
+  difference of ``7e-14`` between the lanes reaches ``5e-9`` by the fourth
+  tree on x86, and the fourth tree reaches ``2e-8`` on macOS arm64. So the
+  whole vine agrees to ``1e-6``: continuously, never by the jump a redrawn
+  latent sample was.
+  """
+  u, var_types = _many_level_data(n=2000, seed=8)
+  cop = pv.Vinecop.from_data(u, var_types=var_types, controls=_TLL_CONTROLS)
+  refit = pv.Vinecop.from_data(
+    u, _TLL_CONTROLS, structure=cop.structure, var_types=var_types
+  )
+  torch_fits = {
+    kind: TorchVinecop.from_data(
+      torch.from_numpy(u),
+      structure=structure,
+      var_types=var_types,
+      controls=FitControlsTorchVinecop(),
+    )
+    for kind, structure in [("selection", None), ("refit", cop.structure)]
+  }
+
+  def grid(fit: pv.Vinecop | TorchVinecop, tree: int, edge: int) -> np.ndarray:
+    if isinstance(fit, TorchVinecop):
+      return fit._pair_module(tree, edge).interp_grid.values.numpy()
+    return np.asarray(fit.get_pair_copula(tree, edge).parameters)
+
+  fits: dict[str, pv.Vinecop | TorchVinecop] = {
+    "compiled refit": refit,
+    **{f"torch {kind}": fit for kind, fit in torch_fits.items()},
+  }
+  for name, fit in fits.items():
+    np.testing.assert_array_equal(fit.matrix, cop.matrix, err_msg=name)
+    for tree in range(cop.trunc_lvl):
+      for edge in range(cop.dim - tree - 1):
+        bound = (
+          0.0 if name == "compiled refit" else 1e-11 if tree == 0 else 1e-6
+        )
+        np.testing.assert_allclose(
+          grid(fit, tree, edge),
+          grid(cop, tree, edge),
+          rtol=bound,
+          atol=bound,
+          err_msg=f"{name}: tree {tree}, edge {edge}",
+        )
+  np.testing.assert_allclose(
+    torch_fits["selection"].pdf(torch.from_numpy(u)).numpy(),
+    cop.pdf(u),
+    rtol=1e-6,
+  )
+
+
+def test_a_discrete_pair_fit_moves_continuously_with_its_data() -> None:
+  """Rounding-sized changes to a discrete pair's data move its fit as little.
+
+  The torch mirror of vinecopulib's test: a continuous argument crowding
+  below 1 with gaps around ``1e-11``, refitted after a relative error of up to
+  ``1e-13`` keyed on each value, as rounding is. Any threshold on those gaps
+  would be straddled, and a redrawn latent sample moved the grid by about 10.
+  Both lanes move it by up to ``2e-6`` relative over eight such errors, hence
+  the relative bound: the grid spans thirty orders of magnitude.
+  """
+  rng = np.random.default_rng(11)
+  z = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.7], [0.7, 1.0]], size=2000)
+  u = pv.to_pseudo_obs(z)
+  k = np.ceil(12 * u[:, 0])
+  c = u[:, 1].copy()
+  crowd = np.arange(0, len(c), 4)
+  c[crowd] = 1 - 0.9e-6 - crowd * 1e-11 * (1 + 0.5 * np.sin(crowd))
+  data = np.column_stack([k / 12, c, (k - 1) / 12, c])
+
+  def fit(x: np.ndarray) -> np.ndarray:
+    pair = TorchTllBicop.from_data(
+      torch.from_numpy(x), var_types=["d", "c"], cache_integrals=False
+    )
+    return pair.interp_grid.values.numpy()
+
+  base = fit(data)
+  for rep in range(1, 4):
+    bits = data.view(np.uint64) ^ np.uint64(rep)
+    key = (bits * np.uint64(0xBF58476D1CE4E5B9)) ^ (bits >> np.uint64(31))
+    xi = (key >> np.uint64(11)).astype(np.float64) / 2.0**53 * 2 - 1
+    noisy = np.minimum(data * (1 + 1e-13 * xi), 1.0)
+    noisy[:, 3] = noisy[:, 1]
+    np.testing.assert_allclose(fit(noisy), base, rtol=1e-5, atol=0.0)
+
+
+@pytest.mark.parametrize("seed", [7, 18, 30, 36])
+@pytest.mark.parametrize("types", [["c", "c"], ["d", "c"], ["d", "d"]])
+def test_a_pair_fit_does_not_depend_on_argument_order(
+  seed: int, types: list[str]
+) -> None:
+  """A pair fitted with its arguments swapped and then flipped is the same fit.
+
+  Bit for bit, since both lanes fit a pair in its own order and transpose the
+  grid back, and near independence, where the maximal correlation behind the
+  bandwidth used to depend on which argument ACE updated first. Checked
+  against the compiled fit as well, which orders the pair the same way
+  (vinecopulib#799).
+  """
+  u = np.random.default_rng(seed).uniform(size=(1000, 2))
+  upper, lower = np.ceil(12 * u) / 12, np.floor(12 * u) / 12
+  if types == ["c", "c"]:
+    data = u
+  elif types == ["d", "c"]:
+    data = np.column_stack([upper[:, 0], u[:, 1], lower[:, 0], u[:, 1]])
+  else:
+    data = np.column_stack([upper, lower])
+  swapped = data[:, [1, 0, 3, 2]] if data.shape[1] == 4 else data[:, [1, 0]]
+
+  def fit(x: np.ndarray, var_types: list[str]) -> np.ndarray:
+    pair = TorchTllBicop.from_data(
+      torch.from_numpy(x), var_types=var_types, cache_integrals=False
+    )
+    return pair.interp_grid.values.numpy()
+
+  direct = fit(data, types)
+  reversed_ = fit(swapped, types[::-1]).T
+  np.testing.assert_array_equal(reversed_, direct)
+  compiled = pv.Bicop.from_data(data, controls=_TLL_BICOP, var_types=types)
+  np.testing.assert_allclose(
+    direct, np.asarray(compiled.parameters), rtol=1e-10, atol=1e-10
+  )
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+@pytest.mark.parametrize("batched_fit", [False, True])
+def test_a_selected_vine_equals_a_refit_of_its_structure(
+  batched_fit: bool, mixed: bool
+) -> None:
+  """Selection and a refit of the selected structure hold the same pairs.
+
+  Selection fits each pair in the search's orientation and flips it into the
+  structure's. A pair is fitted in its own order, and its masses treat the two
+  arguments alike, so the two agree bit for bit, every h-function passed on
+  included -- discrete variables too.
+  """
+  if mixed:
+    data, var_types = _many_level_data(n=600, seed=3)
+    u = torch.as_tensor(data)
+  else:
+    rng = np.random.default_rng(3)
+    mix = np.full((5, 5), 0.4)
+    np.fill_diagonal(mix, 1.0)
+    u = torch.as_tensor(pv.to_pseudo_obs(rng.standard_normal((500, 5)) @ mix))
+    var_types = None
+  controls = FitControlsTorchVinecop(batched_fit=batched_fit)
+  selected = TorchVinecop.from_data(u, controls, var_types=var_types)
+  refit = TorchVinecop.from_data(
+    u, controls, structure=selected.structure, var_types=var_types
+  )
+  for t in range(selected.trunc_lvl):
+    for e in range(selected.dim - t - 1):
+      torch.testing.assert_close(
+        refit._pair_module(t, e).interp_grid.values,
+        selected._pair_module(t, e).interp_grid.values,
+        rtol=0.0,
+        atol=0.0,
+      )
+
+
+@pytest.mark.parametrize("types", [["c", "c"], ["d", "c"], ["d", "d"]])
+def test_a_pair_fit_does_not_depend_on_its_data_layout(
+  types: list[str],
+) -> None:
+  """The same data, contiguous or as a strided view, give the same fit.
+
+  The bandwidth search reduces along the sample, and a strided column sums in
+  another order, so the layout of a tensor would otherwise choose between two
+  bandwidths a few ulps apart -- which a discrete edge's later trees amplify.
+  """
+  u = np.random.default_rng(18).uniform(size=(1000, 2))
+  upper, lower = np.ceil(12 * u) / 12, np.floor(12 * u) / 12
+  if types == ["c", "c"]:
+    data = torch.from_numpy(u)
+  elif types == ["d", "c"]:
+    data = torch.from_numpy(
+      np.column_stack([upper[:, 0], u[:, 1], lower[:, 0], u[:, 1]])
+    )
+  else:
+    data = torch.from_numpy(np.column_stack([upper, lower]))
+  strided = data.t().contiguous().t()
+  assert not strided.is_contiguous()
+
+  def fit(x: torch.Tensor) -> torch.Tensor:
+    return TorchTllBicop.from_data(
+      x, var_types=types, cache_integrals=False
+    ).interp_grid.values
+
+  torch.testing.assert_close(fit(strided), fit(data), rtol=0.0, atol=0.0)
+
+
+@pytest.mark.parametrize("noisy_column", [0, 1])
+def test_a_discrete_pair_fit_ignores_rounding_noise_in_its_ties(
+  noisy_column: int,
+) -> None:
+  """Ties split by a few ulps fit the same pair as exact ones.
+
+  The mirror of vinecopulib's own two tests: the noise splits either an
+  atom's rows or the repeated values of the continuous argument. Checked
+  against both the exact fit and the compiled fit of the same noisy data.
+  """
+  rng = np.random.default_rng(3)
+  z = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=3000)
+  u = pv.to_pseudo_obs(z)
+  k = np.floor(31 * u[:, 0])
+  c = (np.floor(200 * u[:, 1]) + 0.5) / 200 if noisy_column else u[:, 1]
+  exact = np.column_stack([(k + 1) / 31, c, k / 31, c])
+  noisy = exact.copy()
+  step = (np.arange(len(u)) % 9 - 4) * np.finfo(float).eps
+  if noisy_column:
+    noisy[:, 1] = noisy[:, 3] = exact[:, 1] * (1 + step)
+  else:
+    noisy[:, 0] = np.minimum(exact[:, 0] * (1 + step), 1.0)
+    noisy[:, 2] = exact[:, 2] * (1 - step)
+
+  def fit(x: np.ndarray) -> np.ndarray:
+    pair = TorchTllBicop.from_data(
+      torch.from_numpy(x), var_types=["d", "c"], cache_integrals=False
+    )
+    return pair.interp_grid.values.numpy()
+
+  torch_noisy = fit(noisy)
+  np.testing.assert_allclose(torch_noisy, fit(exact), rtol=1e-10, atol=1e-10)
+  compiled = pv.Bicop.from_data(
+    noisy[:, :3], controls=_TLL_BICOP, var_types=["d", "c"]
+  )
+  np.testing.assert_allclose(
+    torch_noisy, np.asarray(compiled.parameters), rtol=1e-10, atol=1e-10
+  )
+
+
 @pytest.mark.parametrize("var_types", [["d", "c", "c"], ["d", "d", "d"]])
 def test_from_data_matches_discrete_vinecop(var_types: list[str]) -> None:
   # End to end: the torch TLL fit on data with atoms, against the compiled vine

@@ -376,11 +376,9 @@ def integrate_2d_batched(
   """Batched bivariate CDF (trapezoidal-trapezoidal).
 
   Same shape contract as :func:`integrate_1d_batched`: ``values: (N, m, m)``,
-  ``u: (N, n, 2)``, returns ``(N, n)`` clamped strictly inside ``[0, 1]``.
-  The result is renormalized by the full-strip outer integral so
-  C(1, u2) = u2 holds exactly — matches the post-vinecopulib#667 C++
-  behavior and stays in parity with the unbatched
-  :meth:`InterpolationGrid2D.integrate_2d`.
+  ``u: (N, n, 2)``, returns ``(N, n)`` clamped strictly inside ``[0, 1]``:
+  the mass of the interpolated density below and left of ``u``, as
+  ``InterpolationGrid::integrate_2d`` defines it.
   """
   u = u.clamp(0.0, 1.0)
   N, n, _ = u.shape
@@ -399,19 +397,8 @@ def integrate_2d_batched(
     grid_points, upr_inner, vals_inner, is_linear
   )  # (N, n, m)
 
-  # Outer pass: integrate strip[k, l, :] up to u1[k, l] and renormalize
-  # by the full-first-axis integral so C(1, u2) = u2 holds exactly.
-  # Guard the degenerate `tmpint1 = 0` case (e.g. cache-building at
-  # raw grid endpoints) — true CDF is then 0.
-  tmpint = int_on_grid_batched(grid_points, u1, strip, is_linear)
-  tmpint1 = int_on_grid_batched(
-    grid_points, torch.ones_like(u1), strip, is_linear
-  )
-  out = torch.where(
-    tmpint1 > 0,
-    tmpint * u2 / tmpint1.clamp_min(_MIN_MASS),
-    torch.zeros_like(tmpint),
-  )
+  # Outer pass: integrate strip[k, l, :] up to u1[k, l].
+  out = int_on_grid_batched(grid_points, u1, strip, is_linear)
   return trim(out, TENSOR_NS)
 
 

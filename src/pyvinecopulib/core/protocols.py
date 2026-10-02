@@ -239,10 +239,13 @@ class FInfo(Protocol):
       Smallest representable difference from one.
   tiny : float
       Smallest positive normal value.
+  max : float
+      Largest finite value.
   """
 
   eps: float
   tiny: float
+  max: float
 
 
 class Namespace(Protocol[ArrayT]):
