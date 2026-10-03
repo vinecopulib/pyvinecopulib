@@ -162,16 +162,15 @@ def test_a_discrete_level_evaluates_in_row_blocks(
 ) -> None:
   """A mixed level splits its rows under a byte budget, to the same bits.
 
-  Its probability stencils hold about 1 KB per (pair, row) each, which on a
-  wide level at a large sample exceeds a card's memory, so the level bounds
-  its own peak. Every output is row-wise, so the blocks are exact; a budget of
-  a few dozen rows forces many of them.
+  A wide level at a large sample holds more than a card's memory at once, so
+  the level bounds its own peak. Every output is row-wise, so the blocks are
+  exact; a budget of a few dozen rows forces many of them.
   """
+  var_types = ["d", "d", "c", "d", "c"]
   from pyvinecopulib.torch import TorchVinecop, _vinecop_batched
 
   from .test_torch_vinecop import _discrete_data
 
-  var_types = ["d", "d", "c", "d", "c"]
   u = _discrete_data(var_types, n=500, seed=1)
   cop = pv.Vinecop.from_data(
     u,
@@ -185,9 +184,7 @@ def test_a_discrete_level_evaluates_in_row_blocks(
     vine.rosenblatt(u_t, batched=True, randomize_discrete=False),
   )
   per_row = 4 * _vinecop_batched._DISCRETE_VALUES_PER_QUERY * 8
-  monkeypatch.setattr(
-    _vinecop_batched, "_DISCRETE_MEM_BUDGET_BYTES", 37 * per_row
-  )
+  monkeypatch.setattr(_vinecop_batched, "_ROW_MEM_BUDGET_BYTES", 37 * per_row)
   blocked = (
     vine.logpdf(u_t, batched=True),
     vine.rosenblatt(u_t, batched=True, randomize_discrete=False),
