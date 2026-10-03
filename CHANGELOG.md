@@ -2,9 +2,16 @@
 
 ## 1.0.1 (unreleased)
 
+### Breaking API changes in `pyvinecopulib`
+
+- Hand `fit_level` every unconditional level, a level with a discrete edge as one `(P, n, 4)` stack in which a continuous edge's left limits are its values; it saw only all-continuous levels, and a mixed level went edge by edge (#354).
+
 ### New features in `pyvinecopulib`
 
 - Rank partly as tied the distinct values closer than `scale` in `to_pseudo_obs(..., scale=...)`, so that pseudo-observations move continuously with the data; the default, `0`, ranks by value (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
+- Evaluate and fit a `TorchVinecop` with discrete variables on the batched fast path: the cascades carry the left-limit scratch one stacked tree level at a time, `batched_fit` stacks a level with a discrete edge, and `TorchTllBicop.from_data_batched` takes per-pair `var_types`. A discrete vine declined both and ran edge by edge, on CUDA too (#354).
+- Fit a wide tree level faster with `batched_fit`: `TorchTllBicop.from_data_batched` builds and normalizes its pairs as one stack, 3.5x faster at 400 pairs of 2000 observations on CUDA; a level drops its converged bandwidth searches, 5x faster at 400 pairs of 16512 observations on a laptop GPU; `compile_fit` fuses the kernel density sum; and each fitted level's h-functions are evaluated in stacked calls (#354).
+- Read a discrete `TorchTllBicop` edge's atom probabilities in constant time per query off compensated prefix tables, rather than by a quadrature over the whole grid: 2.3-2.5x faster on CUDA at `n >= 20000`, and as accurate: `5e-15` relative at any width, where a four-corner difference reaches `5e-9` at `1.2e-4` (#354).
 
 ### Bug fixes in `pyvinecopulib`
 
@@ -18,11 +25,15 @@
 - Make a `degree=1` `Kde1d` fit scale equivariant, which changes every `degree=1` estimate (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Break random ties by a fixed key per observation, the same way on every platform and with or without Boost, in `to_pseudo_obs(..., "random")` and Chatterjee's xi, and keep input order for `"first"`; tied-data results change once (#352, #351, [wdm#28](https://github.com/tnagler/wdm/pull/28), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
 - Compute Hoeffding's D correctly on tied data, in `wdm(..., "hoeffding")` and the `"hoeffd"` tree criterion; it could leave the unit interval (#352, [wdm#28](https://github.com/tnagler/wdm/pull/28)).
+- Honor `FitControlsTorchVinecop.batched_fit` in `TorchVinecop.fit` and `select`, which fitted edge by edge whatever it said, and call a caller's `fit_edge` with it on: `from_data` fitted every level with its built-in TLL fit instead, by default on CUDA (#354).
 - Break ties in `TorchTllBicop.from_data` and `from_data_batched` as `Bicop.from_data` does, in a random order fixed per observation rather than by row order (#351).
 - Clamp the density of a `BicopBase` pair with a discrete argument to the positive, finite floats of its dtype, as `Bicop` clamps it to `[DBL_MIN, DBL_MAX]`, so a `TorchVinecop`'s log-density stays finite where a discrete pair's mass at an atom underflows (#351).
 - Fit a `TorchTllBicop` the same way whatever the memory layout of its data; a strided view selected a bandwidth a few ulps apart (#351).
 - Draw uniforms on a grid of `2^-53` in `sample_uniform` and every seeded simulation, quasi-random ones included, where a million draws repeated about 110 values per column; seeded draws change once (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
 - Order each column's ties by seeds of its own in `to_pseudo_obs(..., "random", seeds=...)`, so that columns tied in the same rows are no longer ordered alike (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
+- The gradient of a non-simplified vine's `logpdf` or `rosenblatt` with respect to `u` includes its path through the conditioning values: on torch before 2.13 their copy was detached, and on 2.13 it warned (#354).
+- Evaluate a batched `TorchVinecop` level in blocks of rows sized to the device's memory, with the same results: a wide continuous level at a large sample ran out of memory on an 8 GB card (#354).
+- `TorchVinecop.inverse_rosenblatt(batched=True)` agrees bit for bit with `batched=False` where an intermediate quantile lands on 0 or 1: the batched waves skipped the clamp each pair applies to its input, and differed by up to `5e-8` (#354).
 
 ### Build / packaging
 

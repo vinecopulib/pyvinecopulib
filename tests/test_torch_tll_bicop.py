@@ -448,10 +448,7 @@ def test_normalize_margins_balances_both_margins() -> None:
   whole residual: a sweep that leaves one margin exact puts all of it on the
   other.
   """
-  from pyvinecopulib.torch._bicop_interp import (
-    InterpolationGrid2D,
-    _trap_weights,
-  )
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
 
   m = 16
   grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
@@ -459,7 +456,7 @@ def test_normalize_margins_balances_both_margins() -> None:
   values = torch.from_numpy(rng.uniform(0.5, 1.5, size=(m, m)))
 
   ig = InterpolationGrid2D(grid, values)
-  w = _trap_weights(ig.grid_points)
+  w = ig.trap_weights
   r = (ig.values @ w - 1.0).abs().max().item()
   c = (ig.values.t().contiguous() @ w - 1.0).abs().max().item()
   assert max(r, c) < 1e-10
@@ -521,6 +518,56 @@ def test_normalize_margins_converges_on_a_concentrated_grid(
   assert max(r, c) < 1e-13
   swapped = InterpolationGrid2D(grid, values.t().contiguous()).values
   torch.testing.assert_close(swapped.t(), ig.values, rtol=0.0, atol=0.0)
+
+
+def test_a_stack_normalizes_each_grid_as_it_would_alone() -> None:
+  """A grid normalizes in a stack as it does alone, and flips exactly.
+
+  A batched fit normalizes its pairs as one stack and the constructor one grid
+  at a time. The stack mixes grids that converge in a few passes with grids
+  that need Newton steps, connected or not, so a grid's neighbors stop at
+  different times. Alone and stacked agree to rounding only: the kernels a
+  stack is reduced with are chosen by its size, and differ between machines
+  (AGENTS.md). A grid and its transpose in one stack go through the same
+  kernels, and normalize to transposes of each other bit for bit.
+
+  Rounding is measured on the grid's own scale, not each entry's. The sharpest
+  surface's far corner is ``exp(-400)`` of its diagonal and tied to it only
+  through neighbors a millionth as large, so moving the input by one ulp moves
+  that corner by ``3e-9`` of itself, while no entry moves by more than
+  ``5e-16`` of the grid's largest.
+  """
+  from pyvinecopulib.torch._bicop_interp import (
+    InterpolationGrid2D,
+    normalize_stack,
+  )
+
+  m = 30
+  grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
+  rng = torch.Generator().manual_seed(0)
+  distance = (grid[:, None] - grid[None, :]).abs()
+  grids = []
+  for concentration in (5.0, 40.0, 400.0):
+    noise = torch.rand(m, m, generator=rng, dtype=torch.float64)
+    surface = torch.exp(-concentration * distance) * (1.0 + noise)
+    corner = surface.clone()
+    corner[0, 1:] = 0.0
+    corner[1:, 0] = 0.0
+    grids += [surface, corner]
+  stack = torch.stack(grids)
+  stack = torch.cat([stack, stack.transpose(-1, -2)])
+
+  weights = InterpolationGrid2D(grid, stack[0], norm_maxiter=0).trap_weights
+  stacked = normalize_stack(stack, weights, 2000)
+  for k in range(stack.shape[0]):
+    alone = InterpolationGrid2D(grid, stack[k]).values
+    torch.testing.assert_close(
+      stacked[k], alone, rtol=0.0, atol=1e-14 * float(alone.max())
+    )
+  half = len(grids)
+  torch.testing.assert_close(
+    stacked[half:].transpose(-1, -2), stacked[:half], rtol=0.0, atol=0.0
+  )
 
 
 def test_normalize_margins_leaves_a_normalized_grid_alone() -> None:
@@ -955,13 +1002,42 @@ def test_ace_freezes_each_lane_independently() -> None:
   torch.testing.assert_close(_ace(mixed)[0], _ace(alone)[0], atol=0.0, rtol=0.0)
 
 
+@pytest.mark.parametrize("n", [600, 601])
+def test_ace_drops_converged_lanes_exactly(
+  n: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Dropping a batch's converged lanes on cpu moves no lane at all.
+
+  Near-independent lanes grind on long after dependent ones converge, so the
+  batched search drops the frozen lanes from its working set. That is exact
+  only because the cpu kernels treat each row alike however many rows they
+  run over, which is what this pins, at an aligned and an unaligned row
+  length.
+  """
+  from pyvinecopulib.torch import _bicop_fit_tll
+  from pyvinecopulib.torch._bicop_fit_tll import _ace
+
+  rng = np.random.default_rng(0)
+  slow = [rng.uniform(size=(n, 2)) for _ in range(2)]
+  fast = [
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
+      n, seeds=[k]
+    )
+    for k, r in enumerate([0.8, 0.7, 0.9, 0.85, 0.75, 0.6])
+  ]
+  x = torch.special.ndtri(torch.from_numpy(np.stack([slow[0], *fast, slow[1]])))
+  dropped = _ace(x)
+  monkeypatch.setattr(_bicop_fit_tll, "_ACE_SHRINK", 0.0)
+  torch.testing.assert_close(dropped, _ace(x), atol=0.0, rtol=0.0)
+
+
 @pytest.mark.parametrize("n", [500, 2000])
 def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
   """Stacking pairs into one fit does not change what any of them gets.
 
   The batched fitter advances every lane's bandwidth search together and
-  freezes each as it converges, so *which* lanes a pair travelled with does
-  not change its answer at all -- pinned exactly, on a fixed shape, by
+  freezes each as it converges, so on cpu *which* lanes a pair travelled with
+  does not change its answer at all -- pinned exactly, on a fixed shape, by
   `test_ace_freezes_each_lane_independently`. *How many* it travelled with
   moves the last bits on every device: torch selects an elementwise kernel
   by element count, and the bandwidth search's `pow` takes a vectorized
@@ -1123,29 +1199,74 @@ def test_from_data_batched_matches_cpp() -> None:
     )
 
 
+def test_from_data_batched_builds_each_pair_as_the_constructor_does() -> None:
+  """A stacked pair is the constructor's pair, owning every buffer it holds.
+
+  The batched fit checks and normalizes its grids as one stack and builds
+  their tables in one pass, so it is pinned here against a pair constructed
+  from the same normalized values: the same buffers, bit for bit. And no two
+  pairs share one, since ``load_state_dict`` writes buffers in place and a
+  shared one would carry a load into every sibling.
+  """
+  u = torch.rand(
+    3, 400, 2, dtype=torch.float64, generator=torch.Generator().manual_seed(2)
+  )
+  pairs = TorchTllBicop.from_data_batched(u)
+  for pair in pairs:
+    built = TorchTllBicop(
+      pair.interp_grid.grid_points, pair.interp_grid.values, norm_maxiter=0
+    )
+    got, want = dict(pair.named_buffers()), dict(built.named_buffers())
+    assert got.keys() == want.keys()
+    for name, buffer in want.items():
+      torch.testing.assert_close(got[name], buffer, atol=0.0, rtol=0.0)
+  before = pairs[1].interp_grid.values.clone()
+  pairs[0].load_state_dict(
+    TorchTllBicop.from_data(
+      torch.rand(400, 2, dtype=torch.float64)
+    ).state_dict()
+  )
+  torch.testing.assert_close(
+    pairs[1].interp_grid.values, before, atol=0.0, rtol=0.0
+  )
+  pointers = [{b.data_ptr() for b in p.buffers()} for p in pairs]
+  assert not (pointers[0] & pointers[1]) and not (pointers[1] & pointers[2])
+
+
 def test_from_data_batched_rejects_a_non_stacked_input() -> None:
   u = torch.from_numpy(
     np.random.default_rng(0).uniform(0.05, 0.95, size=(64, 2))
   )
-  with pytest.raises(ValueError, match=r"\(P, n, 2\)"):
+  with pytest.raises(ValueError, match=r"\(P, n, 2 or 4\)"):
     TorchTllBicop.from_data_batched(u)
 
 
-def test_a_discrete_edge_is_refused_a_pair_axis() -> None:
-  """`find_latent_sample` is a compiled per-pair draw with no batch axis.
+def test_a_discrete_lane_fits_as_it_does_alone() -> None:
+  """A discrete lane of a stack reproduces its own single-pair fit.
 
-  Refusing beats silently fitting the wrong thing: the discrete fit runs on
-  a latent sample reconstructed from a fixed-seed generator, so there is no
-  batched equivalent to fall back to.
+  ``find_latent_sample`` is a compiled per-pair draw with no batch axis, so a
+  stack draws one lane at a time, each from its own lane's bandwidth, and
+  every lane ranks its ties inside the kernel as a single pair does. Stacked
+  beside a continuous lane, each one comes back as it would alone, up to the
+  last bits stacking always moves in the bandwidth search.
   """
   from pyvinecopulib.torch._bicop_fit_tll import fit_tll_constant
 
   rng = np.random.default_rng(5)
-  u = np.ceil(rng.uniform(0.0, 1.0, size=(200, 2)) * 4) / 4
-  wide = np.column_stack([u, np.maximum(u - 0.25, 0.0)])
-  stack = torch.from_numpy(np.stack([wide, wide]))
-  with pytest.raises(ValueError, match="leading pair axis"):
-    fit_tll_constant(stack[..., :2], discrete_data=stack)
+  n = 300
+  atoms = np.ceil(rng.uniform(0.0, 1.0, size=(n, 2)) * 4) / 4
+  discrete = np.column_stack([atoms, np.maximum(atoms - 0.25, 0.0)])
+  z = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.5], [0.5, 1.0]], size=n)
+  cont = pv.to_pseudo_obs(z)
+  stack = torch.from_numpy(np.stack([discrete, np.column_stack([cont, cont])]))
+
+  _, stacked = fit_tll_constant(
+    stack[..., :2], discrete_data=stack, discrete_lanes=[0]
+  )
+  _, alone = fit_tll_constant(stack[0, :, :2], discrete_data=stack[0])
+  _, cont_alone = fit_tll_constant(stack[1, :, :2])
+  torch.testing.assert_close(stacked[0], alone, rtol=1e-12, atol=1e-13)
+  torch.testing.assert_close(stacked[1], cont_alone, rtol=1e-12, atol=1e-13)
 
 
 def test_from_data_batched_at_one_pair() -> None:

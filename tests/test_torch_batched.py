@@ -20,10 +20,13 @@ torch = pytest.importorskip("torch")
 
 from pyvinecopulib.torch import TorchTllBicop
 from pyvinecopulib.torch._vinecop_batched import (
+  cond_interval_mass_batched,
   int_on_grid_batched,
   integrate_1d_batched,
   integrate_2d_batched,
   interpolate_batched,
+  mass_tables,
+  rect_mass_batched,
 )
 
 
@@ -106,3 +109,85 @@ def test_integrate_2d_batched_matches_unbatched() -> None:
   out = integrate_2d_batched(grid_points, values, u_batch).numpy()
   ref = np.stack([bc.interp_grid.integrate_2d(u_t).numpy() for bc in bcs])
   np.testing.assert_allclose(out, ref, atol=1e-13, rtol=1e-13)
+
+
+def test_grid_masses_batched_match_unbatched() -> None:
+  """Stacked rectangle and interval probabilities vs the per-pair methods.
+
+  The per-pair methods are a batch of one through the same kernels, on tables
+  built from one grid rather than three, so stacking changes nothing about
+  any one pair beyond summation order. The bounds straddle cells, share a cell,
+  touch zero, and come in either order, which are the four regimes the
+  quadrature weights distinguish.
+  """
+  cops = [_fit_tll_bicop(seed) for seed in (7, 8, 9)]
+  bcs = [TorchTllBicop.from_bicop(c) for c in cops]
+  grid_points = bcs[0].interp_grid.grid_points
+  values = torch.stack([bc.interp_grid.values for bc in bcs], dim=0)
+  rng = np.random.default_rng(21)
+  n = 400
+  lo = rng.uniform(0.0, 1.0, size=(3, 4, n))
+  width = rng.choice([1e-4, 0.01, 0.3], size=(3, 4, n))
+  hi = np.clip(lo + width, 0.0, 1.0)
+  lo[:, 2, : n // 4] = 0.0
+  bounds = torch.from_numpy(np.where(rng.random((3, 4, n)) < 0.2, hi, lo))
+  other = torch.from_numpy(np.where(rng.random((3, 4, n)) < 0.2, lo, hi))
+  a1, a2 = bounds[:, 0], bounds[:, 2]
+  b1, b2 = other[:, 0], other[:, 2]
+
+  tables = mass_tables(grid_points, values)
+  rect = rect_mass_batched(grid_points, tables, a1, b1, a2, b2)
+  for k, bc in enumerate(bcs):
+    torch.testing.assert_close(
+      rect[k],
+      bc.interp_grid.rect_mass(a1[k], b1[k], a2[k], b2[k]),
+      atol=1e-15,
+      rtol=1e-14,
+    )
+  for cond_var in (1, 2):
+    cim = cond_interval_mass_batched(
+      grid_points, tables, bounds[:, 1], a1, b1, cond_var
+    )
+    for k, bc in enumerate(bcs):
+      torch.testing.assert_close(
+        cim[k],
+        bc.interp_grid.cond_interval_mass(bounds[k, 1], a1[k], b1[k], cond_var),
+        atol=1e-15,
+        rtol=1e-14,
+      )
+
+
+def test_a_discrete_level_evaluates_in_row_blocks(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A mixed level splits its rows under a byte budget, to the same bits.
+
+  A wide level at a large sample holds more than a card's memory at once, so
+  the level bounds its own peak. Every output is row-wise, so the blocks are
+  exact; a budget of a few dozen rows forces many of them.
+  """
+  var_types = ["d", "d", "c", "d", "c"]
+  from pyvinecopulib.torch import TorchVinecop, _vinecop_batched
+
+  from .test_torch_vinecop import _discrete_data
+
+  u = _discrete_data(var_types, n=500, seed=1)
+  cop = pv.Vinecop.from_data(
+    u,
+    var_types=var_types,
+    controls=pv.FitControlsVinecop(family_set=[pv.families.tll]),
+  )
+  vine = TorchVinecop.from_vinecop(cop)
+  u_t = torch.from_numpy(u)
+  whole = (
+    vine.logpdf(u_t, batched=True),
+    vine.rosenblatt(u_t, batched=True, randomize_discrete=False),
+  )
+  per_row = 4 * _vinecop_batched._DISCRETE_VALUES_PER_QUERY * 8
+  monkeypatch.setattr(_vinecop_batched, "_ROW_MEM_BUDGET_BYTES", 37 * per_row)
+  blocked = (
+    vine.logpdf(u_t, batched=True),
+    vine.rosenblatt(u_t, batched=True, randomize_discrete=False),
+  )
+  for a, b in zip(blocked, whole, strict=True):
+    torch.testing.assert_close(a, b, atol=0.0, rtol=0.0)
