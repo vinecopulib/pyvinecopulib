@@ -33,6 +33,7 @@
 - Draw uniforms on a grid of `2^-53` in `sample_uniform` and every seeded simulation, quasi-random ones included, where a million draws repeated about 110 values per column; seeded draws change once (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799), [wdm#30](https://github.com/tnagler/wdm/pull/30)).
 - Order each column's ties by seeds of its own in `to_pseudo_obs(..., "random", seeds=...)`, so that columns tied in the same rows are no longer ordered alike (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
 - The gradient of a non-simplified vine's `logpdf` or `rosenblatt` with respect to `u` includes its path through the conditioning values: on torch before 2.13 their copy was detached, and on 2.13 it warned (#354).
+- Evaluate a batched `TorchVinecop` level in blocks of rows sized to the device's memory, with the same results: a wide continuous level at a large sample ran out of memory on an 8 GB card (#354).
 - `TorchVinecop.inverse_rosenblatt(batched=True)` agrees bit for bit with `batched=False` where an intermediate quantile lands on 0 or 1: the batched waves skipped the clamp each pair applies to its input, and differed by up to `5e-8` (#354).
 
 ### Build / packaging

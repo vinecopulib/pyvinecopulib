@@ -262,6 +262,36 @@ def test_batched_fit_peak_memory_stays_bounded(device: str) -> None:
   assert peak < 3 * _KDE_MEM_BUDGET_BYTES, f"peak {peak / 2**20:.0f} MiB"
 
 
+def test_a_continuous_level_evaluates_in_row_blocks_on_cuda(
+  device: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """A continuous level splits its rows on CUDA, to the same bits.
+
+  Its two stacked h-functions hold about 40 values per (pair, row), which a
+  wide level at a large sample makes more than a card holds; a budget of a
+  few dozen rows forces many blocks.
+  """
+  if torch.device(device).type != "cuda":
+    pytest.skip("a continuous level is blocked on cuda only")
+  from pyvinecopulib.torch import _vinecop_batched
+
+  u_np = _u(6, 600, 3)
+  cop = pv.Vinecop.from_data(
+    u_np, controls=pv.FitControlsVinecop(family_set=[pv.families.tll])
+  )
+  vine = TorchVinecop.from_vinecop(cop).to(device)
+  u = torch.as_tensor(u_np, device=device)
+
+  def evaluate() -> tuple[Any, Any]:
+    return vine.logpdf(u, batched=True), vine.rosenblatt(u, batched=True)
+
+  whole = evaluate()
+  per_row = 5 * _vinecop_batched._CONTINUOUS_VALUES_PER_QUERY * 8
+  monkeypatch.setattr(_vinecop_batched, "_ROW_MEM_BUDGET_BYTES", 37 * per_row)
+  for a, b in zip(evaluate(), whole, strict=True):
+    torch.testing.assert_close(a, b, atol=0.0, rtol=0.0)
+
+
 def test_fit_and_select_run_on_device(device: str) -> None:
   """Fitting and structure selection work with device-resident data."""
   u = _u(4, 600, 11)

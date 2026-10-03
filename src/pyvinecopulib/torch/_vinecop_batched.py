@@ -21,7 +21,8 @@ to this file.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 from torch import Tensor
@@ -43,15 +44,71 @@ if TYPE_CHECKING:
 #: vanishes too, so nothing moved; the constant was simply the wrong one.
 _MIN_MASS: float = 1e-20
 
-#: Peak a mixed level's evaluation aims to stay under. Smaller blocks trade
-#: memory for kernel launches: at n = 100000 a quarter of this doubled the
-#: time of a 15-variable vine, and four times it bought nothing more.
-_DISCRETE_MEM_BUDGET_BYTES: int = 1024 * 1024 * 1024
+#: Peak a level's evaluation aims to stay under, in bytes; ``None`` is a fifth
+#: of a CUDA device's memory, else 1 GiB. Smaller blocks trade memory for
+#: kernel launches.
+_ROW_MEM_BUDGET_BYTES: int | None = None
 
-#: Values a mixed level's evaluation holds live per (pair, row) at its peak:
-#: measured 8.2 KB at float64 with the density, nearly all of it the stencil
-#: gathers of the stacked probability calls, and rounded up.
+#: Values a level's evaluation holds live per (pair, row) at its peak, measured
+#: at float64 and rounded up: a mixed level's stencil gathers, and a continuous
+#: level's two h-functions on the stacked grids.
 _DISCRETE_VALUES_PER_QUERY: int = 1100
+_CONTINUOUS_VALUES_PER_QUERY: int = 40
+
+
+def _by_rows(
+  fn: Callable[..., tuple[Tensor | None, ...]],
+  grid_points: Tensor,
+  u: Tensor,
+  values_per_query: int,
+  *args: Any,  # noqa: ANN401 -- forwarded to `fn` unread
+  cuda_only: bool = False,
+) -> tuple[Tensor | None, ...]:
+  """``fn(grid_points, u, *args)`` in blocks of rows under the memory budget.
+
+  Exact: every output is row-wise, so the blocks are concatenated back. A
+  CUDA kernel computes each element alike whatever the block, but a cpu kernel
+  may round an element differently by where the block puts it, so
+  ``cuda_only`` keeps a computation exposed to that whole off CUDA.
+
+  Parameters
+  ----------
+  fn : callable
+      A level evaluation on ``(N, n, k)`` input returning ``(N, n)`` outputs.
+  grid_points : Tensor, shape (m,), dtype float
+      The shared grid.
+  u : Tensor, shape (N, n, k), dtype float
+      The level's input.
+  values_per_query : int
+      Values ``fn`` holds live per (pair, row).
+  *args : Any
+      Further arguments to ``fn``.
+  cuda_only : bool, default=False
+      Evaluate all rows at once off CUDA.
+
+  Returns
+  -------
+  tuple of Tensor, or None
+      ``fn``'s outputs over all rows.
+  """
+  budget = _ROW_MEM_BUDGET_BYTES
+  if budget is None:
+    budget = (
+      torch.cuda.get_device_properties(u.device).total_memory // 5
+      if u.device.type == "cuda"
+      else 1 << 30
+    )
+  n_pairs, n = int(u.shape[0]), int(u.shape[1])
+  block = max(1, budget // (n_pairs * values_per_query * u.element_size()))
+  if n <= block or (cuda_only and u.device.type != "cuda"):
+    return fn(grid_points, u, *args)
+  parts = [
+    fn(grid_points, u[:, i : i + block], *args) for i in range(0, n, block)
+  ]
+  return tuple(
+    None if out is None else torch.cat([cast("Tensor", q[k]) for q in parts], 1)
+    for k, out in enumerate(parts[0])
+  )
 
 
 # --------------------------------------------------------------------------- #
@@ -1120,6 +1177,19 @@ class BatchedTreeLevel(torch.nn.Module):
     weights and the offsets are resolved once and shared. This cascade is
     bound by kernel-launch count, so that sharing is most of the cost.
     """
+    pdf, h1, h2 = _by_rows(
+      self._pdf_h1_h2_rows,
+      grid_points,
+      u,
+      _CONTINUOUS_VALUES_PER_QUERY,
+      cuda_only=True,
+    )
+    return cast("Tensor", pdf), cast("Tensor", h1), cast("Tensor", h2)
+
+  def _pdf_h1_h2_rows(
+    self, grid_points: Tensor, u: Tensor
+  ) -> tuple[Tensor, Tensor, Tensor]:
+    """:meth:`pdf_h1_h2` on one block of rows."""
     loc = self._locate_both(grid_points, u)
     i, wx, _, j, wy, _ = loc
     h1, h2 = self._h1_h2_at(grid_points, u, loc, u, loc)
@@ -1127,6 +1197,19 @@ class BatchedTreeLevel(torch.nn.Module):
 
   def h1_h2(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, Tensor]:
     """``(hfunc1, hfunc2)`` for one tree level; see :meth:`pdf_h1_h2`."""
+    h1, h2 = _by_rows(
+      self._h1_h2_rows,
+      grid_points,
+      u,
+      _CONTINUOUS_VALUES_PER_QUERY,
+      cuda_only=True,
+    )
+    return cast("Tensor", h1), cast("Tensor", h2)
+
+  def _h1_h2_rows(
+    self, grid_points: Tensor, u: Tensor
+  ) -> tuple[Tensor, Tensor]:
+    """:meth:`h1_h2` on one block of rows."""
     loc = self._locate_both(grid_points, u)
     return self._h1_h2_at(grid_points, u, loc, u, loc)
 
@@ -1248,29 +1331,21 @@ class BatchedTreeLevel(torch.nn.Module):
       else:
         pdf, (h1, h2) = None, self.h1_h2(grid_points, u2c)
       return pdf, h1, h2, h1, h2
-    # Every output is row-wise, so rows are evaluated in blocks: the stencil
-    # gathers hold ~1 KB per (pair, row) each, which on a wide level at a
-    # large sample is more than a card holds at once.
-    n_pairs, n = int(u.shape[0]), int(u.shape[1])
-    per_row = n_pairs * _DISCRETE_VALUES_PER_QUERY * u.element_size()
-    block = max(1, _DISCRETE_MEM_BUDGET_BYTES // per_row)
-    if n <= block:
-      return self._eval_discrete_rows(grid_points, u, with_pdf, every_h2)
-    parts = [
-      self._eval_discrete_rows(
-        grid_points, u[:, i : i + block], with_pdf, every_h2
-      )
-      for i in range(0, n, block)
-    ]
-    pdfs = [q[0] for q in parts]
-    pdf = None
-    if with_pdf:
-      pdf = torch.cat([q for q in pdfs if q is not None], 1)
-    h1 = torch.cat([q[1] for q in parts], 1)
-    h2 = torch.cat([q[2] for q in parts], 1)
-    h1_sub = torch.cat([q[3] for q in parts], 1)
-    h2_sub = torch.cat([q[4] for q in parts], 1)
-    return pdf, h1, h2, h1_sub, h2_sub
+    pdf, h1, h2, h1_sub, h2_sub = _by_rows(
+      self._eval_discrete_rows,
+      grid_points,
+      u,
+      _DISCRETE_VALUES_PER_QUERY,
+      with_pdf,
+      every_h2,
+    )
+    return (
+      pdf,
+      cast("Tensor", h1),
+      cast("Tensor", h2),
+      cast("Tensor", h1_sub),
+      cast("Tensor", h2_sub),
+    )
 
   def _eval_discrete_rows(
     self, grid_points: Tensor, u: Tensor, with_pdf: bool, every_h2: bool
