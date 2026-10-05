@@ -13,6 +13,7 @@
 - Fit a discrete `tll` pair continuously in its data, in both lanes: two builds, or `Bicop` and `TorchTllBicop`, whose h-functions differ in their last bits fit it to about that precision instead of drawing another latent sample. Continuous pairs change only on data with exact ties (#351, [vinecopulib#798](https://github.com/vinecopulib/vinecopulib/pull/798), [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
 - Make a `tll` pair independent of the order of its arguments, so a vine selected from data equals a refit of its own structure: it is fitted in its own order, its distribution function and probabilities read its grid's mass symmetrically, its grid's margins are normalized to convergence instead of for 25 passes, which left strongly dependent pairs up to `3e-4` short of uniform, and the maximal correlation behind its bandwidth is symmetric (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
 - Evaluate a `tll` pair's distribution function and probabilities as its grid's mass rather than rescaling each line along one argument; a pair saved by 1.0.0, whose grid stopped up to `3e-4` short of uniform margins, evaluates differently by as much (#351, [vinecopulib#799](https://github.com/vinecopulib/vinecopulib/pull/799)).
+- Estimate a `tll` pair with `nonparametric_method="linear"` correctly when its bandwidth is correlated, which it is for any dependent pair, and report the right effective degrees of freedom for `"linear"` and `"quadratic"`, whose `npars` were off by up to half (#351, [vinecopulib#800](https://github.com/vinecopulib/vinecopulib/pull/800)).
 - Keep a `Kde1d` density positive between the smallest and largest observation; a wide gap, or ties at `degree=2`, gave exactly zero (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Select the same `Kde1d` bandwidth on every build; on tied data the plug-in estimate was `NaN` on some builds only (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
 - Make a `degree=1` `Kde1d` fit scale equivariant, which changes every `degree=1` estimate (#352, [kde1d#42](https://github.com/vinecopulib/kde1d-cpp/pull/42)).
@@ -33,7 +34,7 @@
 
 ### Dependency changes
 
-- Bump `lib/vinecopulib` past `v1.0.0`, `lib/kde1d` to `v1.2.3` and `lib/wdm` past `v0.3.0` (#352).
+- Bump `lib/vinecopulib` to `v1.0.1`, `lib/kde1d` to `v1.2.3` and `lib/wdm` to `v0.3.2` (#352, #351).
 
 ## 1.0.0 (2026-09-18)
 
