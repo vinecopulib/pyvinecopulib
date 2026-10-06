@@ -839,8 +839,8 @@ def test_from_vinecop_matches_discrete_vinecop(var_types: list[str]) -> None:
   # A discrete C++ vine lifted into torch. The stored grids are continuous and
   # `DiscreteBicop` supplies the mixed-discrete surface, reading each atom's
   # probability off the same grid the reference reads it off -- so what is
-  # compared is one expression summed in two orders: measured 7.0e-14 / 2.8e-14
-  # / 2.6e-15 relative across the three type patterns. Differencing four `cdf`
+  # compared is one quantity summed in two orders: measured 5.9e-14 / 2.7e-14
+  # / 2.7e-15 relative across the three type patterns. Differencing four `cdf`
   # values instead amplifies by `4 / (w1 w2)` and gives 8.5e-8.
   u = _discrete_data(var_types)
   cop = _discrete_vinecop(var_types, u)
@@ -1175,8 +1175,13 @@ def test_a_selected_vine_equals_a_refit_of_its_structure(
 
   Selection fits each pair in the search's orientation and flips it into the
   structure's. A pair is fitted in its own order, and its masses treat the two
-  arguments alike, so the two agree bit for bit, every h-function passed on
-  included -- discrete variables too.
+  arguments alike, so the two agree bit for bit when each pair is fitted alone,
+  every h-function passed on included -- discrete variables too. A batched fit
+  stacks a level's pairs, and the kernels a stack is reduced with are chosen by
+  its size and differ between machines (AGENTS.md), so there the two agree to
+  rounding, which a mixed vine's discrete edges carry on as they carry any
+  rounding: up to ``1e-6``, as in
+  ``test_a_mixed_vine_fits_alike_in_both_lanes_at_every_tree``.
   """
   if mixed:
     data, var_types = _many_level_data(n=600, seed=3)
@@ -1194,10 +1199,11 @@ def test_a_selected_vine_equals_a_refit_of_its_structure(
   )
   for t in range(selected.trunc_lvl):
     for e in range(selected.dim - t - 1):
+      tolerance = (1e-6 if mixed else 1e-12) if batched_fit else 0.0
       torch.testing.assert_close(
         refit._pair_module(t, e).interp_grid.values,
         selected._pair_module(t, e).interp_grid.values,
-        rtol=0.0,
+        rtol=tolerance,
         atol=0.0,
       )
 
@@ -1299,17 +1305,85 @@ def test_from_data_matches_discrete_vinecop(var_types: list[str]) -> None:
   )
 
 
-def test_discrete_vine_declines_the_batched_path() -> None:
-  # The batched level carries no distribution-function grid, which a discrete
-  # edge's h-functions are difference quotients of, so an explicit
-  # `batched=True` must fall back rather than evaluate something else.
-  var_types = ["d", "c", "c"]
-  u = _discrete_data(var_types, n=400, seed=8)
-  bc = TorchVinecop.from_vinecop(_discrete_vinecop(var_types, u))
+@pytest.mark.parametrize("cache", [False, True])
+@pytest.mark.parametrize(
+  "var_types",
+  [
+    ["d", "c", "c"],
+    ["c", "d", "d"],
+    ["d", "d", "d"],
+    ["c", "d", "c", "d", "d"],
+  ],
+  ids=str,
+)
+def test_discrete_vine_takes_the_batched_path(
+  var_types: list[str], cache: bool
+) -> None:
+  """A discrete vine's stacked cascade computes what the per-edge one does.
+
+  Each level gathers the left limits through the same wiring as the values,
+  and each quotient is the pair's own expression with its per-row
+  ``DELTA_MIN`` split taken as a ``where``, so the two agree to rounding --
+  measured 1.8e-15 on the log-density and 8.9e-16 on the transform. The
+  inverse reads no left limit and stays a reordering, so it is exact.
+  """
+  u = _discrete_data(var_types, n=600, seed=8)
+  cop = _discrete_vinecop(var_types, u)
+  bc = TorchVinecop.from_vinecop(cop, cache_integrals=cache)
   u_t = torch.from_numpy(u)
-  np.testing.assert_array_equal(
-    bc.pdf(u_t, batched=True).numpy(), bc.pdf(u_t, batched=False).numpy()
+  logpdf = bc.logpdf(u_t, batched=True)
+  assert bc._batched is not None
+  torch.testing.assert_close(
+    logpdf, bc.logpdf(u_t, batched=False), rtol=1e-13, atol=1e-13
   )
+  np.testing.assert_allclose(
+    bc.pdf(u_t, batched=True).numpy(), cop.pdf(u), rtol=1e-12, atol=1e-12
+  )
+  # The randomization draws the same uniforms on both paths, so it is pinned by
+  # the seed rather than switched off.
+  for randomize in (False, True):
+    torch.testing.assert_close(
+      bc.rosenblatt(u_t, batched=True, randomize_discrete=randomize, seeds=[4]),
+      bc.rosenblatt(
+        u_t, batched=False, randomize_discrete=randomize, seeds=[4]
+      ),
+      rtol=1e-13,
+      atol=1e-13,
+    )
+  w = u_t[:, : len(var_types)]
+  torch.testing.assert_close(
+    bc.inverse_rosenblatt(w, batched=True),
+    bc.inverse_rosenblatt(w, batched=False),
+    atol=0.0,
+    rtol=0.0,
+  )
+
+
+def test_discrete_batched_gradient_matches_the_per_edge_one() -> None:
+  """The stacked quotients carry the gradient the per-edge ones do.
+
+  Every branch a row does not take is still evaluated, so each division is
+  guarded where its branch is not selected: an unguarded one puts ``inf`` in
+  the discarded branch, and ``where`` turns that into a NaN gradient.
+  """
+  var_types = ["c", "d", "c", "d"]
+  u = _discrete_data(var_types, n=500, seed=12)
+  cop = _discrete_vinecop(var_types, u)
+  u_t = torch.from_numpy(u)
+  grads = []
+  for batched in (True, False):
+    bc = TorchVinecop.from_vinecop(cop)
+    grids = [
+      bc._pair_module(t, e).interp_grid.values.requires_grad_(True)
+      for t in range(bc.trunc_lvl)
+      for e in range(bc.d - t - 1)
+    ]
+    total = bc.logpdf(u_t, batched=batched).sum()
+    grads.append(
+      torch.cat([g.flatten() for g in torch.autograd.grad(total, grids)])
+    )
+  assert torch.isfinite(grads[0]).all()
+  torch.testing.assert_close(grads[0], grads[1], rtol=1e-12, atol=1e-12)
 
 
 def test_discrete_vine_round_trips_through_pickle() -> None:
@@ -1451,18 +1525,25 @@ def test_a_no_grad_cascade_does_not_detach_the_cache(first: str) -> None:
   assert grad.abs().sum() > 0
 
 
-@pytest.mark.parametrize("value", [0.0, 1.0])
+@pytest.mark.parametrize("value", [0.0, 1.0, None])
 def test_batched_inverse_matches_at_the_unit_square_boundary(
-  value: float,
+  value: float | None,
 ) -> None:
   """The waves agree with the per-edge cascade at the trimmed boundary too.
 
   Random interior points exercise neither clamp, and the two paths trim in
-  different places -- the vine trims its input, each pair trims again.
+  different places -- the vine trims its input, each pair trims again. A
+  constant row is not enough on its own: what has to agree is a quantile an
+  earlier wave produced *on* the boundary, which is then an input, so the
+  ``None`` case mixes the two ends with the interior column by column.
   """
   cop_tll = fit_tll_vinecop(banded_pseudo_obs(d=5, n=600, seed=86))
   bc = TorchVinecop.from_vinecop(cop_tll)
-  u_t = torch.full((16, 5), value, dtype=torch.float64)
+  if value is None:
+    levels = torch.tensor([0.0, 0.5, 1.0], dtype=torch.float64)
+    u_t = torch.cartesian_prod(*[levels] * 5)
+  else:
+    u_t = torch.full((16, 5), value, dtype=torch.float64)
   torch.testing.assert_close(
     bc.inverse_rosenblatt(u_t, batched=True),
     bc.inverse_rosenblatt(u_t, batched=False),
@@ -1503,6 +1584,45 @@ def test_batched_fit_matches_the_per_edge_fit(d: int) -> None:
     )
 
 
+@pytest.mark.parametrize("select", [False, True], ids=["fit", "select"])
+@pytest.mark.parametrize(
+  "var_types", [["d", "c", "c"], ["d", "d", "d", "c", "d"]], ids=str
+)
+def test_batched_fit_matches_the_per_edge_fit_on_a_discrete_vine(
+  var_types: list[str], select: bool
+) -> None:
+  """A level with a discrete edge fits in one call, to the per-edge model.
+
+  The level reaches the batched fit as one four-column stack. Each discrete
+  lane ranks its ties and draws its latent sample exactly as the single-pair
+  fit does, from its own lane's bandwidth. The two schedules still differ in
+  the bandwidth search's last bits, and a discrete edge carries those on with
+  a gain a continuous one lacks: its soft ranks move with the data at a slope
+  of up to ``1 / sqrt(eps)``. One ulp of noise on every h-value these fits
+  propagate moves the log-density by up to ``1.2e-11``, so the bound is
+  ``1e-10``, where a continuous vine's is ``1e-11``.
+  """
+  u = _discrete_data(var_types, n=600, seed=4)
+  u_t = torch.from_numpy(u)
+  structure = None if select else _discrete_vinecop(var_types, u).structure
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t,
+      structure=structure,
+      var_types=var_types,
+      controls=FitControlsTorchVinecop(batched_fit=flag),
+    )
+    for flag in (False, True)
+  }
+  assert np.array_equal(
+    np.asarray(fits[True].structure.matrix),
+    np.asarray(fits[False].structure.matrix),
+  )
+  torch.testing.assert_close(
+    fits[True].logpdf(u_t), fits[False].logpdf(u_t), atol=1e-10, rtol=1e-9
+  )
+
+
 def test_batched_fit_defaults_to_off_on_cpu() -> None:
   """The default follows the device, as the evaluation cascade's does.
 
@@ -1532,35 +1652,6 @@ def test_batched_fit_defaults_to_off_on_cpu() -> None:
       controls=FitControlsTorchVinecop(batched_fit=True),
     )
     assert seen == [3, 2, 1], f"explicit batched_fit=True not honored: {seen}"
-
-
-def test_batched_fit_falls_back_for_a_discrete_level() -> None:
-  """A discrete edge cannot stack, so its level stays per-edge.
-
-  Asking for `batched_fit=True` on a discrete vine must fit it, not raise:
-  the hook is an optimization, and a level it cannot serve is simply not
-  handed to it.
-
-  Exact rather than toleranced because a discrete level cannot stack at all,
-  so `batched_fit=True` never reaches the batched fitter here and the two
-  runs are the same arithmetic.
-  """
-  var_types = ["d", "c", "c"]
-  wide = _discrete_data(var_types, n=600, seed=17)
-  structure = pv.RVineStructure.sample(3, seeds=[2])
-  fits = {
-    flag: TorchVinecop.from_data(
-      torch.from_numpy(wide),
-      structure=structure,
-      controls=FitControlsTorchVinecop(batched_fit=flag),
-      var_types=var_types,
-    )
-    for flag in (False, True)
-  }
-  u_eval = torch.from_numpy(wide[:64])
-  torch.testing.assert_close(
-    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=0.0, rtol=0.0
-  )
 
 
 @pytest.mark.parametrize("d", [5, 9])
@@ -2007,6 +2098,76 @@ def test_batched_fit_runs_one_call_per_tree(
   )
   assert seen == list(range(d - 1, 0, -1)), f"select did not batch: {seen}"
 
+  # A vine that already exists reads the same setting when refitted.
+  vine = TorchVinecop.from_data(torch.from_numpy(u_fit), structure=structure)
+  for method in ("fit", "select"):
+    seen.clear()
+    getattr(vine, method)(
+      torch.from_numpy(u_fit), FitControlsTorchVinecop(batched_fit=True)
+    )
+    assert seen == list(range(d - 1, 0, -1)), f"{method} did not batch: {seen}"
+
+
+@pytest.mark.parametrize("select", [False, True], ids=["fit", "select"])
+@pytest.mark.parametrize(
+  "var_types", [None, ["d", "c", "d", "c", "c"]], ids=["continuous", "discrete"]
+)
+def test_batched_fit_keeps_a_callers_fit_edge(
+  var_types: list[str] | None, select: bool
+) -> None:
+  """`batched_fit` batches the built-in fitter, never a caller's own.
+
+  The engines prefer a level fitter wherever one applies, so installing the
+  built-in one beside a caller's `fit_edge` would fit every level without
+  calling it. What `batched_fit` does still change is how the fitted pairs'
+  h-functions -- the next tree's input -- are evaluated: a level at a time,
+  in stacked calls. Every pair here is fitted by the same callback either
+  way, so the two vines agreeing bit for bit is what says the stacked
+  evaluation is the per-edge one, on discrete edges included.
+  """
+  if var_types is None:
+    u = banded_pseudo_obs(d=5, n=600, seed=93)
+    structure = fit_tll_vinecop(u).structure
+  else:
+    u = _discrete_data(var_types, n=600, seed=5)
+    structure = _discrete_vinecop(var_types, u).structure
+  u_t = torch.from_numpy(u)
+  calls: dict[bool, list[tuple[int, int]]] = {False: [], True: []}
+
+  def fitter(flag: bool) -> Callable[..., TorchTllBicop]:
+    def fit_edge(
+      tree: int,
+      edge: int,
+      u_e: torch.Tensor,
+      x_e: torch.Tensor | None,
+      var_types: tuple[str, str] = ("c", "c"),
+    ) -> TorchTllBicop:
+      del x_e
+      calls[flag].append((tree, edge))
+      return TorchTllBicop.from_data(u_e, var_types=list(var_types))
+
+    return fit_edge
+
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t,
+      controls=FitControlsTorchVinecop(batched_fit=flag),
+      structure=None if select else structure,
+      var_types=var_types,
+      fit_edge=fitter(flag),
+    )
+    for flag in (False, True)
+  }
+  assert len(calls[True]) == 10
+  assert calls[True] == calls[False]
+  np.testing.assert_array_equal(
+    np.asarray(fits[True].structure.matrix),
+    np.asarray(fits[False].structure.matrix),
+  )
+  torch.testing.assert_close(
+    fits[True].logpdf(u_t), fits[False].logpdf(u_t), atol=0.0, rtol=0.0
+  )
+
 
 @pytest.mark.parametrize(
   ("kwargs", "why"),
@@ -2147,3 +2308,32 @@ def test_a_pickle_does_not_carry_the_batched_cache() -> None:
   torch.testing.assert_close(
     back.pdf(u, batched=True), vine.pdf(u, batched=True)
   )
+
+
+@pytest.mark.parametrize("batched", [False, True])
+def test_a_vine_without_mass_at_an_atom_answers_as_vinecop_does(
+  batched: bool,
+) -> None:
+  """Where a discrete pair has no mass, the vine's density is as ``Vinecop``'s.
+
+  Both cascades clamp a discrete pair's density to the smallest normal float,
+  as ``Bicop.pdf`` does, so the vine's log-density stays finite at an
+  observation whose atom the pair gives no mass. The pair's grid is zero over
+  a corner block, and the first atom lies in it.
+  """
+  grid = np.linspace(0.0, 1.0, 30)
+  values = np.exp(-40.0 * np.abs(grid[:, None] - grid[None, :]))
+  values[:8, 22:] = 0.0
+  values[22:, :8] = 0.0
+  pair = pv.Bicop.from_family(pv.families.tll, parameters=values)
+  cop = pv.Vinecop.from_structure(
+    pv.DVineStructure([1, 2]), pair_copulas=[[pair]], var_types=["d", "d"]
+  )
+  vine = TorchVinecop.from_vinecop(cop)
+  u = np.array([[0.03, 0.99, 0.01, 0.96], [0.5, 0.5, 0.45, 0.45]])
+  got = vine.pdf(torch.from_numpy(u), batched=batched).numpy()
+  want = cop.pdf(u)
+  # the vine's density is an exp of summed logs, so the floor comes back to
+  # rounding rather than exactly
+  np.testing.assert_allclose(got, want, rtol=1e-12)
+  np.testing.assert_allclose(got[0], np.finfo(np.float64).tiny, rtol=1e-12)

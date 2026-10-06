@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import functools
 import math
-from collections.abc import Callable
+import os
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import cast
 
 import numpy as np
@@ -78,11 +80,15 @@ def _tie_key_order(n: int, device: torch.device) -> Tensor:
   return torch.as_tensor(np.ascontiguousarray(order), device=device)
 
 
-def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
+def _to_pseudo_obs(
+  u: Tensor,
+  discrete_data: Tensor | None = None,
+  discrete_lanes: Sequence[int] | None = None,
+) -> Tensor:
   """The pseudo-observations ``TllBicop::fit`` selects its bandwidth from.
 
   ``tools_stats::pair_soft_pseudo_obs``, per lane: ties ordered by a fixed key
-  per observation, and on a discrete pair values within rounding of each
+  per observation, and on a discrete lane values within rounding of each
   other ranked partly by key, so that the ranks move continuously with the
   data. A continuous lane is ranked by value and key on its own device, which
   is the same thing exactly; a discrete one with near-ties is ranked on the
@@ -92,8 +98,11 @@ def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
   ----------
   u : Tensor, shape (n, 2) or (P, n, 2), dtype float
       The pairs' values.
-  discrete_data : Tensor, shape (n, 4), dtype float, optional
-      ``[u1, u2, u1^-, u2^-]`` alongside ``u``, where the pair is discrete.
+  discrete_data : Tensor, shape (n, 4) or (P, n, 4), dtype float, optional
+      ``[u1, u2, u1^-, u2^-]`` alongside ``u``, where any lane is discrete.
+  discrete_lanes : sequence of int, optional
+      The discrete lanes of a stack; ``None`` means every lane when
+      ``discrete_data`` is given.
 
   Returns
   -------
@@ -105,12 +114,18 @@ def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
   n = u.shape[-2]
   pairs = u.reshape(-1, n, 2)
   lanes = pairs.shape[0]
-  discrete = discrete_data is not None
+  discrete = torch.zeros(lanes, dtype=torch.bool, device=u.device)
   wide = None if discrete_data is None else discrete_data.reshape(-1, n, 4)
+  if wide is not None:
+    discrete[
+      slice(None) if discrete_lanes is None else list(discrete_lanes)
+    ] = True
   # One row per (lane, column), ranked by value and its ties by key. The keys
   # belong to the columns of the pair in its own order, so a lane that order
   # swaps reads them the other way round.
-  swapped = _swaps_pair(pairs if wide is None else wide)
+  swapped = _swaps_pair(pairs)
+  if wide is not None:
+    swapped = torch.where(discrete, _swaps_pair(wide), swapped)
   column = torch.stack([swapped, ~swapped], dim=-1).long().reshape(-1)
   by_key = _tie_key_order(n, u.device)[column]
   lines = pairs.movedim(-1, -2).reshape(-1, n)
@@ -127,17 +142,17 @@ def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
     (position / torch.full_like(position, n + 1)).to(u.dtype).expand_as(lines),
   )
   psobs = psobs.reshape(lanes, 2, n).movedim(-2, -1)
-  if not discrete:
+  if wide is None:
     return psobs.reshape(u.shape)
 
   srt = lines.gather(-1, order)
   close = srt[:, 1:] - srt[:, :-1] <= 9.0 * _SOFT_RANK_SCALE
-  host = torch.nonzero(close.reshape(lanes, 2, -1).any(dim=(-1, -2))).flatten()
+  near = close.reshape(lanes, 2, -1).any(dim=(-1, -2)) & discrete
+  host = torch.nonzero(near).flatten()
   if host.numel() > 0:
     from ..core.extend import to_numpy
     from ..pyvinecopulib_ext import _pair_soft_pseudo_obs
 
-    assert wide is not None
     out = psobs.clone()
     for k in host.tolist():
       data = to_numpy(wide[k], dtype=np.float64)
@@ -303,6 +318,12 @@ def _compiled_ace_step() -> _AceStep:
   return _COMPILED_ACE_STEP
 
 
+#: Working-set fraction below which the batched ACE search drops its converged
+#: lanes. Dropping costs one gather per state tensor, so doing it on every
+#: pass would cost more than the frozen lanes it removes.
+_ACE_SHRINK: float = 0.5
+
+
 def _ace(
   data: Tensor,
   *,
@@ -324,9 +345,9 @@ def _ace(
 
   Batched over any leading dimensions. Both convergence loops advance every
   lane together and *freeze* each as it converges -- its state, including
-  its two trip counters, stops moving while the others carry on -- so
-  *which* lanes a pair travelled with does not change its answer at all,
-  and its iteration count is the one its own data earns.
+  its two trip counters, stops moving while the others carry on -- so a
+  lane's iteration count is the one its own data earns, and on cpu *which*
+  lanes it travelled with does not change its answer at all.
 
   *How many* it travelled with is a separate matter and does move the last
   bits, here as everywhere in the batched fit: torch selects elementwise
@@ -335,9 +356,14 @@ def _ace(
   at a fixed shape.
 
   A batch runs until its slowest lane converges, so it trades the sum of the
-  lanes' iterations for their maximum while doing the full batch's arithmetic
-  at every step. How much that wins depends on how alike the lanes are, and
-  iteration counts rise as dependence falls -- with no signal to find, the
+  lanes' iterations for their maximum, and it drops its converged lanes once
+  they are the majority, so the slowest lane does not carry the whole batch's
+  arithmetic with it. On cpu that is bit for bit, pinned by
+  ``test_ace_drops_converged_lanes_exactly``, since a cpu kernel treats each
+  row alike however many rows it runs over. On an accelerator the row count
+  picks the kernel, so there a lane's last bits also depend on when its
+  companions converge. How much batching wins depends on how alike the lanes
+  are, and iteration counts rise as dependence falls -- with no signal to find, the
   outer criterion grinds against its own rounding noise until it hits
   ``outer_iter_max``. One near-independent lane therefore paces a whole
   level, and the deeper trees, whose pairs sit nearer independence, are
@@ -356,6 +382,8 @@ def _ace(
     ``(..., n, 2)`` tensor of the ACE-transformed scores ``phi``.
   """
   n = data.shape[-2]
+  shape = data.shape
+  data = data.reshape(-1, n, 2)
   batch = data.shape[:-2]
   dtype, device = data.dtype, data.device
   if outer_abs_tol is None:
@@ -398,7 +426,30 @@ def _ace(
   )
   outer_live = (outer_iter <= outer_iter_max) & (outer_abs_err > outer_abs_tol)
 
-  while bool(outer_live.any()):
+  # The lanes still iterating, and where each writes back its final state.
+  # Frozen lanes would otherwise cost the whole batch's memory traffic at
+  # every step, which is what bounds the search on a GPU with little of it.
+  out0, out1 = phi0, phi1
+  work = torch.arange(batch[0], device=device)
+  width = batch[0]
+  while True:
+    alive = int(outer_live.sum())
+    if alive == 0:
+      break
+    if alive <= _ACE_SHRINK * width:
+      out0, out1 = out0.clone(), out1.clone()
+      out0[work], out1[work] = phi0, phi1
+      keep = outer_live.nonzero().squeeze(-1)
+      work = work[keep]
+      phi0, phi1, ind0, ind1, ranks0, ranks1 = (
+        t[keep] for t in (phi0, phi1, ind0, ind1, ranks0, ranks1)
+      )
+      outer_eps, outer_abs_err, outer_iter, outer_live = (
+        t[keep] for t in (outer_eps, outer_abs_err, outer_iter, outer_live)
+      )
+      width = alive
+      always = always[keep]
+      ones, longs = ones[keep], longs[keep]
     inner_eps, inner_abs_err = ones.clone(), ones.clone()
     inner_iter = longs.clone()
     inner_live = (
@@ -441,7 +492,11 @@ def _ace(
       outer_abs_tol,
     )
 
-  return torch.stack([phi0, phi1], dim=-1)
+  if width < batch[0]:
+    out0, out1 = out0.clone(), out1.clone()
+    out0[work], out1[work] = phi0, phi1
+    phi0, phi1 = out0, out1
+  return torch.stack([phi0, phi1], dim=-1).reshape(shape)
 
 
 def _pearson_cor(x: Tensor) -> Tensor:
@@ -549,8 +604,54 @@ def _kde_grid_block(n: int, lanes: int, itemsize: int, grid: int) -> int:
   return max(1, min(grid, _KDE_MEM_BUDGET_BYTES // max(per_point, 1)))
 
 
+def _kde_sum(
+  zd0: Tensor, zd1: Tensor, zg0: Tensor, zg1: Tensor, const: Tensor
+) -> Tensor:
+  """The Gaussian kernel mean at each of a block of whitened grid points.
+
+  Parameters
+  ----------
+  zd0, zd1 : Tensor, shape (..., n), dtype float
+      Whitened data.
+  zg0, zg1 : Tensor, shape (..., G), dtype float
+      Whitened grid points.
+  const : Tensor, shape (...,), dtype float
+      Normalizing constants.
+
+  Returns
+  -------
+  Tensor, shape (..., G), dtype float
+      Density estimates at the grid points.
+  """
+  d0 = zd0[..., None, :] - zg0[..., :, None]
+  d1 = zd1[..., None, :] - zg1[..., :, None]
+  return (torch.exp(-0.5 * (d0**2 + d1**2)) * const[..., None, None]).mean(-1)
+
+
+_COMPILED_KDE_SUM: Callable[..., Tensor] | None = None
+
+
+def _compiled_kde_sum() -> Callable[..., Tensor]:
+  """:func:`_kde_sum` fused into one reduction, compiled once per process.
+
+  Fused, the sum never materializes the ``(..., G, n)`` differences, which
+  is what bounds the eager version by memory traffic, so the whole grid goes
+  in one call. ``dynamic=True`` for the reason :func:`_compiled_ace_step`
+  gives.
+
+  Returns
+  -------
+  callable
+      The compiled sum, with :func:`_kde_sum`'s signature.
+  """
+  global _COMPILED_KDE_SUM  # noqa: PLW0603
+  if _COMPILED_KDE_SUM is None:
+    _COMPILED_KDE_SUM = torch.compile(_kde_sum, dynamic=True)
+  return _COMPILED_KDE_SUM
+
+
 def _fit_local_likelihood_constant(
-  z: Tensor, z_data: Tensor, B: Tensor
+  z: Tensor, z_data: Tensor, B: Tensor, *, compile_step: bool = False
 ) -> Tensor:
   """Local-constant kernel density estimate at ``z`` from ``z_data``.
 
@@ -584,6 +685,10 @@ def _fit_local_likelihood_constant(
   zd0 = ia[..., None] * z_data[..., 0]
   zd1 = ib[..., None] * z_data[..., 0] + ic[..., None] * z_data[..., 1]
   const = (_SQRT_2PI_INV * _SQRT_2PI_INV) * det_irB
+  if compile_step:
+    zg0 = ia[..., None] * z[:, 0]
+    zg1 = ib[..., None] * z[:, 0] + ic[..., None] * z[:, 1]
+    return _compiled_kde_sum()(zd0, zd1, zg0, zg1, const)
   lanes = 1
   for extent in z_data.shape[:-2]:
     lanes *= int(extent)
@@ -595,10 +700,7 @@ def _fit_local_likelihood_constant(
     zb = z[lo : lo + block]
     zg0 = ia[..., None] * zb[:, 0]
     zg1 = ib[..., None] * zb[:, 0] + ic[..., None] * zb[:, 1]
-    d0 = zd0[..., None, :] - zg0[..., :, None]
-    d1 = zd1[..., None, :] - zg1[..., :, None]
-    kernels = torch.exp(-0.5 * (d0**2 + d1**2)) * const[..., None, None]
-    out.append(kernels.mean(dim=-1))
+    out.append(_kde_sum(zd0, zd1, zg0, zg1, const))
   return torch.cat(out, dim=-1) if len(out) > 1 else out[0]
 
 
@@ -635,6 +737,69 @@ def _swaps_pair(data: Tensor) -> Tensor:
   return (differ & verdict).gather(-1, first).squeeze(-1)
 
 
+def _latent_z(
+  discrete_data: Tensor,
+  B: Tensor,
+  z_data: Tensor,
+  lanes: Sequence[int] | None,
+) -> Tensor:
+  """``z_data`` with each discrete lane's sample replaced by its latent one.
+
+  Reuses the compiled draw, as structure selection reuses ``wdm``: it is a
+  stochastic iterative reconstruction over a spatial index, and reproducing it
+  in torch would put the torch<->C++ grid parity at the mercy of a
+  reimplementation rather than of the same code. Being compiled, it has no
+  pair axis, so a stack draws one lane at a time -- on a thread pool, since the
+  binding releases the GIL and each draw is seeded, so the result does not
+  depend on the pool.
+
+  Parameters
+  ----------
+  discrete_data : Tensor, shape (n, 4) or (P, n, 4), dtype float
+      ``[u1, u2, u1^-, u2^-]``, one block per lane.
+  B : Tensor, shape (2, 2) or (P, 2, 2), dtype float
+      The bandwidths selected from the jittered ranks.
+  z_data : Tensor, shape (n, 2) or (P, n, 2), dtype float
+      The ranks on the normal scale.
+  lanes : sequence of int, or None
+      The discrete lanes of a stack; ``None`` means every lane.
+
+  Returns
+  -------
+  Tensor
+      ``z_data``'s shape, discrete lanes replaced.
+  """
+  from ..core.extend import to_numpy
+  from ..pyvinecopulib_ext import find_latent_sample
+
+  stacked = discrete_data.ndim == 3
+  data = discrete_data if stacked else discrete_data.unsqueeze(0)
+  bw = B if stacked else B.unsqueeze(0)
+  idx = list(range(data.shape[0])) if lanes is None else list(lanes)
+  host = to_numpy(data[idx])
+  # The product crosses to the host and the root is taken there, as the
+  # single-pair fit always took it, so a lane draws with the same `b` either
+  # way.
+  prods = (bw[idx, 0, 0] * bw[idx, 1, 1]).tolist()
+
+  def draw(k: int) -> np.ndarray:
+    return find_latent_sample(host[k], float(prods[k]) ** 0.25)
+
+  if len(idx) == 1:
+    latents = [draw(0)]
+  else:
+    workers = min(len(idx), os.cpu_count() or 1)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+      latents = list(pool.map(draw, range(len(idx))))
+  z = _qnorm(
+    torch.as_tensor(np.stack(latents), dtype=z_data.dtype, device=z_data.device)
+  )
+  if not stacked:
+    return z[0]
+  at = torch.tensor(idx, dtype=torch.long, device=z_data.device)
+  return z_data.index_copy(0, at, z)
+
+
 def fit_tll_constant(
   u: Tensor,
   grid_size: int = 30,
@@ -642,6 +807,7 @@ def fit_tll_constant(
   grid_type: str = "normal",
   discrete_data: Tensor | None = None,
   compile_fit: bool = False,
+  discrete_lanes: Sequence[int] | None = None,
 ) -> tuple[Tensor, Tensor]:
   """Fit a TLL pair-copula via local-constant kernel density estimation.
 
@@ -650,16 +816,18 @@ def fit_tll_constant(
   Args:
     u: ``(n, 2)`` pseudo-observations in ``(0, 1)``, or ``(P, n, 2)`` to fit
       ``P`` pairs together -- they share the grid, the window length and the
-      eval points. A discrete edge is refused a pair axis.
+      eval points.
     grid_size: number of grid points per axis (default 30; matches C++).
     mult: bandwidth multiplier passed through to ``select_bandwidth``;
       the C++ default is 1.
     discrete_data: the ``(n, 4)`` layout ``[u1, u2, u1^-, u2^-]`` of a discrete
-      or mixed edge. When given, the fit runs on the *latent* sample recovered
-      from it rather than on the ranks, which is what ``TllBicop::fit`` does:
-      the bandwidth is selected from the jittered ranks and only then is the
-      latent sample drawn, with ``(B00 * B11) ** 0.25`` as its own bandwidth and
-      ``B`` left as selected.
+      or mixed edge, or ``(P, n, 4)`` alongside a stacked ``u``. When given,
+      the fit runs on the *latent* sample recovered from it rather than on the
+      ranks, which is what ``TllBicop::fit`` does: the bandwidth is selected
+      from the jittered ranks and only then is the latent sample drawn, with
+      ``(B00 * B11) ** 0.25`` as its own bandwidth and ``B`` left as selected.
+    discrete_lanes: which lanes of a stacked ``u`` are discrete, so that only
+      those draw a latent sample; ``None`` means every lane.
     compile_fit: fuse the bandwidth search's per-pass body with
       ``torch.compile``. Off by default: the first call compiles for seconds,
       which only a caller fitting many pairs in one process earns back. See
@@ -684,7 +852,7 @@ def fit_tll_constant(
     share the grid, the window length and the eval points, and the two
     convergence loops in :func:`_ace` advance every lane at once, freezing
     each as it converges. ``grid_points`` is shared, so it is returned
-    once. A discrete edge is refused with a pair axis -- see below.
+    once.
   """
   if u.ndim not in (2, 3) or u.shape[-1] != 2:
     raise ValueError(
@@ -712,32 +880,13 @@ def fit_tll_constant(
   # ``discrete_data``. Contiguous, because the bandwidth search reduces along
   # the sample and a strided column sums in another order: the same ranks
   # would select another bandwidth by how their tensor was laid out.
-  z_data = _qnorm(_to_pseudo_obs(u, discrete_data)).contiguous()
+  z_data = _qnorm(_to_pseudo_obs(u, discrete_data, discrete_lanes)).contiguous()
 
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data, compile_step=compile_fit) * mult
 
   if discrete_data is not None:
-    # Reuse the compiled draw, as structure selection reuses `wdm`: it is a
-    # stochastic iterative reconstruction over a spatial index, and reproducing
-    # it in torch would put the torch<->C++ grid parity at the mercy of a
-    # reimplementation rather than of the same code.
-    from ..pyvinecopulib_ext import find_latent_sample
-
-    if u.ndim != 2:
-      raise ValueError(
-        "a discrete edge cannot be fitted with a leading pair axis: "
-        "`find_latent_sample` is a compiled per-pair draw over a spatial "
-        "index with a fixed-seed generator, so it has no batch axis to "
-        "give. Fit discrete edges one at a time."
-      )
-    from ..core.extend import to_numpy
-
-    latent = find_latent_sample(
-      to_numpy(discrete_data),
-      float((B[0, 0] * B[1, 1]).item() ** 0.25),
-    )
-    z_data = _qnorm(torch.as_tensor(latent, dtype=dtype, device=device))
+    z_data = _latent_z(discrete_data, B, z_data, discrete_lanes)
 
   # Storage and KDE-eval grids come from the centralized factory on
   # InterpolationGrid2D so any future grid type lives in one place.
@@ -760,7 +909,7 @@ def fit_tll_constant(
   z = _qnorm(grid_2d)
 
   # Local-constant KDE on the z-scale grid.
-  f0 = _fit_local_likelihood_constant(z, z_data, B)
+  f0 = _fit_local_likelihood_constant(z, z_data, B, compile_step=compile_fit)
 
   # Transform z-space density to copula-scale density.
   phi_z = (

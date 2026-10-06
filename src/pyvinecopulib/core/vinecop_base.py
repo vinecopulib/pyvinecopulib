@@ -71,7 +71,7 @@ import numpy as np
 from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import pair_eval, prepare_covariates
 from ._loglik import safe_log, sum_loglik
-from ._placement import PlacementMixin, QrngUniformMixin, to_numpy
+from ._placement import PlacementMixin, QrngUniformMixin, copy_array, to_numpy
 from ._trim import trim
 from ._validation import check_var_types
 from ._vinecop_discrete import (
@@ -83,6 +83,7 @@ from ._vinecop_discrete import (
   stack_edge,
 )
 from ._vinecop_fit_engines import (
+  EvalLevel,
   FitEdge,
   FitLevel,
   fit_parts,
@@ -554,9 +555,12 @@ class VinecopBase(
 
     The default raises ``NotBatchable``, so the dispatch layer falls back
     to the non-batched cascade. A grid subclass overrides this to return an
-    object exposing the batched-vine surface the cascades call
-    (``level`` / ``grid_points`` / per-level ``gather_inputs`` / ``pdf`` /
-    ``hfunc1`` / ``hfunc2`` / ``n_pairs`` / ``needs_h1`` / ``needs_h2``).
+    object exposing the batched-vine surface the cascades call: ``level(t)``,
+    ``grid_points``, ``n_waves`` and ``wave(k).apply_to``, and per level
+    ``gather_inputs``, ``pdf_h1_h2``, ``h1_h2``, ``n_pairs``, ``needs_h1`` and
+    ``needs_h2``. On a vine with discrete variables the loops also call
+    ``eval_discrete`` and read ``disc1`` / ``disc2``, so a state that cannot
+    evaluate a discrete slot raises ``NotBatchable`` for such a vine instead.
 
     Returns
     -------
@@ -742,11 +746,7 @@ class VinecopBase(
     )
     # Keep an immutable copy of the seeded observations for conditioning-set
     # (u_D) gathers; skipped entirely under a simplified/unconditional vine.
-    u_nat = (
-      xp.asarray(hfunc2, copy=True)
-      if self._context.assembles_conditioning
-      else None
-    )
+    u_nat = copy_array(hfunc2) if self._context.assembles_conditioning else None
     logpdf = xp.zeros(n, dtype=u.dtype, device=u.device)
     s = self.structure
     pair_types = self._pair_types
@@ -799,12 +799,12 @@ class VinecopBase(
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
-    order, inv = self.order, self.inverse_order
+    order = self.order
     # Seed both h-function scratch matrices with the natural-order observations.
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       hfunc2[:, j] = u[:, order[j] - 1]
-    hfunc1 = xp.asarray(hfunc2, copy=True)
+    hfunc1 = copy_array(hfunc2)
     # See _pdf on why hfunc1_sub needs no seed.
     hfunc2_sub: Any = seed_left_limits(
       u, self.d, self.order, self._var_types, self._disc_cols, xp
@@ -814,11 +814,7 @@ class VinecopBase(
       if hfunc2_sub is None
       else xp.zeros((n, d), dtype=u.dtype, device=u.device)
     )
-    u_nat = (
-      xp.asarray(hfunc2, copy=True)
-      if self._context.assembles_conditioning
-      else None
-    )
+    u_nat = copy_array(hfunc2) if self._context.assembles_conditioning else None
     s = self.structure
     pair_types = self._pair_types
     for tree in range(trunc_lvl):
@@ -839,21 +835,73 @@ class VinecopBase(
         if subs is not None and types[0] == "d":
           u_h2 = xp.stack([subs[0], col1, *subs], axis=-1)
           hfunc2_sub[:, edge] = pair_eval(edge_copula.hfunc2, u_h2, x=x_e)
-    # Scatter the transformed columns back to variable order.
-    out = xp.empty((n, d), dtype=u.dtype, device=u.device)
+    return self._finish_rosenblatt(
+      self._rosenblatt_columns(hfunc2, hfunc2_sub), randomize_discrete, seeds
+    )
+
+  def _rosenblatt_columns(
+    self, hfunc2: ArrayT, hfunc2_sub: ArrayT | None
+  ) -> ArrayT:
+    """The transformed columns in variable order, with their left limits.
+
+    Parameters
+    ----------
+    hfunc2 : array, shape (n, d), dtype float
+        The running transform, in natural order.
+    hfunc2_sub : array, shape (n, d), dtype float, or None
+        Its left limits, for a vine with discrete variables.
+
+    Returns
+    -------
+    array, shape (n, d) or (n, 2d), dtype float
+        The values, followed by their left limits when ``hfunc2_sub`` is
+        given; a continuous variable's left limit is its value.
+    """
+    h2: Any = hfunc2
+    xp = self._namespace(h2)
+    n, d, inv = h2.shape[0], self.d, self.inverse_order
+    out = xp.empty((n, d), dtype=h2.dtype, device=h2.device)
     for j in range(d):
-      out[:, j] = hfunc2[:, inv[j]]
-    if randomize_discrete and hfunc2_sub is not None:
+      out[:, j] = h2[:, inv[j]]
+    if hfunc2_sub is None:
+      return out
+    sub: Any = hfunc2_sub
+    left = xp.empty((n, d), dtype=h2.dtype, device=h2.device)
+    for j in range(d):
+      source = sub if self._var_types[j] == "d" else h2
+      left[:, j] = source[:, inv[j]]
+    return xp.concat([out, left], axis=1)
+
+  def _finish_rosenblatt(
+    self, cols: ArrayT, randomize_discrete: bool, seeds: list[int] | None
+  ) -> ArrayT:
+    """Randomize the discrete columns if asked, and clamp.
+
+    Parameters
+    ----------
+    cols : array, shape (n, d) or (n, 2d), dtype float
+        What :meth:`_rosenblatt_columns` returns.
+    randomize_discrete : bool
+        Mix each discrete variable's two ends with an independent uniform.
+    seeds : list of int, or None
+        RNG seeds for that randomization.
+
+    Returns
+    -------
+    array, shape (n, d), dtype float
+        The transform, strictly inside ``[0, 1]``.
+    """
+    c: Any = cols
+    xp = self._namespace(c)
+    d = self.d
+    out = c[:, :d]
+    if randomize_discrete and c.shape[1] > d:
       # A discrete variable's conditional distribution function jumps, so the
       # transform is uniform only after mixing the jump's two ends with an
       # independent uniform (Brockwell 2007). Continuous variables have
       # coinciding limits, so the mix leaves them untouched.
-      left = xp.empty((n, d), dtype=u.dtype, device=u.device)
-      for j in range(d):
-        source = hfunc2_sub if self._var_types[j] == "d" else hfunc2
-        left[:, j] = source[:, inv[j]]
-      r: Any = self._sample_uniform(n, False, list(seeds or []))
-      out = out * r + left * (1.0 - r)
+      r: Any = self._sample_uniform(int(c.shape[0]), False, list(seeds or []))
+      out = out * r + c[:, d:] * (1.0 - r)
     return cast("ArrayT", trim(out, xp))
 
   def _inverse_rosenblatt(
@@ -937,8 +985,8 @@ class VinecopBase(
 
     Parameters
     ----------
-    u : array, shape (n, d), dtype float
-        Prepared pseudo-observations.
+    u : array, shape (n, d + k), dtype float
+        Prepared pseudo-observations in the compact layout.
     """
     out: Any = self._logpdf_batched(u)
     return self._namespace(out).exp(out)
@@ -947,12 +995,14 @@ class VinecopBase(
     """Batched vine log-density: a sum over per-tree-level stacked densities.
 
     Numerically equivalent to ``_logpdf`` on a simplified vine, but each tree
-    level fires one stacked (fused) pair-copula call over its edges.
+    level fires one stacked (fused) pair-copula call over its edges. A vine
+    with discrete variables carries the same parallel left-limit scratch as
+    ``_logpdf``, and each level reads the four-column input.
 
     Parameters
     ----------
-    u : array, shape (n, d), dtype float
-        Prepared pseudo-observations.
+    u : array, shape (n, d + k), dtype float
+        Prepared pseudo-observations in the compact layout.
     """
     xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -965,12 +1015,35 @@ class VinecopBase(
     order = self.order
     for j in range(d):
       hfunc2[:, j] = u[:, order[j] - 1]
+    # See `_logpdf` on why hfunc1_sub needs no seed.
+    hfunc2_sub: Any = seed_left_limits(
+      u, self.d, self.order, self._var_types, self._disc_cols, xp
+    )
+    hfunc1_sub: Any = (
+      None
+      if hfunc2_sub is None
+      else xp.zeros((n, d), dtype=u.dtype, device=u.device)
+    )
     logpdf = xp.zeros(n, dtype=u.dtype, device=u.device)
     for t in range(trunc_lvl):
       lvl = bv.level(t)
-      u_e = lvl.gather_inputs(hfunc1, hfunc2)  # (N_t, n, 2)
-      # One fused lookup yields pdf + both h-functions (shared cell search).
-      pdf_e, h1_e, h2_e = lvl.pdf_h1_h2(bv.grid_points, u_e)
+      u_e = lvl.gather_inputs(hfunc1, hfunc2, hfunc1_sub, hfunc2_sub)
+      if hfunc2_sub is None:
+        # One fused lookup yields pdf + both h-functions (shared cell search).
+        pdf_e, h1_e, h2_e = lvl.pdf_h1_h2(bv.grid_points, u_e)
+      else:
+        pdf_e, h1_e, h2_e, h1s_e, h2s_e = lvl.eval_discrete(
+          bv.grid_points, u_e, with_pdf=True
+        )
+        self._write_left_limits(
+          xp,
+          lvl,
+          hfunc1_sub,
+          hfunc2_sub,
+          h1s_e,
+          h2s_e,
+          lvl.needs_h2 & lvl.disc1,
+        )
       # Sum of the level's edge log-densities (axis 0), then into the running
       # total: the batched analog of `_logpdf`'s per-edge accumulation, and in
       # the same space, so the level reduction cannot underflow either.
@@ -1031,28 +1104,56 @@ class VinecopBase(
   def _rosenblatt_batched(self, u: ArrayT) -> ArrayT:
     """Batched Rosenblatt transform (per-tree-level stacked h-functions).
 
-    Numerically equivalent to ``_rosenblatt`` on a simplified vine.
+    Numerically equivalent to ``_rosenblatt`` on a simplified vine. The
+    randomization of the discrete columns draws uniforms, so it is left to the
+    caller: what comes back is :meth:`_rosenblatt_columns`, which
+    :meth:`_finish_rosenblatt` completes.
 
     Parameters
     ----------
-    u : array, shape (n, d), dtype float
-        Prepared pseudo-observations.
+    u : array, shape (n, d + k), dtype float
+        Prepared pseudo-observations in the compact layout.
+
+    Returns
+    -------
+    array, shape (n, d) or (n, 2d), dtype float
+        The transformed columns in variable order, followed by their left
+        limits on a vine with discrete variables; not yet clamped.
     """
     xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
-    order, inv = self.order, self.inverse_order
+    order = self.order
     bv = self._ensure_batched()
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       hfunc2[:, j] = u[:, order[j] - 1]
-    hfunc1 = xp.asarray(hfunc2, copy=True)
+    hfunc1 = copy_array(hfunc2)
+    # See `_logpdf` on why hfunc1_sub needs no seed.
+    hfunc2_sub: Any = seed_left_limits(
+      u, self.d, self.order, self._var_types, self._disc_cols, xp
+    )
+    hfunc1_sub: Any = (
+      None
+      if hfunc2_sub is None
+      else xp.zeros((n, d), dtype=u.dtype, device=u.device)
+    )
     for t in range(trunc_lvl):
       lvl = bv.level(t)
-      u_e = lvl.gather_inputs(hfunc1, hfunc2)
+      u_e = lvl.gather_inputs(hfunc1, hfunc2, hfunc1_sub, hfunc2_sub)
       n_pairs = lvl.n_pairs
-      # One fused lookup yields both h-functions (shared cell search).
-      h1_e, h2_e = lvl.h1_h2(bv.grid_points, u_e)
+      if hfunc2_sub is None:
+        # One fused lookup yields both h-functions (shared cell search).
+        h1_e, h2_e = lvl.h1_h2(bv.grid_points, u_e)
+      else:
+        _, h1_e, h2_e, h1s_e, h2s_e = lvl.eval_discrete(
+          bv.grid_points, u_e, with_pdf=False, every_h2=True
+        )
+        # `_rosenblatt` writes hfunc2 at every edge, and its left limit at
+        # every edge whose first argument is discrete.
+        self._write_left_limits(
+          xp, lvl, hfunc1_sub, hfunc2_sub, h1s_e, h2s_e, lvl.disc1
+        )
       h1_new = xp.matrix_transpose(h1_e)
       h2_new = xp.matrix_transpose(h2_e)
       # hfunc2 is overwritten unconditionally at every edge; hfunc1 is not.
@@ -1060,10 +1161,52 @@ class VinecopBase(
       hfunc1[:, :n_pairs] = xp.where(
         lvl.needs_h1[None, :], h1_new, hfunc1[:, :n_pairs]
       )
-    out = xp.empty((n, d), dtype=u.dtype, device=u.device)
-    for j in range(d):
-      out[:, j] = hfunc2[:, inv[j]]
-    return trim(out, xp)
+    return self._rosenblatt_columns(hfunc2, hfunc2_sub)
+
+  @staticmethod
+  def _write_left_limits(
+    xp: Namespace[ArrayT],
+    lvl: Any,  # noqa: ANN401 - a level of the subclass's batched state
+    hfunc1_sub: ArrayT,
+    hfunc2_sub: ArrayT,
+    h1s_e: ArrayT,
+    h2s_e: ArrayT,
+    writes_h2: ArrayT,
+  ) -> None:
+    """Write one level's left-limit h-functions into the scratch, in place.
+
+    The batched analog of the per-edge writes in ``_logpdf`` / ``_rosenblatt``:
+    ``hfunc1^-`` where the next tree needs ``hfunc1`` and the second argument
+    is discrete, ``hfunc2^-`` where ``writes_h2`` says so -- the two cascades
+    differ only in that, since ``_rosenblatt`` writes ``hfunc2`` at every edge.
+
+    Parameters
+    ----------
+    xp : module
+        The array namespace.
+    lvl : object
+        The tree level, carrying ``n_pairs``, ``needs_h1`` and ``disc2``.
+    hfunc1_sub, hfunc2_sub : array, shape (n, d), dtype float
+        The left-limit scratch, written in place.
+    h1s_e, h2s_e : array, shape (N, n), dtype float
+        The level's left-limit h-functions.
+    writes_h2 : array, shape (N,), dtype bool
+        Which of the level's edges write ``hfunc2^-``.
+
+    Returns
+    -------
+    None
+    """
+    h1: Any = hfunc1_sub
+    h2: Any = hfunc2_sub
+    n_pairs = lvl.n_pairs
+    writes_h1 = lvl.needs_h1 & lvl.disc2
+    h1[:, :n_pairs] = xp.where(
+      writes_h1[None, :], xp.matrix_transpose(h1s_e), h1[:, :n_pairs]
+    )
+    h2[:, :n_pairs] = xp.where(
+      writes_h2[None, :], xp.matrix_transpose(h2s_e), h2[:, :n_pairs]
+    )
 
   # --- batched dispatch ------------------------------------------------- #
   def _namespace(self, a: ArrayT) -> Namespace[ArrayT]:
@@ -1115,21 +1258,20 @@ class VinecopBase(
     return state
 
   def _resolve_batched(self, requested: bool | None, x: ArrayT | None) -> bool:
-    """Resolve the ``batched`` flag; force ``False`` for conditional or discrete.
+    """Resolve the ``batched`` flag; force ``False`` for a conditional vine.
 
     Covariates count as conditional here: any non-``None`` ``x`` forces the
     non-batched cascade.
 
     Declining is the right answer rather than raising: ``batched`` defaults to
     the subclass's ``_default_batched`` (device-dependent on the torch
-    vine), so a raise would make an ordinary ``pdf(u)`` fail on a discrete vine
-    for a reason the caller never asked about. Discreteness is a property of the
-    vine, not of the subclass's grid, which is why it is decided here rather
-    than through ``NotBatchable``.
+    vine), so a raise would make an ordinary ``pdf(u)`` fail on a conditional
+    vine for a reason the caller never asked about. Discrete variables do not
+    decline here: the batched loops carry the left-limit scratch, and whether
+    the subclass's state can evaluate a discrete slot is for its
+    ``_build_batched`` to answer, through ``NotBatchable``.
     """
     if self._context.assembles_conditioning or x is not None:
-      return False
-    if self._n_discrete:
       return False
     if requested is None:
       requested = self._default_batched()
@@ -1378,9 +1520,11 @@ class VinecopBase(
     x = prepare_covariates(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
-        return self._rosenblatt_batched(u_p)
+        cols = self._rosenblatt_batched(u_p)
       except NotBatchable:
         pass  # no grid fast path available -> non-batched cascade
+      else:
+        return self._finish_rosenblatt(cols, randomize_discrete, seeds)
     return self._rosenblatt(u_p, x, randomize_discrete, seeds)
 
   def inverse_rosenblatt(
@@ -1900,6 +2044,64 @@ class VinecopBase(
 
     return fit_edge_default
 
+  @classmethod
+  def _resolve_fit_level(
+    cls,
+    fit_level: FitLevel | None,
+    fit_edge: FitEdge | None,
+    controls: ControlsLike | None,
+    u: ArrayT,
+  ) -> FitLevel | None:
+    """The level fitter to use, or ``None`` to fit edge by edge.
+
+    The caller's ``fit_level`` as given. A lane with a stacked fitter of its
+    own overrides this to supply it, and must not do so when the caller
+    passed a ``fit_edge``: the engines prefer a level fitter wherever one
+    applies, so supplying one there would replace the caller's fitter.
+
+    Parameters
+    ----------
+    fit_level : callable, or None
+        The caller's level fitter.
+    fit_edge : callable, or None
+        The caller's edge fitter.
+    controls : ControlsLike, or None
+        The fit configuration.
+    u : array
+        The data the fit reads.
+
+    Returns
+    -------
+    callable, or None
+        The level fitter.
+    """
+    del fit_edge, controls, u
+    return fit_level
+
+  @classmethod
+  def _resolve_eval_level(
+    cls, controls: ControlsLike | None, u: ArrayT
+  ) -> EvalLevel | None:
+    """The stacked h-function evaluator a fit uses, or ``None``.
+
+    ``None`` here, so a fit evaluates each fitted pair on its own. A lane
+    that can evaluate a level's pairs together overrides this.
+
+    Parameters
+    ----------
+    controls : ControlsLike, or None
+        The fit configuration.
+    u : array
+        The data the fit reads.
+
+    Returns
+    -------
+    callable, or None
+        The level evaluator.
+    """
+    del controls, u
+    return None
+
   #: The two fit engines, module functions in ``_vinecop_fit_engines`` --
   #: neither
   #: reads ``self`` or ``cls``. Bound here because these are the names `fit`,
@@ -1973,7 +2175,14 @@ class VinecopBase(
         ``bicop_class``. Conditional fitting is driven through this hook.
     fit_level : callable, or None, optional
         ``(tree, u_level, types) -> Sequence[BicopLike]``, fitting a whole tree
-        level at once instead of edge by edge.
+        level at once instead of edge by edge. ``u_level`` is
+        ``(P, n, 2)`` for an all-continuous level and ``(P, n, 4)``,
+        ``[u1, u2, u1^-, u2^-]`` per edge, for a level with a discrete edge,
+        where a continuous edge's left limits are its own values; ``types``
+        says which edge is which. A level whose pairs see a conditioning
+        context is fitted edge by edge. ``None`` leaves the choice to the
+        class, which fits edge by edge unless it has a level fitter of its
+        own and no ``fit_edge`` was given.
 
     Returns
     -------
@@ -1986,18 +2195,22 @@ class VinecopBase(
     from_data : Construct a fitted vine in one call.
     """
     options = _selection_options(controls)
+    # Placed, not `_prep_args`-ed: the engines own the layout, but they
+    # allocate their scratch in this array's namespace, so it has to be the
+    # one the pairs answer in.
+    placed = self._prep(u)
     self.set_pair_copulas(
       self._fit_parts(
         self.structure,
-        # Placed, not `_prep_args`-ed: the engines own the layout, but they
-        # allocate their scratch in this array's namespace, so it has to be
-        # the one the pairs answer in.
-        self._prep(u),
+        placed,
         self._resolve_fit_edge(fit_edge, controls),
         context=self._context,
         x=x,
         var_types=list(self.var_types) if var_types is None else var_types,
-        fit_level=fit_level,
+        fit_level=self._resolve_fit_level(
+          fit_level, fit_edge, controls, placed
+        ),
+        eval_level=self._resolve_eval_level(controls, placed),
         tree_criterion=options.get("tree_criterion", "tau"),
         threshold=options.get("threshold", 0.0),
         weights=options.get("weights"),
@@ -2059,13 +2272,15 @@ class VinecopBase(
     """
     self._check_selectable(fit_edge)
     types = list(self.var_types) if var_types is None else var_types
+    placed = self._prep(u)  # placed for the reason `fit` states
     structure, pair_copulas, cond_order = self._select_parts(
-      self._prep(u),  # placed for the reason `fit` states
+      placed,
       self._resolve_fit_edge(fit_edge, controls),
       context=self._context,
       x=x,
       var_types=types,
-      fit_level=fit_level,
+      fit_level=self._resolve_fit_level(fit_level, fit_edge, controls, placed),
+      eval_level=self._resolve_eval_level(controls, placed),
       **_selection_options(controls),
     )
     self._bind_vine(structure, self._context, var_types=types)
@@ -2135,6 +2350,8 @@ class VinecopBase(
     it.
     """
     resolved = cls._resolve_fit_edge(fit_edge, controls)
+    level_fitter = cls._resolve_fit_level(fit_level, fit_edge, controls, u)
+    level_evaluator = cls._resolve_eval_level(controls, u)
     cond_order: dict[tuple[int, int], tuple[int, ...]] = {}
     if structure is None:
       cls._check_selectable(fit_edge)
@@ -2143,7 +2360,8 @@ class VinecopBase(
         resolved,
         x=x,
         var_types=var_types,
-        fit_level=fit_level,
+        fit_level=level_fitter,
+        eval_level=level_evaluator,
         **_selection_options(controls),
       )
     else:
@@ -2154,7 +2372,8 @@ class VinecopBase(
         resolved,
         x=x,
         var_types=var_types,
-        fit_level=fit_level,
+        fit_level=level_fitter,
+        eval_level=level_evaluator,
         tree_criterion=options.get("tree_criterion", "tau"),
         threshold=options.get("threshold", 0.0),
         weights=options.get("weights"),

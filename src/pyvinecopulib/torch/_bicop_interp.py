@@ -11,6 +11,7 @@ import math
 
 import torch
 from torch import Tensor
+from torch.utils.weak import WeakTensorKeyDictionary
 
 from ..core._trim import trim
 
@@ -20,17 +21,23 @@ from ..core._trim import trim
 # source of truth for the numerics shared with the batched vine cascade.
 from ._placement import TENSOR_NS
 from ._vinecop_batched import (
-  _MIN_MASS,
   _batched_cell_index,
-  _cond_strip,
   _hfunc_from_cells,
   _locate,
+  cond_interval_mass_batched,
   int_on_grid_batched,
   integrate_1d_batched,
   integrate_2d_batched,
   interpolate_batched,
   inverse_integrate_1d_batched,
+  mass_tables,
+  rect_mass_batched,
+  trap_weights,
 )
+
+#: Each grid's mass tables, keyed weakly on its ``values`` tensor together with
+#: that tensor's version counter; see ``InterpolationGrid2D._mass``.
+_MASS_CACHE: WeakTensorKeyDictionary = WeakTensorKeyDictionary()
 
 #: Above this grid side the passes below stay on the device: the launch
 #: overhead they save no longer outweighs moving the grid to the host.
@@ -46,7 +53,7 @@ _NORMAL_GRID_Z_LIMIT: float = 3.25
 GRID_TYPES = ("normal", "linear")
 
 
-#: The passes that converge most grids before :func:`_newton_margins` takes
+#: The passes that converge most grids before :func:`_newton_stack` takes
 #: over, where a pass gains little; and the most steps it takes. Both as in
 #: ``InterpolationGrid::normalize_margins``.
 _NEWTON_AFTER: int = 25
@@ -103,13 +110,14 @@ def _block_pins(p: Tensor, q: Tensor) -> tuple[Tensor, Tensor]:
   return blocks((f @ f_t) > 0.0), blocks((f_t @ f) > 0.0)
 
 
-def _newton_margins(
-  values: Tensor, w: Tensor, max_steps: int
-) -> tuple[Tensor, bool]:
+def _newton_stack(
+  values: Tensor, w: Tensor, max_steps: int, min_mass: float = 1e-20
+) -> tuple[Tensor, Tensor]:
   """Newton's method for the scalings that make both margins uniform.
 
-  Port of ``InterpolationGrid::newton_margins``, on the logarithms of the row
-  and column scalings. Scaling row ``i`` by ``e^{a_i}`` and column ``j`` by
+  Port of ``InterpolationGrid::newton_margins``, over a stack of grids, each
+  taking the steps it would take alone. It works on the logarithms of the row
+  and column scalings: scaling row ``i`` by ``e^{a_i}`` and column ``j`` by
   ``e^{b_j}`` moves the log margins by ``a + P b`` and ``b + Q a`` to first
   order, with ``P = diag(1 / r) V W`` and ``Q = diag(1 / c) V' W`` row
   stochastic. Eliminating either unknown leaves an ``m x m`` system, singular
@@ -120,86 +128,231 @@ def _newton_margins(
   not form is not finite, and never does. Entries of ``P`` and ``Q`` below
   ``1e-150`` are dropped, so their products never form subnormal numbers.
 
-  Args:
-    values: ``(m, m)`` density grid.
-    w: ``(m,)`` trapezoid weights.
-    max_steps: maximum number of steps.
-
-  Returns:
-    The rescaled grid, and whether its margins converged. A step that fails to
-    reduce the residual stops the method, leaving the grid of the last one
-    that did.
-  """
-  m = values.shape[-1]
-  exact = 8 * torch.finfo(values.dtype).eps
-  rounding, min_mass = 1e-12, 1e-20
-  eye = torch.eye(m, dtype=values.dtype, device=values.device)
-
-  def residual(v: Tensor, v_t: Tensor) -> tuple[Tensor, Tensor, float]:
-    r = (v @ w).clamp_min(min_mass)
-    c = (v_t @ w).clamp_min(min_mass)
-    err = float(torch.maximum((r - 1.0).abs().max(), (c - 1.0).abs().max()))
-    return r, c, err
-
-  def stochastic(margin: Tensor, v: Tensor) -> Tensor:
-    s = margin.reciprocal().unsqueeze(-1) * v * w
-    return torch.where(s < 1e-150, torch.zeros_like(s), s)
-
-  vt = values.t().contiguous()
-  r, c, err = residual(values, vt)
-  previous = math.inf
-  for _ in range(max_steps):
-    if err <= exact or (err < rounding and err >= previous):
-      return values, True
-    lr, lc = r.log(), c.log()
-    p, q = stochastic(r, values), stochastic(c, vt)
-    pin_rows, pin_cols = _block_pins(p, q)
-    b1 = torch.linalg.solve_ex(eye - q @ p + pin_cols, q @ lr - lc).result
-    a1 = -lr - p @ b1
-    a2 = torch.linalg.solve_ex(eye - p @ q + pin_rows, p @ lc - lr).result
-    b2 = -lc - q @ a2
-    a, b = (a1 + a2) / 2.0, (b1 + b2) / 2.0
-    t = 1.0
-    for _ in range(30):
-      trial: Tensor = values * ((a * t).exp().unsqueeze(-1) * (b * t).exp())
-      trial_t: Tensor = trial.t().contiguous()
-      r_try, c_try, err_try = residual(trial, trial_t)
-      if err_try < err:
-        values, vt, r, c = trial, trial_t, r_try, c_try
-        previous, err = err, err_try
-        break
-      t /= 2.0
-    else:
-      # at the floor of rounding, no step can reduce the residual further
-      return values, err < rounding
-  return values, err <= exact or (err < rounding and err >= previous)
-
-
-def _trap_weights(grid_points: Tensor) -> Tensor:
-  """Trapezoid weights of ``grid_points``, summing to 1 on ``[0, 1]``.
-
-  ``_trap_weights(g) @ v`` is the exact integral of the piecewise-linear
-  function through ``(g, v)``, because the telescoping sum collapses to
-  ``g[-1] - g[0]``.
-
   Parameters
   ----------
-  grid_points : Tensor, shape (m,), dtype float
-      A strictly increasing grid whose endpoints are 0 and 1.
+  values : Tensor, shape (P, m, m), dtype float
+      Density grids.
+  w : Tensor, shape (m,), dtype float
+      Trapezoid weights of the grid.
+  max_steps : int
+      Maximum number of steps.
+  min_mass : float, default=1e-20
+      Floor on a margin, so a zero line cannot 0 / 0.
 
   Returns
   -------
-  Tensor, shape (m,), dtype float
-      The weights.
+  values : Tensor, shape (P, m, m), dtype float
+      The rescaled grids. A step that fails to reduce a grid's residual stops
+      the method for that grid, leaving it as the last step that did.
+  converged : Tensor, shape (P,), dtype bool
+      Whether each grid's margins converged.
   """
-  m = grid_points.shape[0]
+  values = values.clone()
+  m = values.shape[-1]
+  exact = 8 * torch.finfo(values.dtype).eps
+  rounding = 1e-12
+  eye = torch.eye(m, dtype=values.dtype, device=values.device)
+
+  def margins(v: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    vt = v.transpose(-1, -2).contiguous()
+    r = (v @ w).clamp_min(min_mass)
+    c = (vt @ w).clamp_min(min_mass)
+    err = torch.maximum((r - 1.0).abs().amax(-1), (c - 1.0).abs().amax(-1))
+    return vt, r, c, err
+
+  def stochastic(margin: Tensor, v: Tensor) -> Tensor:
+    s = margin.reciprocal().unsqueeze(-1) * v * w
+    return torch.where(s < 1e-150, 0.0, s)
+
+  def mv(a: Tensor, x: Tensor) -> Tensor:
+    # a reduction rather than a batched product, whose kernel, and so whose
+    # rounding, can depend on how many grids are still iterating
+    return (a * x.unsqueeze(-2)).sum(-1)
+
+  vt, r, c, err = margins(values)
+  previous = torch.full_like(err, math.inf)
+  done = torch.zeros(values.shape[0], dtype=torch.bool, device=values.device)
+  converged = done.clone()
+  for _ in range(max_steps):
+    stop = ~done & ((err <= exact) | ((err < rounding) & (err >= previous)))
+    converged |= stop
+    done |= stop
+    if bool(done.all()):
+      return values, converged
+    idx = (~done).nonzero().squeeze(-1)
+    v, v_t, ri, ci, ei = values[idx], vt[idx], r[idx], c[idx], err[idx]
+    prev = previous[idx]
+    lr, lc = ri.log(), ci.log()
+    p, q = stochastic(ri, v), stochastic(ci, v_t)
+    pin_rows, pin_cols = _block_pins(p, q)
+    b1 = torch.linalg.solve_ex(eye - q @ p + pin_cols, mv(q, lr) - lc).result
+    a1 = -lr - mv(p, b1)
+    a2 = torch.linalg.solve_ex(eye - p @ q + pin_rows, mv(p, lc) - lr).result
+    b2 = -lc - mv(q, a2)
+    a, b = (a1 + a2) / 2.0, (b1 + b2) / 2.0
+    t = torch.ones_like(ei)
+    accepted = torch.zeros_like(idx, dtype=torch.bool)
+    for _ in range(30):
+      tt = t.unsqueeze(-1)
+      scale = (a * tt).exp().unsqueeze(-1) * (b * tt).exp().unsqueeze(-2)
+      trial: Tensor = v * scale
+      trial_t, r_try, c_try, err_try = margins(trial)
+      ok = ~accepted & (err_try < ei)
+      grid_ok = ok[:, None, None]
+      v = torch.where(grid_ok, trial, v)
+      v_t = torch.where(grid_ok, trial_t, v_t)
+      ri = torch.where(ok[:, None], r_try, ri)
+      ci = torch.where(ok[:, None], c_try, ci)
+      prev = torch.where(ok, ei, prev)
+      ei = torch.where(ok, err_try, ei)
+      accepted |= ok
+      if bool(accepted.all()):
+        break
+      t = torch.where(accepted, t, t / 2.0)
+    values[idx], vt[idx], r[idx], c[idx] = v, v_t, ri, ci
+    err[idx], previous[idx] = ei, prev
+    # at the floor of rounding, no step can reduce the residual further
+    stuck = idx[~accepted]
+    converged[stuck] = err[stuck] < rounding
+    done[stuck] = True
+  rest = ~done & ((err <= exact) | ((err < rounding) & (err >= previous)))
+  return values, converged | rest
+
+
+def _checked_grid(grid_points: Tensor, values: Tensor) -> Tensor:
+  """``grid_points`` with its endpoints at 0 and 1, once it and ``values`` pass.
+
+  Both checks read the device once, together, whatever the number of grids
+  ``values`` stacks.
+  """
+  m = values.shape[-1]
+  if grid_points.ndim != 1 or grid_points.shape[0] != m:
+    raise ValueError(
+      "grid_points must be 1D and match the side length of values"
+    )
+  # Two points are the minimum a cell needs, and the cell widths divide every
+  # interpolation and every prefix table: a single point leaves no cell and
+  # produced NaN, while a repeated or decreasing point divides by zero or by a
+  # negative width and produced a plausible-looking wrong number.
   if m < 2:
-    return torch.zeros(0, dtype=grid_points.dtype, device=grid_points.device)
-  w = torch.empty_like(grid_points)
-  w[0] = (grid_points[1] - grid_points[0]) / 2.0
-  w[1:-1] = (grid_points[2:] - grid_points[:-2]) / 2.0
-  w[-1] = (grid_points[-1] - grid_points[-2]) / 2.0
-  return w
+    raise ValueError(f"grid_points must contain at least two points, got {m}")
+  # A density is nonnegative, and the exact prefix tables rely on it: every
+  # integral they serve is a sum of nonnegative terms, so no cancellation can
+  # amplify a rounding error. A negative node would break that silently.
+  unsorted, negative = torch.stack(
+    [(grid_points[1:] <= grid_points[:-1]).any(), (values < 0.0).any()]
+  ).tolist()
+  if unsorted:
+    raise ValueError("grid_points must be strictly increasing")
+  if negative:
+    raise ValueError("values must be nonnegative; it is a density grid")
+  grid_points = grid_points.clone()
+  # Force boundary points to exactly 0 / 1 so we never extrapolate.
+  grid_points[0] = 0.0
+  grid_points[-1] = 1.0
+  return grid_points.contiguous()
+
+
+@torch.no_grad()
+def normalize_stack(
+  values: Tensor,
+  w: Tensor,
+  max_iter: int,
+  min_mass: float = 1e-20,
+) -> Tensor:
+  """``InterpolationGrid2D.normalize_margins`` over ``(P, m, m)`` at once.
+
+  Each pair stops where the single grid stops -- once its margins' residual is
+  at machine precision or, already at the level of rounding, no longer
+  shrinks -- so a pair's passes, and its Newton steps after the first
+  ``_NEWTON_AFTER`` passes, are the ones its own grid earns. A grid
+  normalizes in a stack as it does alone up to rounding, which kernels sized
+  by the stack can order differently; a grid and its transpose in one stack
+  normalize to transposes of each other, bit for bit.
+
+  Parameters
+  ----------
+  values : Tensor, shape (P, m, m), dtype float
+      Density grids.
+  w : Tensor, shape (m,), dtype float
+      Trapezoid weights of the grid.
+  max_iter : int
+      Maximum number of passes.
+  min_mass : float, default=1e-20
+      Floor on a margin, so a zero line cannot 0 / 0.
+
+  Returns
+  -------
+  Tensor, shape (P, m, m), dtype float
+      The normalized grids.
+  """
+  values = values.clone()
+  exact = 8 * torch.finfo(values.dtype).eps
+  rounding = 1e-12
+  live = torch.ones(values.shape[0], dtype=torch.bool, device=values.device)
+  previous = torch.full(
+    (values.shape[0],), math.inf, dtype=values.dtype, device=values.device
+  )
+  for k in range(max_iter):
+    # materialized, so that both margins are the same reduction and
+    # transposing a grid swaps them bit for bit
+    vt = values.transpose(-1, -2).contiguous()
+    r = (values @ w).clamp_min(min_mass)
+    c = (vt @ w).clamp_min(min_mass)
+    err = torch.maximum((r - 1.0).abs().amax(-1), (c - 1.0).abs().amax(-1))
+    live = live & ~((err <= exact) | ((err < rounding) & (err >= previous)))
+    if not bool(live.any()):
+      break
+    previous = torch.where(live, err, previous)
+    if k == _NEWTON_AFTER:
+      idx = live.nonzero().squeeze(-1)
+      values[idx], converged = _newton_stack(values[idx], w, _NEWTON_STEPS)
+      live[idx] = ~converged
+      # the passes resume from wherever the steps left a grid
+      previous[idx] = math.inf
+      continue
+    # reductions rather than batched products, whose kernel, and so whose
+    # rounding, can depend on how many grids the stack holds
+    r2 = (values * (w / c).unsqueeze(-2)).sum(-1).clamp_min(min_mass)
+    c2 = (vt * (w / r).unsqueeze(-2)).sum(-1).clamp_min(min_mass)
+    sr = (r * r2).sqrt().reciprocal()
+    sc = (c * c2).sqrt().reciprocal()
+    # one fused multiply by the outer product, as a pass is in
+    # `InterpolationGrid`: two successive ones would round the two orders
+    # differently and lose the equivariance
+    scaled = values * (sr.unsqueeze(-1) * sc.unsqueeze(-2))
+    values = torch.where(live[:, None, None], scaled, values)
+  return values
+
+
+def prefix_tables(
+  values: Tensor, dgrid: Tensor
+) -> tuple[Tensor, Tensor, Tensor]:
+  """``InterpolationGrid2D.build_caches`` for any leading dimensions of ``values``.
+
+  Parameters
+  ----------
+  values : Tensor, shape (..., m, m), dtype float
+      Density grids.
+  dgrid : Tensor, shape (m - 1,), dtype float
+      The grid's cell widths.
+
+  Returns
+  -------
+  tuple of Tensor
+      ``sy``, ``sx`` and ``p``, each shaped like ``values``.
+  """
+  inc = 0.5 * (values[..., :, :-1] + values[..., :, 1:]) * dgrid
+  sy = torch.cat([torch.zeros_like(inc[..., :1]), inc.cumsum(dim=-1)], dim=-1)
+  incx = 0.5 * (values[..., :-1, :] + values[..., 1:, :]) * dgrid.unsqueeze(-1)
+  sx = torch.cat(
+    [torch.zeros_like(incx[..., :1, :]), incx.cumsum(dim=-2)], dim=-2
+  )
+  incp = 0.5 * (sy[..., :-1, :] + sy[..., 1:, :]) * dgrid.unsqueeze(-1)
+  p = torch.cat(
+    [torch.zeros_like(incp[..., :1, :]), incp.cumsum(dim=-2)], dim=-2
+  )
+  return sy, sx, p
 
 
 class InterpolationGrid2D(torch.nn.Module):
@@ -227,45 +380,94 @@ class InterpolationGrid2D(torch.nn.Module):
     super().__init__()
     if values.ndim != 2 or values.shape[0] != values.shape[1]:
       raise ValueError("values must be a square 2D tensor")
-    if grid_points.ndim != 1 or grid_points.shape[0] != values.shape[0]:
-      raise ValueError(
-        "grid_points must be 1D and match the side length of values"
-      )
-    # Two points are the minimum a cell needs, and the cell widths divide every
-    # interpolation and every prefix table: a single point leaves no cell and
-    # produced NaN, while a repeated or decreasing point divides by zero or by a
-    # negative width and produced a plausible-looking wrong number.
-    if grid_points.shape[0] < 2:
-      raise ValueError(
-        "grid_points must contain at least two points, "
-        f"got {grid_points.shape[0]}"
-      )
-    if not bool((grid_points[1:] > grid_points[:-1]).all()):
-      raise ValueError("grid_points must be strictly increasing")
-    # A density is nonnegative, and the exact prefix tables rely on it: every
-    # integral they serve is a sum of nonnegative terms, so no cancellation can
-    # amplify a rounding error. A negative node would break that silently.
-    if bool((values < 0.0).any()):
-      raise ValueError("values must be nonnegative; it is a density grid")
+    grid_points = _checked_grid(grid_points, values)
+    self._setup(
+      grid_points,
+      values.clone().contiguous(),
+      trap_weights(grid_points),
+      grid_points[1:] - grid_points[:-1],
+      is_linear,
+    )
+    self.normalize_margins(norm_maxiter)
 
-    grid_points = grid_points.clone()
-    # Force boundary points to exactly 0 / 1 so we never extrapolate.
-    grid_points[0] = 0.0
-    grid_points[-1] = 1.0
-
-    self.register_buffer("grid_points", grid_points.contiguous())
-    self.register_buffer("values", values.clone().contiguous())
+  def _setup(
+    self,
+    grid_points: Tensor,
+    values: Tensor,
+    weights: Tensor,
+    dgrid: Tensor,
+    is_linear: bool,
+  ) -> None:
+    """Register a checked grid's buffers; the one place a grid's state is set."""
+    self.register_buffer("grid_points", grid_points)
+    self.register_buffer("values", values)
     # Trapezoid weights of `grid_points`, so `trap_weights @ v` integrates the
     # piecewise-linear function through `(grid_points, v)` over [0, 1]. The grid
     # is immutable after construction, so this is built once; the normalization
     # and the h-function denominator both read it instead of walking the cells.
-    self.register_buffer("trap_weights", _trap_weights(grid_points))
-    self.register_buffer("_dgrid", grid_points[1:] - grid_points[:-1])
+    self.register_buffer("trap_weights", weights)
+    self.register_buffer("_dgrid", dgrid)
     # When ``is_linear`` is True the grid is assumed to be ``linspace(0, 1, m)``
-    # (with the endpoint clamp above leaving it unchanged), so cell-finding is
+    # (with the endpoint clamp leaving it unchanged), so cell-finding is
     # O(1) — ``floor(u * (m - 1))`` — instead of an O(log m) ``searchsorted``.
     self._is_linear = bool(is_linear)
-    self.normalize_margins(norm_maxiter)
+
+  @classmethod
+  def _stack(
+    cls,
+    grid_points: Tensor,
+    values: Tensor,
+    *,
+    norm_maxiter: int = 2000,
+    is_linear: bool = False,
+  ) -> list[InterpolationGrid2D]:
+    """One grid per pair of a stack, checked and normalized as one tensor.
+
+    What ``P`` constructor calls give, for a batched fit's pairs: the checks
+    run once for the stack, the grid's weights are computed once, and the
+    normalization runs over the stack with each pair freezing at its own
+    tolerance, rather than as ``P`` loops of a few hundred small kernels.
+
+    Parameters
+    ----------
+    grid_points : Tensor, shape (m,), dtype float
+        The shared grid.
+    values : Tensor, shape (P, m, m), dtype float
+        One density grid per pair.
+    norm_maxiter : int, default=2000
+        As on the constructor.
+    is_linear : bool, default=False
+        As on the constructor.
+
+    Returns
+    -------
+    list of InterpolationGrid2D
+        One grid per pair, each holding its own copy of its values.
+    """
+    if values.ndim != 3 or values.shape[-1] != values.shape[-2]:
+      raise ValueError("values must be a stack of square 2D tensors")
+    grid_points = _checked_grid(grid_points, values)
+    weights = trap_weights(grid_points)
+    dgrid = grid_points[1:] - grid_points[:-1]
+    if norm_maxiter >= 1 and grid_points.shape[0] >= 2:
+      values = normalize_stack(values, weights, norm_maxiter)
+    grids = []
+    for v in values.unbind(0):
+      # the state `__init__` sets, through the same `_setup`, once the stack is
+      # checked; the module base still needs its own initializer
+      grid = cls.__new__(cls)
+      torch.nn.Module.__init__(grid)  # noqa: PLC2801
+      # its own copies: `load_state_dict` writes buffers in place, so a shared
+      # one would carry a load into every sibling
+      grid._setup(
+        grid_points.clone(),
+        v.clone(),
+        weights.clone(),
+        dgrid.clone(),
+        is_linear,
+      )
+      grids.append(grid)
+    return grids
 
   # --------------------------------------------------------------------- #
   # Grid construction (factories shared by all callers)                    #
@@ -392,7 +594,7 @@ class InterpolationGrid2D(torch.nn.Module):
     the level of rounding, no longer shrinks. A grid left short of uniform
     margins is not a copula density: its masses are not probabilities, by as
     much as the residual. Passes converge slowly under strong
-    dependence, so after the first few dozen :func:`_newton_margins` finishes,
+    dependence, so after the first few dozen :func:`_newton_stack` finishes,
     in a handful of steps.
 
     Args:
@@ -411,35 +613,8 @@ class InterpolationGrid2D(torch.nn.Module):
     on_host = values.device.type != "cpu" and m <= _HOST_NORMALIZE_MAX_M
     if on_host:
       values, w = values.cpu(), w.cpu()
-
-    exact = 8 * torch.finfo(values.dtype).eps
-    rounding, min_mass = 1e-12, 1e-20
-    previous = math.inf
-    for k in range(max_iter):
-      vt = values.t().contiguous()
-      r = (values @ w).clamp_min(min_mass)
-      c = (vt @ w).clamp_min(min_mass)
-      err = float(torch.maximum((r - 1.0).abs().max(), (c - 1.0).abs().max()))
-      if err <= exact or (err < rounding and err >= previous):
-        break
-      previous = err
-      if k == _NEWTON_AFTER:
-        values, converged = _newton_margins(values, w, _NEWTON_STEPS)
-        if converged:
-          break
-        # the passes resume from wherever the steps left the grid
-        previous = math.inf
-        continue
-      r2 = (values @ (w / c)).clamp_min(min_mass)
-      c2 = (vt @ (w / r)).clamp_min(min_mass)
-      sr = (r * r2).sqrt().reciprocal()
-      sc = (c * c2).sqrt().reciprocal()
-      # one fused multiply by the outer product, as a pass is in
-      # `InterpolationGrid`: two successive ones would round the two orders
-      # differently and lose the equivariance
-      values = values * (sr.unsqueeze(-1) * sc)
-
-    self.values.copy_(values.to(self.values.device))
+    out = normalize_stack(values.unsqueeze(0), w, max_iter)[0]
+    self.values.copy_(out.to(self.values.device))
 
   @torch.no_grad()
   def _cell_index(self, u: Tensor) -> Tensor:
@@ -579,17 +754,7 @@ class InterpolationGrid2D(torch.nn.Module):
     tuple of Tensor
         The three ``(m, m)`` tables.
     """
-    inc = 0.5 * (self.values[:, :-1] + self.values[:, 1:]) * self._dgrid
-    sy = torch.cat([torch.zeros_like(inc[:, :1]), inc.cumsum(dim=1)], dim=1)
-    incx = (
-      0.5
-      * (self.values[:-1, :] + self.values[1:, :])
-      * self._dgrid.unsqueeze(-1)
-    )
-    sx = torch.cat([torch.zeros_like(incx[:1, :]), incx.cumsum(dim=0)], dim=0)
-    incp = 0.5 * (sy[:-1, :] + sy[1:, :]) * self._dgrid.unsqueeze(-1)
-    p = torch.cat([torch.zeros_like(incp[:1, :]), incp.cumsum(dim=0)], dim=0)
-    return sy, sx, p
+    return prefix_tables(self.values, self._dgrid)
 
   def cdf_cached(self, u: Tensor, sy: Tensor, sx: Tensor, p: Tensor) -> Tensor:
     """The exact distribution function at ``u``, in O(1) per point.
@@ -642,74 +807,39 @@ class InterpolationGrid2D(torch.nn.Module):
     )
     return trim(out, TENSOR_NS)
 
-  def _interval_weights(self, lo: Tensor, hi: Tensor) -> Tensor:
-    """Nonnegative quadrature weights for ``int_lo^hi`` on the grid.
+  def _mass(self) -> Tensor:
+    """This grid's mass tables, rebuilt only when the grid has changed.
 
-    Returns ``w`` with ``w @ v == int_lo^hi f(t) dt`` for the piecewise-linear
-    ``f`` through ``(grid_points, v)``, exactly. Every entry is nonnegative,
-    because the hat functions are, which is the property :meth:`rect_mass`
-    needs: a difference of two cumulative integrals would be exact too, but
-    would carry the larger one's rounding error into a result of order
-    ``hi - lo``.
-
-    Parameters
-    ----------
-    lo, hi : Tensor, shape (n,), dtype float
-        Interval endpoints, clamped to ``[0, 1]``; ``hi < lo`` gives zero.
+    Held outside the module, keyed weakly on the grid tensor and checked
+    against its version counter, so an in-place edit, a replacement or a device
+    move each rebuild them, and they reach neither a pickle nor
+    ``state_dict``. Rebuilt in the graph, uncached, whenever a gradient in the
+    grid is being taken, as ``TorchTllBicop._tables`` is.
 
     Returns
     -------
-    Tensor, shape (n, m), dtype float
-        The weights.
+    Tensor, shape (1, m * m, 7), dtype float
+        From :func:`mass_tables`.
     """
-    g = self.grid_points
-    m = g.shape[0]
-    a = lo.clamp(0.0, 1.0)
-    b = hi.clamp(0.0, 1.0).clamp_min(a)
-    ka, kb = self._cell_index(a), self._cell_index(b)
-
-    def cell_pair(k: Tensor, s0: Tensor, d: Tensor) -> tuple[Tensor, Tensor]:
-      """Weights on nodes ``k`` / ``k + 1`` for the sub-cell ``[s0, s0 + d]``.
-
-      Parameterized by the *width* rather than by the upper end, so a narrow
-      interval never forms it as a difference of two numbers of order one --
-      which would put the ``1 / w`` amplification back into the weights.
-      """
-      h = g[k + 1] - g[k]
-      q = 0.5 * d * (2.0 * s0 + d)
-      return h * (d - q), h * q
-
-    # Whole cells strictly between the two partial ones: the trapezoid rule is
-    # exact for a piecewise-linear integrand, so each contributes h / 2 to both
-    # of its nodes.
-    idx = torch.arange(m - 1, device=g.device)
-    inner = (idx[None, :] > ka[:, None]) & (idx[None, :] < kb[:, None])
-    half = torch.where(inner, 0.5 * self._dgrid.expand(a.shape[0], m - 1), 0.0)
-    zc = torch.zeros_like(half[:, :1])
-    w = torch.cat([zc, half], dim=1) + torch.cat([half, zc], dim=1)
-
-    zero = torch.zeros_like(a)
-    same = ka == kb
-    ha, hb = g[ka + 1] - g[ka], g[kb + 1] - g[kb]
-    s0a = (a - g[ka]) / ha
-    a0, a1 = cell_pair(ka, s0a, torch.where(same, (b - a) / ha, 1.0 - s0a))
-    b0, b1 = cell_pair(kb, zero, (b - g[kb]) / hb)
-    b0 = torch.where(same, zero, b0)
-    b1 = torch.where(same, zero, b1)
-    for col, val in ((ka, a0), (ka + 1, a1), (kb, b0), (kb + 1, b1)):
-      w = w.scatter_add(1, col.unsqueeze(1), val.unsqueeze(1))
-    return w
+    values = self.values
+    if torch.is_grad_enabled() and values.requires_grad:
+      return mass_tables(self.grid_points, values.unsqueeze(0))
+    hit: tuple[int, Tensor] | None = _MASS_CACHE.get(values)
+    if hit is None or hit[0] != values._version:
+      hit = (
+        values._version,
+        mass_tables(self.grid_points, values.unsqueeze(0)),
+      )
+      _MASS_CACHE[values] = hit
+    return hit[1]
 
   def cond_interval_mass(
     self, u_cond: Tensor, lo: Tensor, hi: Tensor, cond_var: int
   ) -> Tensor:
     """Probability that the free argument falls in ``(lo, hi]``, given the other.
 
-    A conditional distribution is the grid line at ``u_cond`` over its own
-    total, so this is a ratio of nonnegative sums and does not cancel at all.
-    Not clamped into the open unit interval, unlike :meth:`integrate_1d`: an
-    empty interval is exactly ``0`` and the whole line exactly ``1``, which is
-    what makes the masses of a partition sum to one.
+    A batch of one through :func:`cond_interval_mass_batched`, which the
+    stacked vine cascade calls too, so the two routes cannot drift.
 
     Parameters
     ----------
@@ -725,35 +855,24 @@ class InterpolationGrid2D(torch.nn.Module):
     Tensor, shape (n,), dtype float
         Conditional probabilities.
     """
-    if cond_var not in (1, 2):
-      raise ValueError(f"cond_var must be 1 or 2; got {cond_var}")
-    m = self.grid_points.shape[0]
-    cell, t, _ = _locate(
-      self.grid_points, u_cond.clamp(0.0, 1.0), self._is_linear
-    )
-    # Same gather the batched h-function does: axis 1 holds the grid lines of
-    # the first argument, axis 2 those of the second.
-    line = _cond_strip(
-      self.values.unsqueeze(0),
-      cell.unsqueeze(0),
-      t.unsqueeze(0).unsqueeze(-1),
-      1 if cond_var == 1 else 2,
-      m,
+    return cond_interval_mass_batched(
+      self.grid_points,
+      self._mass(),
+      u_cond.unsqueeze(0),
+      lo.unsqueeze(0),
+      hi.unsqueeze(0),
+      cond_var,
+      self._is_linear,
     ).squeeze(0)
-    w = self._interval_weights(torch.minimum(lo, hi), torch.maximum(lo, hi))
-    total = (line @ self.trap_weights).clamp_min(_MIN_MASS)
-    return (w * line).sum(dim=1) / total
 
   def rect_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
     """The exact mass of ``(a1, b1] x (a2, b2]``, without the cancellation.
 
-    ``wx' V wy`` for the nonnegative quadrature weights of the two intervals,
-    a sum of nonnegative terms, so nothing cancels however narrow the
-    rectangle: differencing four values of the distribution function would
-    turn an absolute error ``eps`` into ``~4 eps / (w1 w2)`` in its widths. It
-    is the probability of the rectangle wherever the margins are uniform, which
-    they are for every fitted grid. Summed with either argument first and
-    averaged, so a grid and its transpose give the same value bit for bit.
+    A batch of one through :func:`rect_mass_batched`, where the arrangement
+    that avoids the four-corner cancellation is written down. On a
+    ``1.2e-4``-wide rectangle it errs by ``4.7e-15`` against exact truth,
+    where the difference errs by ``4.6e-9``. A grid and its transpose give the
+    same value, bit for bit.
 
     Parameters
     ----------
@@ -766,18 +885,15 @@ class InterpolationGrid2D(torch.nn.Module):
     Tensor, shape (n,), dtype float
         Rectangle masses.
     """
-    # Rotating the data can leave a left limit above its own value.
-    x0, x1 = torch.minimum(a1, b1), torch.maximum(a1, b1)
-    y0, y1 = torch.minimum(a2, b2), torch.maximum(a2, b2)
-    wx = self._interval_weights(x0, x1)
-    wy = self._interval_weights(y0, y1)
-    # The transpose materialized, so that either order is a product against a
-    # contiguous grid, and a transposed grid runs the other one bit for bit.
-    rows = (wx * (wy @ self.values.t().contiguous())).sum(dim=1)
-    cols = (wy * (wx @ self.values)).sum(dim=1)
-    out = 0.5 * (rows + cols)
-    empty = ~((x1 > x0) & (y1 > y0))
-    return torch.where(empty, torch.zeros_like(out), out)
+    return rect_mass_batched(
+      self.grid_points,
+      self._mass(),
+      a1.unsqueeze(0),
+      b1.unsqueeze(0),
+      a2.unsqueeze(0),
+      b2.unsqueeze(0),
+      self._is_linear,
+    ).squeeze(0)
 
   def hfunc_cached(self, u: Tensor, cond_var: int, sy: Tensor) -> Tensor:
     """The exact conditional distribution function at ``u``, in O(1) per point.

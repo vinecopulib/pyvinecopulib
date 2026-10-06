@@ -1725,12 +1725,19 @@ Key surface:
   slot copies nothing. `TorchTllBicop.from_data`
   takes the four-column layout and reuses the compiled `find_latent_sample`,
   which is what `TllBicop::fit` now consumes for a discrete edge; the jittered
-  ranks only seed the bandwidth. A discrete torch vine refuses the **batched
-  fast path**, whose stacked levels gather `(N, n, 2)` where a discrete edge
-  needs `(N, n, 4)` and the parallel left-limit cascade behind it, and whose
-  `DELTA_MIN` split is per row. It does *not* refuse the **integral cache**: the prefix tables
-  reconstruct the integral exactly, so a discrete edge can difference them and
-  `cache_integrals` resolves the same way it does for a continuous vine.
+  ranks only seed the bandwidth. A discrete torch vine takes the **batched
+  fast path** like a continuous one: the stacked levels gather `(N, n, 4)`
+  through the same wiring as the values, the batched loops carry the parallel
+  left-limit scratch, and each quotient is `BicopBase`'s own with the per-row
+  `DELTA_MIN` split taken as a `where` -- so the forward cascades agree with
+  the per-edge ones to rounding, and the inverse, which reads no left limit,
+  exactly. `rect_mass` / `cond_interval_mass` are a batch of one through the
+  stacked kernels the levels call, so the two cannot drift. Whether a vine's
+  batched state can host a discrete slot is its `_build_batched`'s to answer
+  through `NotBatchable`, not the dispatcher's. Nor does a discrete vine
+  refuse the **integral cache**: the prefix tables reconstruct the integral
+  exactly, so a discrete edge can difference them and `cache_integrals`
+  resolves the same way it does for a continuous vine.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
   - `compile_fit` — off by default; fuses the bandwidth search's per-pass
@@ -1768,18 +1775,31 @@ Key surface:
     starts tracking grad after construction.
   - `rect_prob` / `cond_interval_prob` — the two `BicopBase` hooks, overridden
     onto `InterpolationGrid2D.rect_mass` / `cond_interval_mass`, and available
-    in **both** cache modes: they read the density grid, not the prefix tables.
-    A four-corner `cdf` difference turns an absolute error `ε` into
-    `≈4ε/(w₁w₂)` in the atom widths; the rectangle's mass is a sum of
-    nonnegative terms and cancels nothing, so its error does not grow as the
-    rectangle narrows. Measured against exact rationals on a `1.2e-4`-wide
-    rectangle: `4.7e-15` against `4.6e-9`. `values >= 0` is a constructor
-    precondition precisely because that depends on it. It is the grid's
-    **mass**, as `cdf` is -- the probability once the margins are uniform, as a
-    fitted grid's are to rounding -- and it is summed with either argument
-    first and averaged, so a pair and its flip give the same probabilities bit
-    for bit: what makes a mixed vine's selection equal its refit, as upstream's
-    `rect_mass` does. The conditional one is **not** clamped into the
+    in **both** cache modes: they read their own mass tables, not the
+    `cache_integrals` prefix tables. A four-corner `cdf` difference turns an
+    absolute error `ε` into `≈4ε/(w₁w₂)` in the atom widths; the rectangle's
+    mass is a sum of nonnegative terms and cancels nothing, so its error does
+    not grow as the rectangle narrows. Measured against exact rational truth on
+    a `1.2e-4`-wide rectangle: `4.7e-15` against `4.6e-9`.
+    **Every mass is `O(1)` per query**, not a quadrature over the grid: its
+    partial cells are summed directly and its whole cells read off
+    *compensated* prefix tables (`mass_tables` in `torch/_vinecop_batched.py`:
+    a value plus its rounding error), which is what keeps a difference of two
+    prefixes from canceling. The residual is `≈1e-32` absolute, so the
+    relative accuracy of a dense quadrature holds for any probability above
+    `~1e-16` and degrades below it -- `1e-11` relative at `1e-21`, which is a
+    `1e-11` error in a log-density twenty orders into the tail. A plain prefix
+    table would lose that accuracy at `1e-5`, which a strongly dependent pair's
+    off-diagonal atoms reach; a dense quadrature is `O(m)` per query, which is
+    what made the discrete batched path memory-bound at large `n`.
+    `values >= 0` is a constructor precondition precisely because the
+    nonnegative-weight bound depends on it. It is the grid's **mass**, as `cdf`
+    is -- the probability once the margins are uniform, as a fitted grid's are
+    to rounding -- and every piece of it is read with either argument first and
+    averaged, the column tables built by the row code on the transposed grid,
+    so a pair and its flip give the same probabilities bit for bit: what makes
+    a mixed vine's selection equal its refit, as upstream's `rect_mass` does.
+    The conditional one is **not** clamped into the
     open unit interval, unlike an h-function value, which is what makes the
     masses of a partition sum to one.
   - `compile` — runs the batched cascades through `torch.compile`, on CUDA
@@ -1791,13 +1811,25 @@ Key surface:
     back to eager. The `batched` flag is **not** a control: it is resolved
     per device on each call, and overridable per call.
   - `batched_fit` — fits a whole tree level in one call instead of edge at a
-    time, through the optional `fit_level` hook on `VinecopBase.fit` /
-    `.select` (`TorchTllBicop.from_data_batched` is the pair-level entry point,
-    taking `(P, n, 2)`). Resolved per device like the cascade's `batched`.
-    The hook does not know what the pairs are for — `P`
-    independent pairs on shared rows — so several vines' levels concatenate
-    into the same axis as readily as one vine's. A level carrying a discrete
-    edge or a conditioning context cannot stack and stays per-edge.
+    time, through the fit engines' optional `fit_level` hook
+    (`TorchTllBicop.from_data_batched` is the pair-level entry point,
+    taking `(P, n, 2)`, or `(P, n, 4)` with per-pair `var_types`), and
+    evaluates each fitted level's h-functions through `eval_level` in stacked
+    calls, bit for bit what the per-edge evaluation gives. Resolved per
+    device like the cascade's `batched`, and by one pair of class hooks,
+    `_resolve_fit_level` / `_resolve_eval_level`, which `fit`, `select` and
+    `from_data` all call -- so a refit batches exactly as a construction does.
+    The engines prefer a level fitter wherever one applies, so a lane's own
+    must not be supplied beside a caller's `fit_edge`, or that callback is
+    never called. The hook does not know what the
+    pairs are for — `P` independent pairs on shared rows — so several vines'
+    levels concatenate into the same axis as readily as one vine's. A level
+    with a discrete edge stacks in the four-column layout throughout, a
+    continuous edge carrying its values as its own left limits, and each
+    discrete lane draws its latent sample from its own bandwidth through the
+    compiled `find_latent_sample` -- one lane at a time on a thread pool,
+    since the binding releases the GIL and the draw is seeded. Only a level
+    carrying a conditioning context stays per-edge.
   - **`device` and `dtype` are not controls.** Where a module lives is a
     property of the module, as it is for every other `nn.Module`, so the fit
     reads them off the data instead: `from_data` places the grid where `u` is
@@ -2010,8 +2042,9 @@ Round-trip / parity properties to preserve when touching numerics:
   so a machine that vectorizes sooner diverges where another does not. Do
   not pin a fit comparison at `atol=rtol=0` on the strength of one machine
   agreeing; the exact claims available are that a lane's answer is
-  independent of *which* lanes it travelled with (at a fixed shape) and that
-  the selected structure matches, the tree criterion reading ranks rather
+  independent of *which* lanes it travelled with (at a fixed shape, on cpu:
+  the bandwidth search drops converged lanes, and on an accelerator the row
+  count picks the kernels) and that the selected structure matches, the tree criterion reading ranks rather
   than last bits.
 - `sklearn.base.clone()` round-trip: every estimator clones cleanly
   with all `__init__` parameters preserved verbatim.

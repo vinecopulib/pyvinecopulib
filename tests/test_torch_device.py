@@ -262,6 +262,36 @@ def test_batched_fit_peak_memory_stays_bounded(device: str) -> None:
   assert peak < 3 * _KDE_MEM_BUDGET_BYTES, f"peak {peak / 2**20:.0f} MiB"
 
 
+def test_a_continuous_level_evaluates_in_row_blocks_on_cuda(
+  device: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """A continuous level splits its rows on CUDA, to the same bits.
+
+  Its two stacked h-functions hold about 40 values per (pair, row), which a
+  wide level at a large sample makes more than a card holds; a budget of a
+  few dozen rows forces many blocks.
+  """
+  if torch.device(device).type != "cuda":
+    pytest.skip("a continuous level is blocked on cuda only")
+  from pyvinecopulib.torch import _vinecop_batched
+
+  u_np = _u(6, 600, 3)
+  cop = pv.Vinecop.from_data(
+    u_np, controls=pv.FitControlsVinecop(family_set=[pv.families.tll])
+  )
+  vine = TorchVinecop.from_vinecop(cop).to(device)
+  u = torch.as_tensor(u_np, device=device)
+
+  def evaluate() -> tuple[Any, Any]:
+    return vine.logpdf(u, batched=True), vine.rosenblatt(u, batched=True)
+
+  whole = evaluate()
+  per_row = 5 * _vinecop_batched._CONTINUOUS_VALUES_PER_QUERY * 8
+  monkeypatch.setattr(_vinecop_batched, "_ROW_MEM_BUDGET_BYTES", 37 * per_row)
+  for a, b in zip(evaluate(), whole, strict=True):
+    torch.testing.assert_close(a, b, atol=0.0, rtol=0.0)
+
+
 def test_fit_and_select_run_on_device(device: str) -> None:
   """Fitting and structure selection work with device-resident data."""
   u = _u(4, 600, 11)
@@ -310,17 +340,11 @@ def test_thresholded_pairs_land_where_the_data_is(
   assert vine.pdf(ut).device.type == want
 
 
-@pytest.mark.parametrize("var_types", [["d", "c", "c"], ["c", "d", "d"]])
-def test_discrete_vine_matches_cpu(device: str, var_types: list[str]) -> None:
-  """A vine with atoms evaluates identically on either device.
-
-  The discrete cascade differences the distribution function over an atom's
-  width, which amplifies any absolute error by ``~4/(w1 w2)`` -- so this is
-  the path where a device-dependent rounding difference would show first.
-  """
-  rng = np.random.default_rng(19)
+def _discrete_u(var_types: list[str], n: int, seed: int) -> np.ndarray:
+  """An ``(n, d + k)`` sample: four-level counts at ``"d"``, ranks at ``"c"``."""
+  rng = np.random.default_rng(seed)
   d = len(var_types)
-  x = rng.multivariate_normal(np.zeros(d), np.eye(d) * 0.5 + 0.5, size=800)
+  x = rng.multivariate_normal(np.zeros(d), np.eye(d) * 0.5 + 0.5, size=n)
   cols, lims = [], []
   for j, t in enumerate(var_types):
     if t == "d":
@@ -329,7 +353,22 @@ def test_discrete_vine_matches_cpu(device: str, var_types: list[str]) -> None:
       lims.append(k / 4.0)
     else:
       cols.append(pv.to_pseudo_obs(x[:, [j]])[:, 0])
-  u = np.column_stack(cols + lims)
+  return np.column_stack(cols + lims)
+
+
+@pytest.mark.parametrize("batched", [False, True])
+@pytest.mark.parametrize("var_types", [["d", "c", "c"], ["c", "d", "d"]])
+def test_discrete_vine_matches_cpu(
+  device: str, var_types: list[str], batched: bool
+) -> None:
+  """A vine with atoms evaluates identically on either device, on either path.
+
+  The discrete cascade differences the distribution function over an atom's
+  width, which amplifies any absolute error by ``~4/(w1 w2)`` -- so this is
+  the path where a device-dependent rounding difference would show first.
+  The reference is the per-edge cascade on the cpu.
+  """
+  u = _discrete_u(var_types, n=800, seed=19)
   cpp = pv.Vinecop.from_data(
     u,
     var_types=var_types,
@@ -337,8 +376,8 @@ def test_discrete_vine_matches_cpu(device: str, var_types: list[str]) -> None:
   )
   ref = TorchVinecop.from_vinecop(cpp, device=torch.device("cpu"))
   got = TorchVinecop.from_vinecop(cpp, device=torch.device(device))
-  a = _np(ref.pdf(torch.as_tensor(u)))
-  b = _np(got.pdf(torch.as_tensor(u, device=device)))
+  a = _np(ref.pdf(torch.as_tensor(u), batched=False))
+  b = _np(got.pdf(torch.as_tensor(u, device=device), batched=batched))
   assert b.shape == a.shape
   np.testing.assert_allclose(b, a, rtol=1e-12, atol=1e-12)
 
@@ -389,6 +428,47 @@ def test_compiled_output_survives_the_next_call(
   later = vine.pdf(b)
   np.testing.assert_allclose(_np(held), _np(eager_a), rtol=1e-12, atol=1e-13)
   np.testing.assert_allclose(_np(later), _np(eager_b), rtol=1e-12, atol=1e-13)
+
+
+@pytest.mark.parametrize(
+  "var_types", [["d", "c", "c"], ["c", "d", "c", "d", "d"]], ids=str
+)
+def test_discrete_batched_fit_matches_the_per_edge_fit_on_device(
+  device: str, var_types: list[str]
+) -> None:
+  """A level with a discrete edge is a schedule too, on either device.
+
+  Each discrete lane draws its latent sample from its own lane's bandwidth,
+  so stacking moves that draw's input by the last bits the bandwidth search
+  moves, and on an accelerator the two schedules also sum a lane's kernel
+  estimate in different orders: a first-tree grid differs by up to ``2e-14``
+  relative, about a hundred ulps. A discrete edge carries that on with the gain
+  of its soft ranks, up to ``1 / sqrt(eps)``: one ulp of noise on every h-value
+  this fit propagates moves the log-density by up to ``8e-12``, so the bound is
+  ``1e-9`` rather than a continuous vine's ``1e-11``.
+  """
+  u = _discrete_u(var_types, n=1200, seed=23)
+  structure = pv.Vinecop.from_data(
+    u,
+    var_types=var_types,
+    controls=pv.FitControlsVinecop(family_set=[pv.families.tll]),
+  ).structure
+  u_t = torch.as_tensor(u, device=device)
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t,
+      structure=structure,
+      var_types=var_types,
+      controls=FitControlsTorchVinecop(batched_fit=flag),
+    )
+    for flag in (False, True)
+  }
+  np.testing.assert_allclose(
+    _np(fits[True].logpdf(u_t)),
+    _np(fits[False].logpdf(u_t)),
+    rtol=1e-9,
+    atol=1e-9,
+  )
 
 
 @pytest.mark.parametrize("d", [5, 9])

@@ -25,6 +25,7 @@ from pyvinecopulib.core import (
   BicopLike,
   VinecopBase,
 )
+from pyvinecopulib.core.extend import NotBatchable
 
 from .conftest import GaussianBicop, HostedVinecop
 
@@ -102,14 +103,17 @@ class _ListVinecop(HostedVinecop):
         pair.var_types = list(self.pair_var_types(tree, edge))
 
 
-class _NeverBatchedVinecop(_ListVinecop):
-  """A vine that advertises the batched fast path but must never be asked."""
+class _DecliningVinecop(_ListVinecop):
+  """A vine that advertises the batched fast path and then declines it."""
+
+  asked = 0
 
   def _default_batched(self) -> bool:
     return True
 
   def _build_batched(self) -> Any:
-    raise AssertionError("the batched fast path was entered")
+    type(self).asked += 1
+    raise NotBatchable("no grid state")
 
 
 def _gaussian_pairs() -> list[list[pv.Bicop]]:
@@ -318,26 +322,26 @@ def test_discrete_vine_rejects_the_bare_value_layout(
 
 
 # ---------------------------------------------------------------------------
-# The batched fast path declines
+# The batched fast path is the subclass's to decline
 # ---------------------------------------------------------------------------
 
 
-def test_batched_declines_on_a_discrete_vine() -> None:
-  # The batched wavefront has no left-limit lane, so the dispatcher resolves
-  # `batched` to False rather than silently evaluating a continuous density. A
-  # raise is not an option: `batched=None` resolves to a device-dependent
-  # subclass default, so an ordinary pdf(u) call would start failing.
-  mine, ref = _both(["d", "c", "c", "c"], cls=_NeverBatchedVinecop)
+def test_a_discrete_vine_asks_the_subclass_for_the_batched_path() -> None:
+  # Discreteness does not decline in the dispatcher: the batched loops carry
+  # the left-limit scratch, so whether a vine batches is for its
+  # `_build_batched` to answer. One that cannot declines through
+  # `NotBatchable`, and the per-edge cascade answers instead -- never a raise,
+  # since `batched=None` resolves to a subclass default the caller did not
+  # choose.
+  mine, ref = _both(["d", "c", "c", "c"], cls=_DecliningVinecop)
   u = _expanded_data(["d", "c", "c", "c"], seed=10)
+  _DecliningVinecop.asked = 0
   _assert_parity(mine.pdf(u, batched=True), ref.pdf(u))
   _assert_parity(
     mine.rosenblatt(u, batched=True, randomize_discrete=False),
     ref.rosenblatt(u, randomize_discrete=False),
   )
-  # The same vine without discrete variables does reach the fast path.
-  cont, _ = _both(["c"] * _D, cls=_NeverBatchedVinecop)
-  with pytest.raises(AssertionError, match="batched fast path"):
-    cont.pdf(u[:, :_D], batched=True)
+  assert _DecliningVinecop.asked == 2
 
 
 def test_the_continuous_reading_of_a_foreign_pair_is_itself() -> None:
@@ -887,6 +891,60 @@ def test_fit_edge_receives_the_edge_types_and_four_columns() -> None:
     assert types == expected, (tree, edge)
     # The left limits are only handed over where the edge needs them.
     assert n_cols == (4 if "d" in expected else 2), (tree, edge)
+
+
+@pytest.mark.parametrize("engine", ["fit", "select"])
+def test_fit_level_receives_a_mixed_level_as_four_columns(engine: str) -> None:
+  # A level with a discrete edge reaches `fit_level` as one stack in the
+  # four-column layout, a continuous edge carrying its values as its own left
+  # limits -- and fitting from that stack gives the pairs `fit_edge` gives.
+  # One discrete variable, so that tree 0 mixes the two kinds of edge on
+  # either engine.
+  var_types = ["c", "d", "c", "c"]
+  u = _to_compact(_dependent_expanded(var_types, seed=2), var_types)
+  seen: list[tuple[int, tuple[tuple[str, ...], ...]]] = []
+
+  def by_level(tree: int, u_level: Any, types: Any) -> list[BicopLike[Any]]:
+    stack = np.asarray(u_level)
+    seen.append((int(stack.shape[2]), tuple(tuple(t) for t in types)))
+    fitted = []
+    for k, edge_types in enumerate(types):
+      block = stack[k]
+      if "d" not in edge_types and block.shape[1] == 4:
+        np.testing.assert_array_equal(block[:, 2:], block[:, :2])
+        block = block[:, :2]
+      fitted.append(_discrete_fit_edge(tree, k, block, None, edge_types))
+    return fitted
+
+  if engine == "fit":
+    structure = _order_structure(len(var_types))
+    stacked = VinecopBase._fit_parts(
+      structure, u, _discrete_fit_edge, var_types=var_types, fit_level=by_level
+    )
+    per_edge = VinecopBase._fit_parts(
+      structure, u, _discrete_fit_edge, var_types=var_types
+    )
+  else:
+    _, stacked, _ = VinecopBase._select_parts(
+      u, _discrete_fit_edge, var_types=var_types, fit_level=by_level
+    )
+    _, per_edge, _ = VinecopBase._select_parts(
+      u, _discrete_fit_edge, var_types=var_types
+    )
+  assert seen
+  for width, types in seen:
+    assert width == (4 if any("d" in t for t in types) else 2), types
+  # At least one level mixes the two kinds, or the widening went untested.
+  assert any(
+    width == 4 and any("d" not in t for t in types) for width, types in seen
+  )
+  for row_s, row_e in zip(
+    _as_bicops(stacked), _as_bicops(per_edge), strict=True
+  ):
+    for a, b in zip(row_s, row_e, strict=True):
+      np.testing.assert_array_equal(
+        np.asarray(a.parameters), np.asarray(b.parameters)
+      )
 
 
 def test_a_continuous_fit_edge_fails_loudly_on_a_discrete_edge() -> None:
