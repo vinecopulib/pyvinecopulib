@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.1 (unreleased)
+## 1.0.1 (2026-10-06)
 
 ### Breaking API changes in `pyvinecopulib`
 
