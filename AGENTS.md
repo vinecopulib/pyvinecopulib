@@ -1299,9 +1299,9 @@ tests.
     public members, so the dispatchers cannot recur through them;
     `TorchTllBicop` overrides both onto its grid, as `KernelBicop` overrides
     them onto `InterpolationGrid`. Differencing amplifies an absolute error by
-    `4/(w₁w₂)` in the atom widths and reading the mass by `1/w₂` alone, which
-    at the widths a vine's inner trees reach is the difference between `8.5e-8`
-    and `7.0e-14` on the torch↔`Vinecop` cascade comparison. `rect_mass` /
+    `4/(w₁w₂)` in the atom widths, and reading the mass, a sum of nonnegative
+    terms, amplifies none -- which matters at the widths a vine's inner trees
+    reach. `rect_mass` /
     `cond_interval_mass` stay `InterpolationGrid2D`'s own names, as upstream
     keeps them `InterpolationGrid`'s; nothing outside the torch grid reaches
     for them.
@@ -1770,18 +1770,16 @@ Key surface:
     onto `InterpolationGrid2D.rect_mass` / `cond_interval_mass`, and available
     in **both** cache modes: they read the density grid, not the prefix tables.
     A four-corner `cdf` difference turns an absolute error `ε` into
-    `≈4ε/(w₁w₂)` in the atom widths; the rectangle amplifies by `1/w₂` alone,
-    since only its `λ(b₂) − λ(a₂)` term cancels and that multiplies a term of
-    order `w₁`. Measured on a `1.2e-4`-wide rectangle: `2.9e-12` against
-    `8.7e-9`. That bound is earned only by expanding the `λ` difference over
-    the common denominator, so it cancels against `b₂ − a₂` rather than against
-    one — formed as `λ(b₂) − λ(a₂)` it swamps the first term on a low-mass
-    rectangle, and the total is formed additively as `m_below + m_strip` for
-    the same reason. `values >= 0` is a constructor precondition precisely
-    because the nonnegative-weight bound depends on it. Note it is the
-    **probability**, not the density's mass: `cdf` renormalizes each grid line
-    by its own total, so the two differ, and a discrete edge is defined against
-    the distribution function. The conditional one is **not** clamped into the
+    `≈4ε/(w₁w₂)` in the atom widths; the rectangle's mass is a sum of
+    nonnegative terms and cancels nothing, so its error does not grow as the
+    rectangle narrows. Measured against exact rationals on a `1.2e-4`-wide
+    rectangle: `4.7e-15` against `4.6e-9`. `values >= 0` is a constructor
+    precondition precisely because that depends on it. It is the grid's
+    **mass**, as `cdf` is -- the probability once the margins are uniform, as a
+    fitted grid's are to rounding -- and it is summed with either argument
+    first and averaged, so a pair and its flip give the same probabilities bit
+    for bit: what makes a mixed vine's selection equal its refit, as upstream's
+    `rect_mass` does. The conditional one is **not** clamped into the
     open unit interval, unlike an h-function value, which is what makes the
     masses of a partition sum to one.
   - `compile` — runs the batched cascades through `torch.compile`, on CUDA
@@ -1819,7 +1817,23 @@ Key surface:
     namespace rather than round-tripping a compiled `pv.Vinecop`.
 - `InterpolationGrid2D` (`torch/_bicop_interp.py`) — the 2-d bilinear grid
   backing `TorchTllBicop`; **internal** (not re-exported). Margin
-  normalization uses Sinkhorn iterations to drive marginals to uniform.
+  normalization uses Sinkhorn iterations to drive marginals to uniform, run
+  to convergence as `InterpolationGrid` runs them: a flipped pair evaluates as
+  the original only to within the residual left. After 25 passes Newton's
+  method on the row and column scalings finishes, as upstream's does, since
+  under strong dependence the passes alone need thousands. Both lanes keep the
+  normalization transposition-equivariant bit for bit: a pass and a Newton step
+  each treat rows and columns alike, so a grid and its transpose normalize to
+  transposes of each other. A Newton step pins one scaling per block of the
+  grid's support: a grid that falls apart into blocks leaves the system
+  singular once per block, which a single rank-one pin would leave unsolvable.
+  On a connected grid -- every fit -- the per-block pins are that rank-one
+  term. Both lanes also fit a pair in its own order (`swaps_pair`) and
+  transpose the grid back, since the kernel estimate's arithmetic is not
+  symmetric in its arguments: a pair and its flip are then the same fit bit
+  for bit, and a continuous vine's selection equals a refit of its structure.
+  The torch fit makes its ranks contiguous first, because a strided column
+  reduces in another order and would select another bandwidth.
 
 ### Top-level `pyvinecopulib`
 

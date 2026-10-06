@@ -145,15 +145,32 @@ def test_from_bicop_rejects_rotated() -> None:
 # --------------------------------------------------------------------------- #
 
 
+def _with_ties(u: np.ndarray) -> np.ndarray:
+  """Round the normal scores to halves and re-rank, averaging over ties.
+
+  What a continuous column with few distinct values looks like on the copula
+  scale: a dozen or so tied blocks per column, and no declared atom.
+  """
+  z = np.round(2 * torch.special.ndtri(torch.from_numpy(u)).numpy()) / 2
+  return pv.to_pseudo_obs(z, ties_method="average")
+
+
+@pytest.mark.parametrize("ties", [False, True])
 @pytest.mark.parametrize("n", [500, 2000])
 @pytest.mark.parametrize("rho", [0.3, 0.6, 0.9])
-def test_from_data_matches_cpp(n: int, rho: float) -> None:
+def test_from_data_matches_cpp(n: int, rho: float, ties: bool) -> None:
   """The pure-torch TLL constant fit produces the same density grid as
   ``pv.Bicop.from_data`` to machine precision after the standard
   margin normalization in :class:`InterpolationGrid2D`.
+
+  With ties too: ``TllBicop::fit`` breaks them at random from a fixed seed, and
+  breaking them by row order instead lines up the tied blocks of the two
+  columns, which moves the grid far beyond any tolerance.
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[rho]]))
   u_np = cop.sample(n, seeds=[1, 2, 3])
+  if ties:
+    u_np = _with_ties(u_np)
   cop_cpp = pv.Bicop.from_data(
     u_np,
     controls=pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1),
@@ -427,11 +444,9 @@ def test_simulate_rejects_nonpositive_n() -> None:
 def test_normalize_margins_balances_both_margins() -> None:
   """Both margins end up uniform, and equally so.
 
-  The old scheme was three fixed row-then-column sweeps, which left the second
-  margin exact and dumped the whole residual on the first -- up to 3.3e-2 at
-  strong dependence, so a fitted grid was not a copula density in one direction.
-  Averaging the two sweep orders splits the residual, which is what makes the
-  balance assertion meaningful rather than tautological.
+  A pass is the mean of the two sweep orders, so neither margin can carry the
+  whole residual: a sweep that leaves one margin exact puts all of it on the
+  other.
   """
   from pyvinecopulib.torch._bicop_interp import (
     InterpolationGrid2D,
@@ -457,8 +472,7 @@ def test_normalize_margins_commutes_with_transposition() -> None:
 
   This is what makes `flip` correct: it transposes an already-normalized grid
   without renormalizing, so if the normalization were not equivariant then
-  `fit(a, b).flip()` and `fit(b, a)` would be different models. Under the old
-  three-sweep scheme they differed by 2.7e-4.
+  `fit(a, b).flip()` and `fit(b, a)` would be different models.
   """
   from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
 
@@ -470,6 +484,43 @@ def test_normalize_margins_commutes_with_transposition() -> None:
   direct = InterpolationGrid2D(grid, values).values
   swapped = InterpolationGrid2D(grid, values.t().contiguous()).values
   torch.testing.assert_close(direct, swapped.t(), rtol=1e-13, atol=1e-15)
+
+
+@pytest.mark.parametrize("shape", ["connected", "halves", "corner"])
+@pytest.mark.parametrize("concentration", [40.0, 200.0, 400.0])
+def test_normalize_margins_converges_on_a_concentrated_grid(
+  shape: str, concentration: float
+) -> None:
+  """Uniform margins on a concentrated grid, connected or not; exact flips.
+
+  A concentrated surface needs more passes than any bound on them would allow,
+  and Newton's method finishes it. A grid whose support falls apart into
+  blocks -- two halves of the diagonal, or a corner of its own -- can scale
+  each block's rows against its columns without changing, which leaves every
+  Newton step singular once per block rather than once.
+  """
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
+
+  m = 30
+  grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
+  values = (
+    torch.exp(-concentration * (grid[:, None] - grid[None, :]).abs())
+    + 1e-3 * grid[:, None]
+  )
+  if shape == "halves":
+    values[:15, 15:] = 0.0
+    values[15:, :15] = 0.0
+  elif shape == "corner":
+    values[0, 1:] = 0.0
+    values[1:, 0] = 0.0
+
+  ig = InterpolationGrid2D(grid, values)
+  w = ig.trap_weights
+  r = (ig.values @ w - 1.0).abs().max().item()
+  c = (ig.values.t().contiguous() @ w - 1.0).abs().max().item()
+  assert max(r, c) < 1e-13
+  swapped = InterpolationGrid2D(grid, values.t().contiguous()).values
+  torch.testing.assert_close(swapped.t(), ig.values, rtol=0.0, atol=0.0)
 
 
 def test_normalize_margins_leaves_a_normalized_grid_alone() -> None:
@@ -596,11 +647,11 @@ def test_cached_integrals_carry_a_grid_gradient() -> None:
 def _exact_rect_prob(
   grid: list[Fraction], values: list[list[Fraction]], rect: tuple[Fraction, ...]
 ) -> Fraction:
-  """The four-corner difference of the renormalized distribution function.
+  """The rectangle's mass under the bilinear interpolant, exactly.
 
-  Exact rational arithmetic throughout, so it is the reference the float routes
-  are measured against. ``C(u1, u2) = M(u1, u2) * u2 / M(1, u2)``, the object
-  ``integrate_2d`` computes.
+  Rational arithmetic throughout, so it is the reference the float routes are
+  measured against. It is also the four-corner difference of the distribution
+  function ``integrate_2d`` computes, which is the same mass from the origin.
   """
   m = len(grid)
 
@@ -645,36 +696,26 @@ def _exact_rect_prob(
       Fraction(0),
     )
 
-  def cdf(u1: Fraction, u2: Fraction) -> Fraction:
-    total = mass(Fraction(0), Fraction(1), Fraction(0), u2)
-    return (
-      Fraction(0)
-      if total == 0
-      else mass(Fraction(0), u1, Fraction(0), u2) * u2 / total
-    )
-
-  a1, b1, a2, b2 = rect
-  return cdf(b1, b2) - cdf(a1, b2) - cdf(b1, a2) + cdf(a1, a2)
+  return mass(*rect)
 
 
-# Both bounds move with the width, which is the point: differencing four
-# distribution values amplifies any absolute error by ~4 / (w1 w2), where
-# `rect_mass` amplifies by 1 / w2 alone -- one power instead of two, because
-# only its `lam` difference cancels and that multiplies a term of order w1.
-# Measuring both in one run is what shows the gap is the construction rather
-# than the test data: the two agree at 3/8 and are 3000x apart at 1/8192.
-# Dyadic endpoints keep `float(x) == x`, so the comparison is against the
-# algorithm and not against how the query points round.
+# Differencing four distribution values amplifies any absolute error by
+# ~4 / (w1 w2), while `rect_mass` sums nonnegative terms and cancels nothing, so
+# its error does not grow with the width at all. Measuring both in one run is
+# what shows the gap is the construction rather than the test data: the two
+# agree at 3/8 and are six orders apart at 1/8192. Dyadic endpoints and values
+# keep `float(x) == x`, so the comparison is against the algorithm and not
+# against how the inputs round.
 @pytest.mark.parametrize(
   "width,tol_rect,tol_diff",
   [
-    # One decade of tolerance per decade of width for `rect_mass`, two for the
+    # Flat for `rect_mass`, two decades per decade of width for the
     # difference -- which is the finding, stated as the shape of the table.
-    (Fraction(3, 8), 3e-15, 3e-15),
-    (Fraction(1, 16), 3e-14, 1e-13),
-    (Fraction(1, 64), 1e-13, 3e-12),
-    (Fraction(1, 1024), 2e-12, 1e-9),
-    (Fraction(1, 8192), 1e-11, 3e-8),
+    (Fraction(3, 8), 1e-14, 1e-14),
+    (Fraction(1, 16), 1e-14, 1e-13),
+    (Fraction(1, 64), 1e-14, 3e-12),
+    (Fraction(1, 1024), 1e-14, 1e-9),
+    (Fraction(1, 8192), 1e-14, 3e-8),
   ],
 )
 def test_rect_mass_is_exact_at_every_atom_width(
@@ -687,11 +728,15 @@ def test_rect_mass_is_exact_at_every_atom_width(
 
   m = 30
   grid_f = [Fraction(i, m - 1) for i in range(m)]
+  # scaled by a power of two, so the total mass stays below one and the
+  # distribution function inside its clamp
   raw = np.random.default_rng(4).integers(1, 4000, size=(m, m))
-  values_f = [[Fraction(int(raw[i, j])) for j in range(m)] for i in range(m)]
+  values_f = [
+    [Fraction(int(raw[i, j]), 2048) for j in range(m)] for i in range(m)
+  ]
 
   gp = torch.tensor([float(x) for x in grid_f], dtype=torch.float64)
-  vals = torch.tensor(raw, dtype=torch.float64)
+  vals = torch.tensor(raw, dtype=torch.float64) / 2048
   grid = InterpolationGrid2D(gp, vals, norm_maxiter=0, is_linear=True)
 
   rng = np.random.default_rng(5)
@@ -1066,6 +1111,8 @@ def test_from_data_batched_matches_cpp() -> None:
     )
     for r in rhos
   ]
+  # One lane with ties among lanes without: the tie-break is per lane.
+  us[1] = _with_ties(us[1])
   batched = TorchTllBicop.from_data_batched(torch.from_numpy(np.stack(us)))
   for got, u in zip(batched, us, strict=False):
     np.testing.assert_allclose(
@@ -1335,3 +1382,32 @@ def test_rect_prob_and_cond_interval_prob_reject_a_bad_axis() -> None:
   one = torch.full((1,), 0.5, dtype=torch.float64)
   with pytest.raises(ValueError, match="cond_var must be 1 or 2"):
     bc.cond_interval_prob(one, one * 0.1, one * 0.9, 3)
+
+
+@pytest.mark.parametrize("var_types", [["d", "d"], ["c", "d"], ["d", "c"]])
+def test_a_pair_without_mass_at_an_atom_answers_as_bicop_does(
+  var_types: list[str],
+) -> None:
+  """Where a pair has no mass, its density is the smallest normal float.
+
+  ``Bicop.pdf`` clamps every density to ``[DBL_MIN, DBL_MAX]``, so a vine's
+  log-density stays finite at an observation whose atom one of its pairs gives
+  no mass. The grid is zero over a corner block, and the first atom lies in it;
+  the second, where the grid has mass, is unaffected by the clamp.
+  """
+  grid = np.linspace(0.0, 1.0, 30)
+  values = np.exp(-40.0 * np.abs(grid[:, None] - grid[None, :]))
+  values[:8, 22:] = 0.0
+  values[22:, :8] = 0.0
+  cop = pv.Bicop.from_family(
+    pv.families.tll, parameters=values, var_types=var_types
+  )
+  pair = TorchTllBicop.from_bicop(cop).with_var_types(var_types)
+  u = np.array([[0.03, 0.99, 0.01, 0.96], [0.5, 0.5, 0.45, 0.45]])
+  got = pair.pdf(torch.from_numpy(u)).numpy()
+  want = cop.pdf(u)
+  tiny = np.finfo(np.float64).tiny
+  assert got[0] == tiny
+  assert want[0] == tiny
+  np.testing.assert_allclose(got[1], want[1], rtol=1e-12)
+  assert np.isfinite(pair.logpdf(torch.from_numpy(u)).numpy()).all()

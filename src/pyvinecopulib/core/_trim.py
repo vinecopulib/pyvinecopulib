@@ -70,3 +70,28 @@ def trim(a: ArrayT, xp: Namespace[ArrayT] | None = None) -> ArrayT:
   ns = array_namespace(a) if xp is None else xp
   lo, hi = trim_bounds(ns, cast("Any", a).dtype)
   return cast("ArrayT", ns.clip(a, lo, hi))
+
+
+def trim_density(a: ArrayT, xp: Namespace[ArrayT] | None = None) -> ArrayT:
+  """Clamp a density into the positive, finite floats of its dtype.
+
+  ``AbstractBicop::pdf`` trims every pair density to ``[DBL_MIN, DBL_MAX]``,
+  so a pair with no mass at an observation contributes ``log(DBL_MIN)`` to a
+  vine's log-density rather than ``-inf``. A ``nan`` is left alone, as there.
+
+  Parameters
+  ----------
+  a : array
+      Density values, nonnegative.
+  xp : module, or None, optional
+      Array namespace of ``a``, resolved from ``a`` when omitted.
+
+  Returns
+  -------
+  array
+      ``a`` clamped to the smallest normal and the largest finite value of its
+      dtype.
+  """
+  ns = array_namespace(a) if xp is None else xp
+  info = ns.finfo(cast("Any", a).dtype)
+  return cast("ArrayT", ns.clip(a, float(info.tiny), float(info.max)))

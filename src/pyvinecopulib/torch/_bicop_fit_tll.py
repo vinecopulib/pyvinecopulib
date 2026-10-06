@@ -3,13 +3,13 @@
 Mirrors the algorithm in ``lib/vinecopulib/.../bicop/implementation/tll.ipp``
 end-to-end so :meth:`TorchTllBicop.from_data` produces an ``(m, m)`` density
 grid that matches the C++ ``pv.Bicop.from_data`` output to machine
-precision after :meth:`InterpolationGrid2D.normalize_margins(25)`.
+precision after :meth:`InterpolationGrid2D.normalize_margins`.
 
 Three pieces:
 
-* :func:`_to_pseudo_obs_continuous` — empirical CDF on continuous data
-  (rank/(n+1); no tie handling, mirrors C++ ``wdm`` ranks for
-  jitter-free input).
+* :func:`_to_pseudo_obs` — empirical CDF ``rank/(n+1)``, ranked the way
+  ``TllBicop::fit`` ranks, through the compiled function where ties or
+  near-ties make that differ from ranking by value.
 * :func:`_ace` — alternating conditional expectations for the maximal-
   correlation coefficient. Outer/inner convergence loop matches the C++
   tolerances (``2e-15`` / ``1e-4``); the moving-average window smoother is
@@ -27,10 +27,12 @@ Only the ``constant`` method is supported here; the ``linear`` and
 
 from __future__ import annotations
 
+import functools
 import math
 from collections.abc import Callable
 from typing import cast
 
+import numpy as np
 import torch
 from torch import Tensor
 
@@ -49,23 +51,100 @@ def _qnorm(p: Tensor) -> Tensor:
   return cast("Tensor", torch.special.ndtri(p))
 
 
-def _to_pseudo_obs_continuous(x: Tensor) -> Tensor:
-  """Empirical CDF on continuous data: ``rank/(n+1)``.
+@functools.lru_cache(maxsize=8)
+def _tie_key_order(n: int, device: torch.device) -> Tensor:
+  """Each column's observations in the order its ties are broken in.
 
-  Mirrors ``tools_stats::to_pseudo_obs`` with no ties (continuous input,
-  no jittering needed). C++ uses ``wdm`` ranks; for unique data those are
-  the same as :func:`torch.argsort` ranks.
+  ``pair_soft_pseudo_obs`` orders a tie by a key fixed per observation and
+  column, so the order depends on ``n`` alone and is read off the compiled
+  function once: in a column of ties, each observation's rank is its key's.
 
-  Both sorts are stable, so tied inputs get a defined order rather than
-  whichever one the sort happens to produce for the shape it was handed --
-  a leading pair axis otherwise makes the tie-break shape-dependent. Ties
-  reach here even on continuous data: callers trim to
-  ``(1e-10, 1 - 1e-10)`` first, which collapses everything beyond the clamp
-  into one group.
+  Parameters
+  ----------
+  n : int
+      Observations per column.
+  device : torch.device
+      Where to hold the order.
+
+  Returns
+  -------
+  Tensor, shape (2, n), dtype int64
+      Per column of a pair in its own order, the observations by key.
   """
-  n = x.shape[-2]
-  ranks = x.argsort(dim=-2, stable=True).argsort(dim=-2, stable=True)
-  return (ranks + 1).to(x.dtype) / (n + 1)
+  from ..pyvinecopulib_ext import _pair_soft_pseudo_obs
+
+  ranks = np.rint(_pair_soft_pseudo_obs(np.zeros((n, 2)), 0.0) * (n + 1))
+  order = np.argsort(ranks, axis=0, kind="stable").T
+  return torch.as_tensor(np.ascontiguousarray(order), device=device)
+
+
+def _to_pseudo_obs(u: Tensor, discrete_data: Tensor | None = None) -> Tensor:
+  """The pseudo-observations ``TllBicop::fit`` selects its bandwidth from.
+
+  ``tools_stats::pair_soft_pseudo_obs``, per lane: ties ordered by a fixed key
+  per observation, and on a discrete pair values within rounding of each
+  other ranked partly by key, so that the ranks move continuously with the
+  data. A continuous lane is ranked by value and key on its own device, which
+  is the same thing exactly; a discrete one with near-ties is ranked on the
+  host by the compiled function itself, so that the two lanes rank alike.
+
+  Parameters
+  ----------
+  u : Tensor, shape (n, 2) or (P, n, 2), dtype float
+      The pairs' values.
+  discrete_data : Tensor, shape (n, 4), dtype float, optional
+      ``[u1, u2, u1^-, u2^-]`` alongside ``u``, where the pair is discrete.
+
+  Returns
+  -------
+  Tensor
+      ``u``'s shape, ``rank / (n + 1)``.
+  """
+  from ..pyvinecopulib_ext import _SOFT_RANK_SCALE
+
+  n = u.shape[-2]
+  pairs = u.reshape(-1, n, 2)
+  lanes = pairs.shape[0]
+  discrete = discrete_data is not None
+  wide = None if discrete_data is None else discrete_data.reshape(-1, n, 4)
+  # One row per (lane, column), ranked by value and its ties by key. The keys
+  # belong to the columns of the pair in its own order, so a lane that order
+  # swaps reads them the other way round.
+  swapped = _swaps_pair(pairs if wide is None else wide)
+  column = torch.stack([swapped, ~swapped], dim=-1).long().reshape(-1)
+  by_key = _tie_key_order(n, u.device)[column]
+  lines = pairs.movedim(-1, -2).reshape(-1, n)
+  order = by_key.gather(
+    -1, lines.gather(-1, by_key).argsort(dim=-1, stable=True)
+  )
+  # The compiled function's division, then the lane's own dtype. The divisor
+  # is a tensor because CUDA divides by a Python scalar as a multiply by its
+  # reciprocal, which is an ulp off at some ranks.
+  position = torch.arange(1, n + 1, device=u.device, dtype=torch.float64)
+  psobs = torch.empty_like(lines).scatter_(
+    -1,
+    order,
+    (position / torch.full_like(position, n + 1)).to(u.dtype).expand_as(lines),
+  )
+  psobs = psobs.reshape(lanes, 2, n).movedim(-2, -1)
+  if not discrete:
+    return psobs.reshape(u.shape)
+
+  srt = lines.gather(-1, order)
+  close = srt[:, 1:] - srt[:, :-1] <= 9.0 * _SOFT_RANK_SCALE
+  host = torch.nonzero(close.reshape(lanes, 2, -1).any(dim=(-1, -2))).flatten()
+  if host.numel() > 0:
+    from ..core.extend import to_numpy
+    from ..pyvinecopulib_ext import _pair_soft_pseudo_obs
+
+    assert wide is not None
+    out = psobs.clone()
+    for k in host.tolist():
+      data = to_numpy(wide[k], dtype=np.float64)
+      soft = _pair_soft_pseudo_obs(data, _SOFT_RANK_SCALE)
+      out[k] = torch.as_tensor(soft, dtype=u.dtype, device=u.device)
+    psobs = out
+  return psobs.reshape(u.shape)
 
 
 def _win_smoother(x: Tensor, wl: int) -> Tensor:
@@ -375,9 +454,25 @@ def _pearson_cor(x: Tensor) -> Tensor:
   return (x0 * x1).sum(-1) / ((x0**2).sum(-1).sqrt() * (x1**2).sum(-1).sqrt())
 
 
+def _canonical_pair(x: Tensor) -> Tensor:
+  """``x: (..., n, 2)`` with each lane's columns ordered by its own values.
+
+  ``tools_stats::pairwise_mcor``'s rule: a lane is swapped where, at the first
+  row whose two values differ, the second is the smaller. ACE updates one
+  variable first, so this is what makes the maximal correlation a function of
+  the pair rather than of the order it was passed in.
+  """
+  differ = x[..., 0] != x[..., 1]
+  first = differ.to(torch.uint8).argmax(-1, keepdim=True)
+  a = x[..., 0].gather(-1, first)
+  b = x[..., 1].gather(-1, first)
+  swap = (b < a).unsqueeze(-1)
+  return torch.where(swap, x.flip(-1), x)
+
+
 def _pairwise_mcor(x: Tensor, *, compile_step: bool = False) -> Tensor:
   """Maximal correlation via ACE + Pearson, one value per leading lane."""
-  return _pearson_cor(_ace(x, compile_step=compile_step))
+  return _pearson_cor(_ace(_canonical_pair(x), compile_step=compile_step))
 
 
 def _chol22(B: Tensor) -> Tensor:
@@ -512,12 +607,39 @@ def _fit_local_likelihood_constant(
 # --------------------------------------------------------------------------- #
 
 
+def _swaps_pair(data: Tensor) -> Tensor:
+  """``tools_stats::swaps_pair`` for each pair: whether its own order swaps it.
+
+  The first row whose two values differ decides, by which of them is smaller;
+  in the four-column layout of a discrete pair, a row whose values agree
+  decides by its left limits instead. A pair whose columns agree throughout
+  keeps its order.
+
+  Parameters
+  ----------
+  data : Tensor, shape (..., n, 2) or (..., n, 4), dtype float
+      One pair per leading index.
+
+  Returns
+  -------
+  Tensor, shape (...), dtype bool
+      Whether each pair is swapped.
+  """
+  differ = data[..., 0] != data[..., 1]
+  verdict = data[..., 1] < data[..., 0]
+  if data.shape[-1] == 4:
+    verdict = torch.where(differ, verdict, data[..., 3] < data[..., 2])
+    differ = differ | (data[..., 2] != data[..., 3])
+  # `argmax` returns the first of the deciding rows
+  first = differ.to(torch.uint8).argmax(dim=-1, keepdim=True)
+  return (differ & verdict).gather(-1, first).squeeze(-1)
+
+
 def fit_tll_constant(
   u: Tensor,
   grid_size: int = 30,
   mult: float = 1.0,
   grid_type: str = "normal",
-  pseudo_obs: Tensor | None = None,
   discrete_data: Tensor | None = None,
   compile_fit: bool = False,
 ) -> tuple[Tensor, Tensor]:
@@ -532,11 +654,6 @@ def fit_tll_constant(
     grid_size: number of grid points per axis (default 30; matches C++).
     mult: bandwidth multiplier passed through to ``select_bandwidth``;
       the C++ default is 1.
-    pseudo_obs: ranks to fit on, overriding the ones derived from ``u``. C++
-      ranks with ``ties_method="random"``, which differs from the argsort ranks
-      only when the data has ties — i.e. when a margin has atoms, where the
-      caller supplies them. On a discrete edge these ranks only seed the
-      bandwidth; see ``discrete_data``.
     discrete_data: the ``(n, 4)`` layout ``[u1, u2, u1^-, u2^-]`` of a discrete
       or mixed edge. When given, the fit runs on the *latent* sample recovered
       from it rather than on the ranks, which is what ``TllBicop::fit`` does:
@@ -558,7 +675,7 @@ def fit_tll_constant(
   Returns:
     A ``(grid_points, values)`` pair. ``values`` is the unnormalized
     ``(m, m)`` density; callers should pass it through
-    ``InterpolationGrid2D(grid_points, values, norm_maxiter=25,
+    ``InterpolationGrid2D(grid_points, values, norm_maxiter=2000,
     is_linear=(grid_type == "linear"))`` to match the C++
     ``Bicop.parameters`` output to machine precision for ``"normal"``.
 
@@ -579,9 +696,23 @@ def fit_tll_constant(
     raise ValueError(f"mult must be > 0; got {mult}")
   dtype, device = u.dtype, u.device
 
+  # Each pair is fitted in its own order and its grid transposed back, as
+  # ``TllBicop::fit`` does, so a pair and its flip are the same fit: the
+  # estimate's arithmetic is not symmetric in its two arguments, and a vine's
+  # later trees amplify a difference in its last bits.
+  swapped = _swaps_pair(u if discrete_data is None else discrete_data)
+  u = torch.where(swapped[..., None, None], u.flip(-1), u)
+  if discrete_data is not None:
+    discrete_data = torch.where(
+      swapped[..., None, None], discrete_data[..., [1, 0, 3, 2]], discrete_data
+    )
+
   # Pseudo-observations + qnorm to z-space.
-  psobs = _to_pseudo_obs_continuous(u) if pseudo_obs is None else pseudo_obs
-  z_data = _qnorm(psobs)
+  # On a discrete edge these ranks only select the bandwidth; see
+  # ``discrete_data``. Contiguous, because the bandwidth search reduces along
+  # the sample and a strided column sums in another order: the same ranks
+  # would select another bandwidth by how their tensor was laid out.
+  z_data = _qnorm(_to_pseudo_obs(u, discrete_data)).contiguous()
 
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data, compile_step=compile_fit) * mult
@@ -600,8 +731,10 @@ def fit_tll_constant(
         "index with a fixed-seed generator, so it has no batch axis to "
         "give. Fit discrete edges one at a time."
       )
+    from ..core.extend import to_numpy
+
     latent = find_latent_sample(
-      discrete_data.detach().cpu().numpy(),
+      to_numpy(discrete_data),
       float((B[0, 0] * B[1, 1]).item() ** 0.25),
     )
     z_data = _qnorm(torch.as_tensor(latent, dtype=dtype, device=device))
@@ -637,9 +770,14 @@ def fit_tll_constant(
   )
   c = f0 / phi_z
   values = c.reshape((*c.shape[:-1], grid_size, grid_size))
+  # contiguous, since `where` keeps a transposed operand's layout and the
+  # normalization reduces along the grid's lines
+  values = torch.where(
+    swapped[..., None, None], values.transpose(-1, -2), values
+  ).contiguous()
 
   # The canonical TorchTllBicop builds an InterpolationGrid2D from
-  # (grid_points, values) with norm_maxiter=25 — that's what matches C++
+  # (grid_points, values) with norm_maxiter=2000 — that's what matches C++
   # to machine precision. The grid_points returned here are the
   # un-forced ones used for the fit positions; InterpolationGrid2D's
   # constructor will clamp the endpoints to 0/1 internally.

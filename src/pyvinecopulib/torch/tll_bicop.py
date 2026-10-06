@@ -186,11 +186,12 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       reading a table only to locate the cell they invert in, and are the one
       member whose two modes differ by rounding. ``pdf``, ``rect_prob`` and
       ``cond_interval_prob`` do not depend on the setting.
-  norm_maxiter : int, default=25
+  norm_maxiter : int, default=2000
       Cap on the passes that rescale ``values`` until both margins integrate
-      to 1; they stop as soon as both do, to within ``1e-10``. ``25`` is the
-      cap a ``tll`` fit of ``Bicop`` allows. Pass ``0`` for a grid that is
-      already normalized, which leaves the values exactly as given.
+      to 1; they stop at convergence, well before the cap unless the
+      dependence is extreme, as a ``tll`` fit of ``Bicop`` does. Pass ``0`` for
+      a grid that is already normalized, which leaves the values exactly as
+      given.
   is_linear : bool, default=False
       Declare ``grid_points`` uniform on ``[0, 1]``, which makes locating a
       cell ``O(1)`` instead of a search. The fitting factories set it from
@@ -242,7 +243,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     grid_points: Tensor | None = None,
     values: Tensor | None = None,
     cache_integrals: bool = True,
-    norm_maxiter: int = 25,
+    norm_maxiter: int = 2000,
     is_linear: bool = False,
     device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
@@ -456,7 +457,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
         # not carry P-1 unrelated grids per pair.
         values=values[i].contiguous(),
         cache_integrals=cache_integrals,
-        norm_maxiter=25,
+        norm_maxiter=2000,
         is_linear=(controls.grid_type == "linear"),
         device=device,
         dtype=dtype,
@@ -544,24 +545,6 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     # ``1 - 1e-10`` are one tie group there and would be two here.
     u_t = trim(u_t, TENSOR_NS)
     values_only = u_t[:, :2]
-    # An atom repeats its distribution-function value, so the ranks have ties.
-    # ``TllBicop::fit`` breaks them at random from a fixed seed; reuse that draw
-    # rather than reimplementing it, as structure selection reuses ``wdm``. On a
-    # discrete edge those ranks only select the bandwidth: the fit itself runs on
-    # the latent sample drawn with it, which ``fit_tll_constant`` handles.
-    pseudo_obs = None
-    if discrete:
-      from ..utils import to_pseudo_obs
-
-      pseudo_obs = torch.as_tensor(
-        to_pseudo_obs(
-          values_only.detach().cpu().numpy(),
-          ties_method="random",
-          seeds=[5],
-        ),
-        dtype=u_t.dtype,
-        device=u_t.device,
-      )
 
     # ``method`` is validated to be "tll" by FitControlsTorchBicop; it is
     # kept as the dispatch hook for future torch fitters.
@@ -573,14 +556,13 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       mult=controls.mult,
       grid_type=controls.grid_type,
       compile_fit=controls.compile_fit,
-      pseudo_obs=pseudo_obs,
       discrete_data=u_t if discrete else None,
     )
     return cls(
       grid_points=grid_points,
       values=values,
       cache_integrals=cache_integrals,
-      norm_maxiter=25,
+      norm_maxiter=2000,
       is_linear=(controls.grid_type == "linear"),
       device=device,
       dtype=dtype,
@@ -793,8 +775,9 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     Notes
     -----
-    Each grid line is rescaled by its own total, so ``C(1, u2) = u2`` holds
-    exactly.
+    The mass of the interpolated density below and left of ``u``, so
+    ``C(1, u2) = u2`` holds to the margins' residual, which a fitted grid holds
+    to rounding.
     """
     del x  # declared so the pair can sit in a conditional vine
     if self.is_indep:
@@ -831,10 +814,11 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     Overrides the four-corner difference
     :meth:`~pyvinecopulib.core.BicopBase.rect_prob` reads it as, which
-    amplifies an absolute error by ``~4 / (w1 w2)`` in the rectangle's widths
-    where this route amplifies by ``1 / w2`` alone. Available in both cache
-    modes -- it reads the density grid, not the prefix tables -- and
-    cancellation-free only because ``values`` is nonnegative.
+    amplifies an absolute error by ``~4 / (w1 w2)`` in the rectangle's widths;
+    this route sums nonnegative terms and cancels nothing. Available in both
+    cache modes -- it reads the density grid, not the prefix tables -- and
+    cancellation-free only because ``values`` is nonnegative. A pair and its
+    flip give the same probabilities, bit for bit.
 
     Parameters
     ----------
@@ -852,8 +836,8 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     Notes
     -----
-    A probability, not the density grid's own mass over the rectangle: the two
-    differ by the rescaling ``TorchTllBicop.cdf()`` applies.
+    The density grid's own mass over the rectangle, which is its probability
+    once the grid's margins are uniform, as a fitted grid's are to rounding.
     """
     del x
     a1, b1, a2, b2 = self._as_grid(a1, b1, a2, b2)

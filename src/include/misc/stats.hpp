@@ -97,10 +97,26 @@ inline void init_stats(nb::module_& m) {
   m.def("to_pseudo_obs", &tools_stats::to_pseudo_obs,
         tools_stat_doc.to_pseudo_obs.doc, "x"_a, "ties_method"_a = "average",
         "weights"_a = Eigen::VectorXd(), "seeds"_a = std::vector<int>(),
-        nb::call_guard<nb::gil_scoped_release>());
+        "scale"_a = 0.0, nb::call_guard<nb::gil_scoped_release>());
   m.def("find_latent_sample", &tools_stats::find_latent_sample,
         tools_stat_doc.find_latent_sample.doc, "u"_a, "b"_a, "niter"_a = 3,
         nb::call_guard<nb::gil_scoped_release>());
+
+  // Internal: the ranks a kernel pair copula's fit selects its bandwidth
+  // from, so that the torch TLL fit ranks exactly as the compiled one where
+  // its data have ties or near-ties.
+  m.def(
+      "_pair_soft_pseudo_obs",
+      [](const Eigen::MatrixXd& data, double scale) {
+        return tools_stats::pair_soft_pseudo_obs(data, Eigen::VectorXd(),
+                                                 scale);
+      },
+      "data"_a, "scale"_a,
+      "Pseudo-observations of a pair as a ``tll`` fit ranks it: ties in a "
+      "random order fixed per observation, and values closer than about "
+      "``9 * scale`` ranked partly as tied.",
+      nb::call_guard<nb::gil_scoped_release>());
+  m.attr("_SOFT_RANK_SCALE") = tools_stats::default_soft_scale();
 
   m.def("wdm",
         static_cast<double (*)(const Eigen::VectorXd&, const Eigen::VectorXd&,

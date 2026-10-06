@@ -44,7 +44,7 @@ from ._covariates import pair_eval, prepare_covariates
 from ._loglik import safe_log, sum_loglik
 from ._placement import PlacementMixin, QrngUniformMixin, to_numpy
 from ._rootfind import solve_increasing
-from ._trim import trim
+from ._trim import trim, trim_density
 from ._validation import check_var_types
 from .margin_base import criteria
 from .protocols import (
@@ -312,7 +312,11 @@ class BicopBase(
     A continuous argument contributes a derivative and a discrete one the
     probability of its atom, so a mixed pair gives a difference quotient and a
     pair with two discrete arguments the rectangle probability, each divided by
-    the atom widths.
+    the atom widths. With a discrete argument the density is clamped to the
+    positive, finite floats of its dtype, as ``Bicop.pdf`` clamps it to
+    ``[DBL_MIN, DBL_MAX]``: an atom has positive probability under a copula
+    with mass everywhere, so a zero there is underflow, and the clamp keeps the
+    log-density finite.
 
     Parameters
     ----------
@@ -330,11 +334,12 @@ class BicopBase(
     """
     xp, u1, u2, u1m, u2m, x = self._atoms(u, x)
     if self._d1 and self._d2:
-      return self._pdf_d_d(xp, u1, u2, u1m, u2m, x)
+      return trim_density(self._pdf_d_d(xp, u1, u2, u1m, u2m, x), xp)
     if self._d1 or self._d2:
-      return self._pdf_mixed(
+      dens = self._pdf_mixed(
         xp, u1, u2, u1m, u2m, x, discrete=1 if self._d1 else 2
       )
+      return trim_density(dens, xp)
     return self._pdf_c(xp, u1, u2, x)
 
   def hfunc1(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
