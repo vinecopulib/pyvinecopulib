@@ -220,6 +220,16 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       If the number of margins disagrees with the copula's dimension, or if the
       copula's ``var_types`` disagrees with what the margins declare.
 
+  See Also
+  --------
+  pyvinecopulib.core.Vinedist : The NumPy subclass, which fits a
+      :class:`~pyvinecopulib.core.Vinecop`.
+  pyvinecopulib.torch.TorchVinedist : The PyTorch subclass.
+  pyvinecopulib.core.VinedistLike : The contract this implements.
+  pyvinecopulib.core.MarginLike : The margin contract.
+  pyvinecopulib.core.VinecopLike : The copula contract.
+  pyvinecopulib.margins.as_margin : Coerce a foreign distribution to a margin.
+
   Notes
   -----
   Unlike :class:`~pyvinecopulib.core.BicopBase` and
@@ -254,16 +264,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   whichever part is handed weights it does not read (``supports_weights``),
   and covariates are refused by :meth:`from_data` when no part reads them at
   all -- there is no flag on the distribution restating either question.
-
-  See Also
-  --------
-  pyvinecopulib.core.Vinedist : The NumPy subclass, which fits a
-      :class:`~pyvinecopulib.core.Vinecop`.
-  pyvinecopulib.torch.TorchVinedist : The PyTorch subclass.
-  pyvinecopulib.core.VinedistLike : The contract this implements.
-  pyvinecopulib.core.MarginLike : The margin contract.
-  pyvinecopulib.core.VinecopLike : The copula contract.
-  pyvinecopulib.margins.as_margin : Coerce a foreign distribution to a margin.
   """
 
   def __init__(
@@ -1604,6 +1604,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     VinedistBase
         ``self``, so the call chains.
 
+    See Also
+    --------
+    select : Re-select the structure and the margin families as well.
+    from_data : Fit a fresh distribution, choosing the margins.
+
     Notes
     -----
     Both halves are re-estimated **in place**, so a part held elsewhere shows
@@ -1618,11 +1623,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     ``FitControlsMargin.family_set`` defaults to ``None`` where
     ``FitControlsVinecop.family_set`` defaults to every family, so only one of
     the two can distinguish "search these" from "the default".
-
-    See Also
-    --------
-    select : Re-select the structure and the margin families as well.
-    from_data : Fit a fresh distribution, choosing the margins.
     """
     return self._reestimate(
       y,

@@ -174,13 +174,6 @@ def validate_weights(
   array, or None
       The weights on the observations' namespace, or ``None``.
 
-  Notes
-  -----
-  ``NaN`` and ``0`` mark a *dropped* observation, the same convention the data
-  follow -- so a weight vector may carry either, and what must hold is that
-  something survives them. ``+/-inf`` and a negative weight are not drop
-  markers and are refused.
-
   Raises
   ------
   ValueError
@@ -188,6 +181,13 @@ def validate_weights(
       leave no observation standing.
   TypeError
       If they do not have a real numeric dtype.
+
+  Notes
+  -----
+  ``NaN`` and ``0`` mark a *dropped* observation, the same convention the data
+  follow -- so a weight vector may carry either, and what must hold is that
+  something survives them. ``+/-inf`` and a negative weight are not drop
+  markers and are refused.
   """
   if weights is None:
     return None

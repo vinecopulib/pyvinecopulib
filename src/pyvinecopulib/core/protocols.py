@@ -1289,6 +1289,12 @@ class MarginLike(Protocol[ArrayT]):
 
       log f(x) = log c(F_1(x_1), ..., F_d(x_d)) + sum_j log pdf_j(x_j)
 
+  See Also
+  --------
+  pyvinecopulib.core.MarginBase : Canonical partial implementation to subclass.
+  pyvinecopulib.core.Kde1d : The default nonparametric margin.
+  BicopLike : The pair-copula contract.
+
   Notes
   -----
   Only ``pdf`` / ``cdf`` / ``icdf`` are abstract. Everything else is a member
@@ -1312,12 +1318,6 @@ class MarginLike(Protocol[ArrayT]):
     to re-estimate this margin, and the configuration it reads. ``fit`` raises
     by default, which is what a *fixed* margin is; a distribution's margin loop
     dispatches on whether the class overrides either verb.
-
-  See Also
-  --------
-  pyvinecopulib.core.MarginBase : Canonical partial implementation to subclass.
-  pyvinecopulib.core.Kde1d : The default nonparametric margin.
-  BicopLike : The pair-copula contract.
   """
 
   @abstractmethod
@@ -1625,6 +1625,13 @@ class VinedistLike(Protocol[ArrayT]):
   :class:`~pyvinecopulib.core.Vinecop` and
   :class:`~pyvinecopulib.torch.TorchVinecop`.
 
+  See Also
+  --------
+  pyvinecopulib.core.VinedistBase : Canonical partial implementation.
+  pyvinecopulib.core.Vinedist : The reference vine distribution.
+  VinecopLike : The copula half's contract.
+  MarginLike : The marginal half's contract.
+
   Notes
   -----
   ``dim``, ``var_types``, ``sample_conditional`` and ``margin_summary`` are
@@ -1640,13 +1647,6 @@ class VinedistLike(Protocol[ArrayT]):
   ``x`` that none of them reads; there is nothing above it to read a flag of
   its own, and a capability nothing consumes is one that goes stale.
   Serialization is likewise out of scope, as it is for the other contracts.
-
-  See Also
-  --------
-  pyvinecopulib.core.VinedistBase : Canonical partial implementation.
-  pyvinecopulib.core.Vinedist : The reference vine distribution.
-  VinecopLike : The copula half's contract.
-  MarginLike : The marginal half's contract.
   """
 
   @property

@@ -412,6 +412,10 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ValueError
         If ``u`` is not 3-d with two value columns.
 
+    See Also
+    --------
+    TorchTllBicop.from_data : The single-pair entry point.
+
     Notes
     -----
     A pair's fit is unaffected by *which* other pairs share its call: each
@@ -422,10 +426,6 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     kernels by element count, so stacking ``P`` pairs agrees with fitting them
     one by one to floating point rather than bit for bit, on every device --
     around ``1e-15`` on a grid value. Fit the pair alone where that matters.
-
-    See Also
-    --------
-    TorchTllBicop.from_data : The single-pair entry point.
     """
     controls = _torch_bicop_controls(controls)
     cache_integrals, device, dtype = _resolve_placement(

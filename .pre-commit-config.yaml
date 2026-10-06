@@ -10,7 +10,7 @@ ci:
 repos:
   # Ruff for linting and formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.7
+    rev: v0.16.9
     hooks:
       # Run the linter
       - id: ruff
@@ -89,7 +89,7 @@ repos:
   # additionally `exclude:` internal modules at the hook level. Keep
   # the two lists in sync.
   - repo: https://github.com/numpy/numpydoc
-    rev: v1.10.0
+    rev: v1.11.0
     hooks:
       - id: numpydoc-validation
         files: ^src/pyvinecopulib/.*\.py$
