@@ -570,7 +570,7 @@ class VineBase(BaseEstimator):
         # the next `fit`. A caller who pre-set one is declaring something the
         # array cannot show -- which columns are discrete, where a variable is
         # bounded -- and re-inferring it would silently change the model on the
-        # second fit. That is what an ensembling wrapper does to every survivor.
+        # second fit.
         self._schema_from_fit = not existing
         self.n_features_in_ = X.shape[1]
         self.n_model_features_ = X.shape[1]

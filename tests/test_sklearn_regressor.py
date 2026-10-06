@@ -232,36 +232,30 @@ def test_parameter_variations(
   assert np.all(np.isfinite(pred))
 
 
-def test_normalize_weights_parameter(
+def test_raw_weights_normalize_to_the_conditional_weights(
   regression_setup: _Setup,
 ) -> None:
-  """``normalize_weights`` parameter toggles row-wise weight normalization."""
+  """The unnormalized rule, row by row, is what ``conditional_weights`` scales.
+
+  A caller combining several fitted regressors sums these before normalizing
+  once, so they have to be the same rule on the same nodes, only unscaled.
+  """
   X_train, X_test, y_train, _, _, _ = regression_setup
-
-  reg_default = VineRegressor(mean=True).fit(X_train, y_train)
-  pred_default = reg_default.predict(X_test)
-
-  reg_raw = VineRegressor(mean=True, normalize_weights=False).fit(
-    X_train, y_train
+  reg = VineRegressor(mean=True).fit(X_train, y_train)
+  raw = reg._raw_conditional_weights(X_test[:5])
+  weights = reg.conditional_weights(X_test[:5])
+  assert raw.shape == weights.shape == (5, reg.y_nodes_.shape[0])
+  np.testing.assert_allclose(weights.sum(axis=1), 1.0)
+  assert not np.allclose(raw.sum(axis=1), 1.0)
+  np.testing.assert_allclose(
+    raw / raw.sum(axis=1, keepdims=True), weights, rtol=1e-12, atol=1e-15
   )
-  pred_raw = reg_raw.predict(X_test)
-
-  # The conditional mean is `sum(w y) / sum(w)`, so it does not depend on the
-  # weights' scale: the flag changes what `conditional_weights` returns -- what
-  # a caller combining several vines normalizes across -- not the prediction.
-  # This test used to assert the opposite, pinning a mean that was scaled by
-  # the weight total.
-  np.testing.assert_allclose(pred_default, pred_raw, rtol=1e-10, atol=1e-10)
-  w_default = reg_default.conditional_weights(X_test[:3])
-  w_raw = reg_raw.conditional_weights(X_test[:3])
-  np.testing.assert_allclose(w_default.sum(axis=1), 1.0)
-  assert not np.allclose(w_default, w_raw)
 
 
-def testcopula_marginal_density_single_covariate(
+def test_copula_marginal_density_single_covariate(
   regression_setup: _Setup,
 ) -> None:
-  r"""``copula_marginal_density`` recovers :math:`c_X \\equiv 1` in 2-d.
+  r"""``_copula_marginal_density`` recovers :math:`c_X \\equiv 1` in 2-d.
 
   Integrating a bivariate copula density over one of its arguments is
   exactly one, so a fit with a single covariate pins the Simpson
@@ -272,7 +266,7 @@ def testcopula_marginal_density_single_covariate(
   X_train, X_test, y_train, _, _, _ = regression_setup
   reg = VineRegressor(mean=True, batch_size=7).fit(X_train[:, :1], y_train)
 
-  c_x = reg.copula_marginal_density(X_test[:20, :1], n_grid=200)
+  c_x = reg._copula_marginal_density(X_test[:20, :1], n_grid=200)
   assert c_x.shape == (20,)
   assert np.all(c_x > 0)
   assert np.all(np.isfinite(c_x))
@@ -282,7 +276,7 @@ def testcopula_marginal_density_single_covariate(
   assert abs(np.median(c_x) - 1.0) < 1e-2
   assert np.allclose(c_x, 1.0, atol=0.25)
 
-  log_c = reg.copula_marginal_density(X_test[:20, :1], n_grid=200, log=True)
+  log_c = reg._copula_marginal_density(X_test[:20, :1], n_grid=200, log=True)
   assert np.allclose(log_c, np.log(c_x))
 
 
@@ -295,12 +289,12 @@ def test_regressor_dataframe_inputs_are_validated(
   query = pd.DataFrame({"x": X_test[:20, 0]})
   reg = VineRegressor(mean=True, batch_size=7).fit(train, y_train.tolist())
 
-  density = reg.copula_marginal_density(query, n_grid=200)
+  density = reg._copula_marginal_density(query, n_grid=200)
   assert density.shape == (len(query),)
   assert np.all(np.isfinite(density))
 
   with pytest.raises(ValueError, match="Column names/order do not match"):
-    reg.copula_marginal_density(query.rename(columns={"x": "other"}))
+    reg._copula_marginal_density(query.rename(columns={"x": "other"}))
 
 
 def test_vine_regressor_is_a_regressor_to_sklearn() -> None:
@@ -338,26 +332,22 @@ def test_vine_regressor_predict_keeps_the_sample_axis() -> None:
 
 
 @pytest.mark.parametrize("use_grid", [True, False])
-def test_normalize_weights_does_not_move_the_conditional_mean(
+def test_the_conditional_mean_is_a_ratio_of_the_raw_weights(
   use_grid: bool,
   regression_data: _RegressionData,
 ) -> None:
   """The mean is `sum(w y) / sum(w)`, whatever the weights' scale.
 
-  It used to be a plain dot product, so `normalize_weights=False` returned a
-  mean scaled by the weight total -- around 100x with the default grid -- while
-  the quantile columns of the same matrix stayed correct. The flag exists so a
-  caller combining several vines can normalize once, across all of them.
+  So the prediction does not depend on whether the weights were normalized,
+  and a combination of several regressors can normalize once, across all of
+  them.
   """
   X, y, _, _ = regression_data
-  preds = [
-    VineRegressor(mean=True, use_grid=use_grid, normalize_weights=nw)
-    .fit(X, y)
-    .predict(X[:40])
-    for nw in (True, False)
-  ]
-  np.testing.assert_allclose(preds[0], preds[1], rtol=1e-10, atol=1e-10)
-  assert np.std(preds[0]) < 5.0 * np.std(y)
+  reg = VineRegressor(mean=True, use_grid=use_grid).fit(X, y)
+  raw = reg._raw_conditional_weights(X[:40])
+  ratio = (raw @ reg.y_nodes_) / raw.sum(axis=1)
+  np.testing.assert_allclose(reg.predict(X[:40]), ratio, rtol=1e-10, atol=1e-10)
+  assert np.std(ratio) < 5.0 * np.std(y)
 
 
 def test_conditional_weights_are_the_estimator_before_it_is_summarized(
