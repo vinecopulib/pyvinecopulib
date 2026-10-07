@@ -438,13 +438,26 @@ def _with_atoms(
   return np.column_stack([values, *limits])
 
 
-@pytest.mark.parametrize("discrete", [False, True])
+def test_a_fit_edge_keeps_the_pooled_level_fit_out() -> None:
+  # The engines prefer a level fitter wherever one applies, so supplying the
+  # pool beside a caller's `fit_edge` would mean it is never called.
+  u = _correlated_pseudo_obs(3, 4)
+  controls = pv.FitControlsVinecop(num_threads=4)
+  assert _BicopVine._resolve_fit_level(None, None, controls, u) is not None
+  assert _BicopVine._resolve_fit_level(None, _tll_fit_edge, controls, u) is None
+
+
+@pytest.mark.parametrize("threads", [1, 4])
 @pytest.mark.parametrize("given_structure", [True, False])
-def test_a_pooled_level_fit_equals_the_serial_one(
-  discrete: bool, given_structure: bool
+@pytest.mark.parametrize("discrete", [False, True])
+@pytest.mark.parametrize("family", ["tll", "itau"])
+def test_a_vine_hosting_bicop_fits_and_evaluates_as_vinecop(
+  family: str, discrete: bool, given_structure: bool, threads: int
 ) -> None:
-  # `num_threads > 1` fits each level's pairs on a thread pool. The pairs are
-  # independent fits, so the vine is the serial one, bit for bit.
+  # The guarantee a downstream package hosting `Bicop` in a `VinecopBase`
+  # relies on: the fit engines with the per-edge `Bicop.from_data` select and
+  # fit what `Vinecop` does, and the cascades evaluate it identically --
+  # serially or with a level's pairs fitted on a thread pool.
   d = 5
   var_types = ["d", "c", "c", "d", "c"] if discrete else None
   u = _correlated_pseudo_obs(3, d, n=300)
@@ -455,27 +468,18 @@ def test_a_pooled_level_fit_equals_the_serial_one(
     if given_structure
     else None
   )
-
-  def fit(threads: int) -> _BicopVine:
-    controls = pv.FitControlsVinecop(
-      family_set=[pv.families.tll], num_threads=threads
-    )
-    return _BicopVine.from_data(
-      u, controls=controls, structure=structure, var_types=var_types
-    )
-
-  pooled_controls = pv.FitControlsVinecop(num_threads=4)
-  assert _BicopVine._resolve_fit_level(None, None, pooled_controls, u)
-  # A caller's `fit_edge` keeps the pool out, or it would never be called.
-  assert (
-    _BicopVine._resolve_fit_level(None, _tll_fit_edge, pooled_controls, u)
-    is None
+  families = [pv.families.tll] if family == "tll" else pv.families.itau
+  controls = pv.FitControlsVinecop(family_set=families, num_threads=threads)
+  mine = _BicopVine.from_data(
+    u, controls=controls, structure=structure, var_types=var_types
   )
-  serial, pooled = fit(1), fit(4)
+  ref = pv.Vinecop.from_data(
+    u, controls, structure=structure, var_types=var_types or []
+  )
   np.testing.assert_array_equal(
-    np.asarray(pooled.structure.matrix), np.asarray(serial.structure.matrix)
+    np.asarray(mine.structure.matrix), np.asarray(ref.structure.matrix)
   )
-  np.testing.assert_array_equal(pooled.pdf(u), serial.pdf(u))
+  np.testing.assert_array_equal(mine.pdf(u), ref.pdf(u))
 
 
 def test_a_named_pair_class_that_cannot_condition_refuses_the_context() -> None:
