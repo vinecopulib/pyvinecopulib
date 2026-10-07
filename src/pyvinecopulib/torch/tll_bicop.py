@@ -41,7 +41,7 @@ from ..pyvinecopulib_ext import Bicop
 from ..pyvinecopulib_ext import tll as _TLL_FAMILY
 from ._bicop_interp import InterpolationGrid2D, prefix_tables
 from ._placement import TENSOR_NS
-from ._vinecop_batched import BatchedTreeLevel
+from ._vinecop_batched import TllStack, stack_tll_pairs
 from .controls import FitControlsTorchBicop
 
 
@@ -236,9 +236,6 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
   _sy: Tensor | None
   _sx: Tensor | None
   _prefix: Tensor | None
-  #: Declares the grid and cache internals ``TorchVinecop``'s batched
-  #: cascades read, so a vine of these pairs can take the stacked path.
-  supports_batched: bool = True
 
   def __init__(
     self,
@@ -435,6 +432,39 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     )
 
   @staticmethod
+  def _stack_pairs(
+    pairs: Sequence[TorchTllBicop],
+    *,
+    disc1: Sequence[bool],
+    disc2: Sequence[bool],
+    needs_h1: Sequence[bool],
+    needs_h2: Sequence[bool],
+  ) -> TllStack | None:
+    """A group of these pairs stacked on their shared grid, for a vine.
+
+    What a vine's cascades evaluate a tree level or an inverse wave through
+    in one call; ``None`` where the pairs disagree on the grid, and the vine
+    then evaluates them one at a time.
+
+    Parameters
+    ----------
+    pairs : sequence of TorchTllBicop
+        The group's pairs.
+    disc1, disc2 : sequence of bool
+        Whether each pair's first / second argument is discrete.
+    needs_h1, needs_h2 : sequence of bool
+        Whether the next tree reads each pair's h-functions.
+
+    Returns
+    -------
+    TllStack, or None
+        The stack, or ``None``.
+    """
+    return stack_tll_pairs(
+      pairs, disc1=disc1, disc2=disc2, needs_h1=needs_h1, needs_h2=needs_h2
+    )
+
+  @staticmethod
   def _stacked_level_hfuncs(
     pairs: Sequence[BicopLike[Tensor]],
     u: Tensor,
@@ -444,9 +474,9 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     What the fit engines evaluate one edge at a time -- ``hfunc1`` and
     ``hfunc2``, and on a discrete edge each with the other argument at its left
-    limit -- through the level the batched cascades evaluate. Only
-    ``TorchTllBicop`` pairs holding their prefix tables on one shared grid
-    stack; anything else is declined and evaluated edge by edge.
+    limit -- through the stack a vine's cascades evaluate. Only pairs holding
+    their prefix tables on one shared grid stack; anything else is declined
+    and evaluated edge by edge.
 
     Parameters
     ----------
@@ -471,43 +501,20 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ]
     if len(grids) != len(pairs):
       return None
-    ref = grids[0].interp_grid
-    if any(
-      p.interp_grid.values.shape != ref.values.shape
-      or p.interp_grid._is_linear != ref._is_linear
-      for p in grids
-    ):
-      return None
-    gp = ref.grid_points
-    if not bool(
-      torch.stack([p.interp_grid.grid_points for p in grids]).eq(gp).all()
-    ):
-      return None
-    tables = [p._tables() for p in grids]
-    # Built on the host, where locating each quotient's pairs needs no device
-    # sync, and moved over with the level.
-    disc1 = torch.tensor([t[0] == "d" for t in types])
-    disc2 = torch.tensor([t[1] == "d" for t in types])
-    every = torch.ones(len(grids), dtype=torch.bool)
-    first = torch.zeros(len(grids), dtype=torch.long)
-    level = BatchedTreeLevel(
-      values=torch.stack([p.interp_grid.values for p in grids]),
-      sy=torch.stack([t[0] for t in tables]),
-      sy_t=torch.stack([t[1].t() for t in tables]),
-      is_indep=~every,
-      # Only the evaluation is used, so the wiring into a vine's scratch is a
-      # placeholder.
-      col0_src=first,
-      col1_src=first,
-      col1_use_h1=~every,
+    every = [True] * len(grids)
+    stack = stack_tll_pairs(
+      grids,
+      disc1=[t[0] == "d" for t in types],
+      disc2=[t[1] == "d" for t in types],
       needs_h1=every,
       needs_h2=every,
-      disc1=disc1,
-      disc2=disc2,
-      grid_points=gp,
-      is_linear=ref._is_linear,
-    ).to(device=u.device)
-    _, h1, h2, h1_sub, h2_sub = level.eval_discrete(gp, u, with_pdf=False)
+    )
+    if stack is None:
+      return None
+    # Clamped as each pair's dispatchers clamp their input.
+    _, h1, h2, h1_sub, h2_sub = stack.to(device=u.device).evaluate(
+      trim(u, TENSOR_NS), with_pdf=False, every_h2=False
+    )
     return h1, h2, h1_sub, h2_sub
 
   @classmethod

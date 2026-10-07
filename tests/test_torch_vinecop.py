@@ -369,12 +369,12 @@ def test_from_data_auto_selects_structure() -> None:
 
 
 def test_batched_to_device_invalidates() -> None:
-  """``.to()`` should drop the lazily-built BatchedVine so the next
+  """``.to()`` should drop the lazily-built stacks so the next
   batched call rebuilds it on the new device."""
   u_fit = banded_pseudo_obs(d=5, n=500, seed=322)
   bc = TorchVinecop.from_vinecop(fit_tll_vinecop(u_fit))
   u_t = torch.from_numpy(eval_grid(50, d=5, seed=332))
-  bc.pdf(u_t, batched=True)  # build the BatchedVine
+  bc.pdf(u_t, batched=True)  # build the stacks
   assert bc._batched is not None
   bc.to(torch.float32)
   assert bc._batched is None
@@ -423,7 +423,7 @@ def test_setting_pair_copulas_invalidates_the_batched_cache() -> None:
   u_t = torch.from_numpy(eval_grid(40, d=3, seed=912))
   vine.pdf(u_t, batched=True)
   assert vine._batched is not None
-  vine._compiled["_logpdf_batched"] = lambda u: u
+  vine._compiled["_logpdf"] = lambda u: u
   vine.set_pair_copulas(
     [
       [vine.get_pair_copula(t, e) for e in range(vine.d - t - 1)]

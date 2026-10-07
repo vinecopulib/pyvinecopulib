@@ -32,12 +32,12 @@ from ._validation import check_var_types, validate_weights
 from ._vinecop_discrete import (
   collapse_data,
   disc_cols,
-  edge_columns,
   pair_var_types,
   seed_left_limits,
   stack_edge,
   with_left_limit,
 )
+from ._vinecop_levels import as_arrays, gather, level_wiring
 from ._vinecop_reorient import _slot_key, _SlotKey, reorientation
 from .bicop_independence import IndependenceBicop
 from .protocols import ArrayT, BicopLike, Namespace, array_namespace
@@ -344,7 +344,7 @@ def fit_parts(
   trunc_lvl = int(structure.trunc_lvl)
   order = tuple(int(v) for v in structure.order)
   types = check_var_types(var_types, d)
-  pair_types = pair_var_types(structure, types) if "d" in types else None
+  pair_types = pair_var_types(structure, types)
   ua = collapse_data(ua, d, types, "fit")
   n = ua.shape[0]
   x = prepare_covariates(ua, x, int(n))
@@ -402,22 +402,28 @@ def fit_parts(
     # runs a level on a thread pool. Gathering the level's inputs before
     # fitting any of it is the same reordering, and it is what lets a
     # level be fitted in one call.
-    level = [
-      edge_columns(
-        s, pair_types, tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
-      )
-      for edge in range(d - tree - 1)
-    ]
-    inputs = [stack_edge(xp, c0, c1, subs) for c0, c1, subs, _ in level]
-    contexts = [edge_context_for(tree, e) for e in range(len(level))]
+    u_level: Any = gather(
+      xp,
+      as_arrays(level_wiring(s, pair_types, tree), xp, ua.device),
+      hfunc1,
+      hfunc2,
+      hfunc1_sub,
+      hfunc2_sub,
+    )
     # Per-edge type *pairs*, distinct from the per-variable `types` above.
-    level_types = [t for _, _, _, t in level]
+    level_types = list(pair_types[tree])
+    # An edge with no discrete argument reads two columns, as `Bicop` does.
+    inputs = [
+      u_level[e] if "d" in t else u_level[e][:, :2]
+      for e, t in enumerate(level_types)
+    ]
+    contexts = [edge_context_for(tree, e) for e in range(len(inputs))]
     # A fixed structure thresholds exactly as selection does: upstream builds
     # the same selector on the given matrix, so `fit_or_reuse_pair_copula`
     # leaves an edge below the threshold holding independence here too.
     skip = [
-      threshold > 0.0 and criterion(c0, c1) < threshold
-      for c0, c1, _, _ in level
+      threshold > 0.0 and criterion(u_e[:, 0], u_e[:, 1]) < threshold
+      for u_e in inputs
     ]
     to_fit = [e for e, s_e in enumerate(skip) if not s_e]
     fitted: dict[int, BicopLike[Any]] | None = None
@@ -460,14 +466,15 @@ def fit_parts(
       level_types,
     )
     for edge, edge_copula in enumerate(row):
-      _, _, subs, edge_types = level[edge]
+      edge_types = level_types[edge]
       u_e, x_e = inputs[edge], contexts[edge]
+      subs = int(u_e.shape[1]) == 4
       got = stacked.get(edge)
       if s.needed_hfunc1(tree, edge):
         hfunc1[:, edge] = (
           pair_eval(edge_copula.hfunc1, u_e, x=x_e) if got is None else got[0]
         )
-        if subs is not None and edge_types[1] == "d":
+        if subs and edge_types[1] == "d":
           hfunc1_sub[:, edge] = (
             pair_eval(edge_copula.hfunc1, with_left_limit(u_e, 1), x=x_e)
             if got is None
@@ -477,7 +484,7 @@ def fit_parts(
         hfunc2[:, edge] = (
           pair_eval(edge_copula.hfunc2, u_e, x=x_e) if got is None else got[1]
         )
-        if subs is not None and edge_types[0] == "d":
+        if subs and edge_types[0] == "d":
           hfunc2_sub[:, edge] = (
             pair_eval(edge_copula.hfunc2, with_left_limit(u_e, 0), x=x_e)
             if got is None

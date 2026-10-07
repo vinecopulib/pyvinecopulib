@@ -4,8 +4,7 @@ A discrete variable is described by two numbers, ``F(x)`` and its left limit
 ``F(x^-)``, so a vine with ``k`` of them reads an ``(n, d + k)`` argument rather
 than an ``(n, d)`` one. This module owns that bookkeeping: normalizing a caller's
 layout to the compact one, deriving the types each pair-copula slot sees from
-the structure alone, and gathering an edge's columns out of the cascade's
-h-function buffers.
+the structure alone, and assembling an edge's argument from its columns.
 
 The mixed-discrete evaluation those layouts feed is
 ``BicopBase.with_var_types``, in ``core/bicop_base.py``.
@@ -15,7 +14,7 @@ Internal: the vine cascades and the fit engines call these helpers.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from ..pyvinecopulib_ext import RVineStructure
 from .protocols import ArrayT, Namespace, array_namespace
@@ -190,69 +189,6 @@ def seed_left_limits(
     v = order[j] - 1
     sub[:, j] = ua[:, d + offsets[v] if var_types[v] == "d" else v]
   return sub
-
-
-def edge_columns(
-  structure: RVineStructure,
-  pair_types: tuple[tuple[tuple[str, str], ...], ...] | None,
-  tree: int,
-  edge: int,
-  hfunc1: ArrayT,
-  hfunc2: ArrayT,
-  hfunc1_sub: ArrayT | None,
-  hfunc2_sub: ArrayT | None,
-) -> tuple[ArrayT, ArrayT, tuple[ArrayT, ArrayT] | None, tuple[str, str]]:
-  """Resolve one edge's pair-copula input columns and its variable types.
-
-  ``m`` is the min-array entry: the natural-order index of the column finalized
-  in a previous tree. The second pair input comes from ``hfunc2`` when ``m`` sits
-  on the natural-order diagonal, else from ``hfunc1``
-  (``class.ipp:1026-1034``). The left-limit pair is returned only when the edge
-  has a discrete variable, and mirrors ``Bicop::format_data``: a continuous
-  variable's left limit is its own value.
-
-  Parameters
-  ----------
-  structure : RVineStructure
-      The vine structure being walked.
-  pair_types : tuple of tuple of tuple of str, or None, optional
-      Per-edge types from :func:`pair_var_types`; ``None`` when all continuous.
-  tree : int
-      Tree index (``0``-based).
-  edge : int
-      Edge index within the tree (``0``-based).
-  hfunc1, hfunc2 : array, shape (n, d), dtype float
-      The h-function scratch matrices.
-  hfunc1_sub, hfunc2_sub : array, shape (n, d), dtype float, or None, optional
-      The left-limit scratch matrices; ``None`` when all continuous.
-
-  Returns
-  -------
-  col0, col1 : array, shape (n,), dtype float
-      The pair's two value inputs.
-  subs : tuple of array, or None
-      Their left limits, or ``None`` when the edge is fully continuous.
-  types : tuple of str
-      The edge's ``(type1, type2)``.
-  """
-  h1: Any = hfunc1
-  h2: Any = hfunc2
-  h2_sub: Any = hfunc2_sub
-  m = int(structure.min_array(tree, edge))
-  on_diagonal = m == int(structure.struct_array(tree, edge, True))
-  col0 = h2[:, edge]
-  col1 = h2[:, m - 1] if on_diagonal else h1[:, m - 1]
-  types = ("c", "c") if pair_types is None else pair_types[tree][edge]
-  if hfunc2_sub is None or "d" not in types:
-    return col0, col1, None, types
-  sub0 = h2_sub[:, edge] if types[0] == "d" else col0
-  if types[1] != "d":
-    sub1 = col1
-  elif on_diagonal:
-    sub1 = h2_sub[:, m - 1]
-  else:
-    sub1 = cast("Any", hfunc1_sub)[:, m - 1]
-  return col0, col1, (sub0, sub1), types
 
 
 def stack_edge(

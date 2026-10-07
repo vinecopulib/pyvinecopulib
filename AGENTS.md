@@ -321,6 +321,7 @@ pyvinecopulib/
         _covariates.py           # the two `x`-forwarding rules + `prepare_covariates`
         _vinecop_discrete.py     # the discrete layouts / per-edge types
         _vinecop_fit_engines.py  # fit_parts / select_parts — the two fit engines (internal)
+        _vinecop_levels.py       # a vine's level / inverse-wave wiring, and the loop a level falls back to (internal)
         bicop_independence.py    # IndependenceBicop
         _placement.py            # place / reference_array / to_numpy + the `_prep` and `_sample_uniform` hooks
         _vinecop_reorient.py     # relabel a structure onto a chosen order tail (internal)
@@ -357,7 +358,7 @@ pyvinecopulib/
         controls.py              # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
         _bicop_interp.py         # InterpolationGrid2D (bilinear; Sinkhorn margin renormalization) — internal
         _bicop_fit_tll.py        # pure-torch TLL kernel
-        _vinecop_batched.py      # batched evaluation variants
+        _vinecop_batched.py      # TllStack: TLL pairs stacked for one level or wave
         _placement.py            # the torch lane's `_prep` hook / reference tensor — internal
 
       _build_info.py             # build provenance, read by `__version__` reporting
@@ -1739,9 +1740,11 @@ Key surface:
   `DELTA_MIN` split taken as a `where` -- so the forward cascades agree with
   the per-edge ones to rounding, and the inverse, which reads no left limit,
   exactly. `rect_mass` / `cond_interval_mass` are a batch of one through the
-  stacked kernels the levels call, so the two cannot drift. Whether a vine's
-  batched state can host a discrete slot is its `_build_batched`'s to answer
-  through `NotBatchable`, not the dispatcher's. Nor does a discrete vine
+  stacked kernels the levels call, so the two cannot drift. Nothing is
+  unbatchable: `batched` chooses, per level and per inverse wave, between the
+  pair class's own stack (`_stack_pairs`, which `TorchTllBicop` supplies and
+  which declines a group whose grids differ) and a loop over the pairs'
+  dispatchers, through one cascade in `VinecopBase`. Nor does a discrete vine
   refuse the **integral cache**: the prefix tables reconstruct the integral
   exactly, so a discrete edge can difference them and `cache_integrals`
   resolves the same way it does for a continuous vine.
@@ -1936,13 +1939,12 @@ below are a quick orientation.
   `Vinedist`, `VinedistLike`, `VinedistBase`; plus the margin serialization
   helpers `margin_from_json`, `margin_json`, `margin_to_json`, `register_margin_json`; plus
   `ArrayT`, the type variable those signatures are written in.
-- **`pyvinecopulib.core.extend`** — **six** names, and the count is the
+- **`pyvinecopulib.core.extend`** — **five** names, and the count is the
   point: what an extension cannot be written without, rather than everything
   it might find useful. `place` and `reference_array`, the fix and the check
   of the `_prep` override; `prepare_covariates`, the composite every entry
   point taking an `x` routes through, with `covariate_row` for the single-row
-  reading of one; `to_numpy`, the return trip; and `NotBatchable`, which a
-  `_build_batched` override raises to decline the grid fast path. Reached as
+  reading of one; and `to_numpy`, the return trip. Reached as
   `pyvinecopulib.core.extend`, and kept out of `core`'s own namespace
   because using pyvinecopulib needs
   none of it. The four canonical bases and their protocols stay in `core`:

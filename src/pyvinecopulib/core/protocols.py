@@ -334,6 +334,10 @@ class Namespace(Protocol[ArrayT]):
 
   def matrix_transpose(self, x: ArrayT, /) -> ArrayT: ...
 
+  def take(
+    self, x: ArrayT, indices: Array, /, *, axis: int | None = None
+  ) -> ArrayT: ...
+
   # -- elementwise ------------------------------------------------------- #
   def abs(self, x: ArrayT, /) -> ArrayT: ...
 

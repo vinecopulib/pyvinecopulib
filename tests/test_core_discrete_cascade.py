@@ -25,7 +25,6 @@ from pyvinecopulib.core import (
   BicopLike,
   VinecopBase,
 )
-from pyvinecopulib.core.extend import NotBatchable
 
 from .conftest import GaussianBicop, HostedVinecop
 
@@ -101,19 +100,6 @@ class _ListVinecop(HostedVinecop):
     for tree, row in enumerate(pairs):
       for edge, pair in enumerate(row):
         pair.var_types = list(self.pair_var_types(tree, edge))
-
-
-class _DecliningVinecop(_ListVinecop):
-  """A vine that advertises the batched fast path and then declines it."""
-
-  asked = 0
-
-  def _default_batched(self) -> bool:
-    return True
-
-  def _build_batched(self) -> Any:
-    type(self).asked += 1
-    raise NotBatchable("no grid state")
 
 
 def _gaussian_pairs() -> list[list[pv.Bicop]]:
@@ -322,26 +308,22 @@ def test_discrete_vine_rejects_the_bare_value_layout(
 
 
 # ---------------------------------------------------------------------------
-# The batched fast path is the subclass's to decline
+# Every vine batches: a level whose pairs have no stack is looped over
 # ---------------------------------------------------------------------------
 
 
-def test_a_discrete_vine_asks_the_subclass_for_the_batched_path() -> None:
-  # Discreteness does not decline in the dispatcher: the batched loops carry
-  # the left-limit scratch, so whether a vine batches is for its
-  # `_build_batched` to answer. One that cannot declines through
-  # `NotBatchable`, and the per-edge cascade answers instead -- never a raise,
-  # since `batched=None` resolves to a subclass default the caller did not
-  # choose.
-  mine, ref = _both(["d", "c", "c", "c"], cls=_DecliningVinecop)
+def test_batched_loops_over_pairs_that_supply_no_stack() -> None:
+  # `Bicop` supplies no `_stack_pairs`, so `batched=True` evaluates each level
+  # one pair at a time -- the same walk `batched=False` takes, bit for bit.
+  mine, ref = _both(["d", "c", "c", "c"])
   u = _expanded_data(["d", "c", "c", "c"], seed=10)
-  _DecliningVinecop.asked = 0
-  _assert_parity(mine.pdf(u, batched=True), ref.pdf(u))
-  _assert_parity(
-    mine.rosenblatt(u, batched=True, randomize_discrete=False),
-    ref.rosenblatt(u, randomize_discrete=False),
-  )
-  assert _DecliningVinecop.asked == 2
+  for batched in (True, False):
+    _assert_parity(mine.pdf(u, batched=batched), ref.pdf(u))
+    _assert_parity(
+      mine.rosenblatt(u, batched=batched, randomize_discrete=False),
+      ref.rosenblatt(u, randomize_discrete=False),
+    )
+  np.testing.assert_array_equal(mine.pdf(u, batched=True), mine.pdf(u))
 
 
 def test_the_continuous_reading_of_a_foreign_pair_is_itself() -> None:
