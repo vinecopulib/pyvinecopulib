@@ -4,7 +4,7 @@
 
 ### Breaking API changes in `pyvinecopulib`
 
-- Remove `core.extend.NotBatchable`: no vine is unbatchable. `batched=` chooses, per tree level, between the pair class's own stack (`_stack_pairs`, which `TorchTllBicop` supplies) and a loop over the pairs, through one cascade in `VinecopBase` that runs conditional vines too (#PRNUM).
+- Remove `core.extend.NotBatchable`: no vine is unbatchable. `batched=` chooses, per tree level, between the pair class's own stack (`_stack_pairs`, which `TorchTllBicop` supplies) and a loop over the pairs, through one cascade in `VinecopBase` that runs conditional vines too (#371).
 
 ### New features in `pyvinecopulib`
 
