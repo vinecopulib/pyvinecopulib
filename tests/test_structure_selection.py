@@ -456,8 +456,10 @@ def test_a_vine_hosting_bicop_fits_and_evaluates_as_vinecop(
 ) -> None:
   # The guarantee a downstream package hosting `Bicop` in a `VinecopBase`
   # relies on: the fit engines with the per-edge `Bicop.from_data` select and
-  # fit what `Vinecop` does, and the cascades evaluate it identically --
-  # serially or with a level's pairs fitted on a thread pool.
+  # fit what `Vinecop` does, serially or with a level's pairs fitted on a
+  # thread pool, and the cascades evaluate it to rounding -- not bit for bit,
+  # since a build that contracts to FMA compiles the pair functions differently
+  # inlined into `Vinecop`'s cascade than called through the binding.
   d = 5
   var_types = ["d", "c", "c", "d", "c"] if discrete else None
   u = _correlated_pseudo_obs(3, d, n=300)
@@ -479,7 +481,7 @@ def test_a_vine_hosting_bicop_fits_and_evaluates_as_vinecop(
   np.testing.assert_array_equal(
     np.asarray(mine.structure.matrix), np.asarray(ref.structure.matrix)
   )
-  np.testing.assert_array_equal(mine.pdf(u), ref.pdf(u))
+  np.testing.assert_allclose(mine.pdf(u), ref.pdf(u), rtol=1e-12, atol=0)
 
 
 def test_a_named_pair_class_that_cannot_condition_refuses_the_context() -> None:
