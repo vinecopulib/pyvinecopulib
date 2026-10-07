@@ -68,12 +68,16 @@ runs:
           if [ "${{ inputs.pandoc }}" = "true" ]; then
             packages="$packages pandoc"
           fi
-          # The runner images point apt at an Azure mirror that is regularly
-          # unreachable from the build network; apt then spends minutes on
-          # `Ign:` retries before falling back to the canonical archive.
-          # Pointing it straight there skips that.
-          sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' \
-            /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          # The runner images point apt at an Azure mirror, and either it or the
+          # canonical archive is at times unreachable from the build network;
+          # apt then burns the attempt on `Ign:` timeouts. So the attempts use
+          # different mirrors: the image's own first, the canonical archive on
+          # a retry.
+          if [ -e "$RUNNER_TEMP/apt-attempted" ]; then
+            sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' \
+              /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          fi
+          touch "$RUNNER_TEMP/apt-attempted"
           # Acquire::Retries absorbs a single flaky mirror response inside the
           # attempt, so one 503 does not cost the whole attempt's budget;
           # Acquire::Languages=none drops translation indices nothing reads.
