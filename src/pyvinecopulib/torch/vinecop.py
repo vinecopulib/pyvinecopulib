@@ -35,6 +35,7 @@ FitControlsTorchVinecop : Fit-time controls.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable, Sequence
 from typing import (
   TYPE_CHECKING,
@@ -57,7 +58,6 @@ from ..core import (
 from ..core._validation import reject_covariates
 from ..core._vinecop_fit_engines import truncated
 from ..core.bicop_independence import IndependenceBicop
-from ..core.extend import NotBatchable
 from ..core.vinecop_base import FitEdge, FitLevel
 from ..pyvinecopulib_ext import (
   RVineStructure,
@@ -71,7 +71,6 @@ from ..pyvinecopulib_ext import (
 )
 from ..utils import sample_uniform
 from ._placement import TensorPlacementMixin, reference_tensor
-from ._vinecop_batched import BatchedVine
 from .controls import FitControlsTorchVinecop
 from .tll_bicop import TorchTllBicop
 
@@ -807,15 +806,22 @@ class TorchVinecop(
     self._compile_cascades = bool(value)
 
   def _cascade(self, name: str) -> Callable[[Tensor], Tensor]:
-    """The named batched cascade, compiled if ``compile_cascades`` is set."""
-    base = cast("Callable[[Tensor], Tensor]", getattr(super(), name))
-    if not self._compile_cascades:
-      return base
+    """The named cascade on the stacks, compiled once per name."""
     fn = self._compiled.get(name)
     if fn is None:
+      base = functools.partial(getattr(super(), name), x=None, batched=True)
       fn = self._compile_cascade(base)
       self._compiled[name] = fn
     return fn
+
+  def _compiles(self, x: Tensor | None, batched: bool) -> bool:
+    """Whether a cascade call runs compiled: on the stacks, unconditioned."""
+    return (
+      self._compile_cascades
+      and batched
+      and x is None
+      and not self._context.assembles_conditioning
+    )
 
   def _compile_cascade(
     self, base: Callable[[Tensor], Tensor]
@@ -845,17 +851,25 @@ class TorchVinecop(
 
     return graphed
 
-  # The log cascade is the compiled one, and `_pdf_batched` is its `exp`: an
-  # override on both would put one compiled graph inside another and leave two
+  # The log cascade is the compiled one, and `_pdf` is its `exp`: an override
+  # on both would put one compiled graph inside another and leave two
   # `_compiled` entries for one cascade.
-  def _logpdf_batched(self, u: Tensor) -> Tensor:
-    return self._cascade("_logpdf_batched")(u)
+  def _logpdf(self, u: Tensor, x: Tensor | None, batched: bool) -> Tensor:
+    if self._compiles(x, batched):
+      return self._cascade("_logpdf")(u)
+    return super()._logpdf(u, x, batched)
 
-  def _rosenblatt_batched(self, u: Tensor) -> Tensor:
-    return self._cascade("_rosenblatt_batched")(u)
+  def _rosenblatt(self, u: Tensor, x: Tensor | None, batched: bool) -> Tensor:
+    if self._compiles(x, batched):
+      return self._cascade("_rosenblatt")(u)
+    return super()._rosenblatt(u, x, batched)
 
-  def _inverse_rosenblatt_batched(self, u: Tensor) -> Tensor:
-    return self._cascade("_inverse_rosenblatt_batched")(u)
+  def _inverse_rosenblatt(
+    self, u: Tensor, x: Tensor | None, batched: bool
+  ) -> Tensor:
+    if self._compiles(x, batched):
+      return self._cascade("_inverse_rosenblatt")(u)
+    return super()._inverse_rosenblatt(u, x, batched)
 
   def __getstate__(self) -> dict[str, Any]:
     """The picklable state: everything except the two derived caches.
@@ -909,11 +923,10 @@ class TorchVinecop(
     *args: Any,  # noqa: ANN401
     **kwargs: Any,  # noqa: ANN401
   ) -> Self:
-    # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. The
-    # BatchedVine container holds buffers — `super()._apply` would move
-    # them, but we drop the whole structure so it gets rebuilt from the
-    # (already-moved) source pair_copulas on next use; that keeps the
-    # wire-up tensors aligned with the destination dtype/device.
+    # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. The stacks
+    # hold copies of the grids, so they are dropped and rebuilt from the
+    # (already-moved) pair copulas on next use, in the destination dtype and
+    # device.
     self._invalidate_batched()
     return cast("Self", super()._apply(fn, *args, **kwargs))
 
@@ -930,7 +943,7 @@ class TorchVinecop(
         Two entries per pair copula, in tree-then-edge order.
     """
     out: list[bool] = []
-    # The same pairs `_build_batched` precomputes, in the same order.
+    # The same pairs the stacks are built from, in the same order.
     for tree in range(self.trunc_lvl):
       for edge in range(self.d - tree - 1):
         grid = getattr(self.get_pair_copula(tree, edge), "interp_grid", None)
@@ -973,8 +986,8 @@ class TorchVinecop(
     super()._invalidate_batched()
     self._compiled = {}
 
-  def _ensure_batched(self) -> BatchedVine:
-    """The batched state, rebuilt when grad tracking has changed under it.
+  def _ensure_batched(self) -> dict[str, list[Any]]:
+    """The stacks, rebuilt when grad tracking has changed under them.
 
     The state holds a copy of each pair's grid, which goes stale in three ways a
     device move does not cover. ``requires_grad_`` flips a flag in place, so
@@ -988,8 +1001,8 @@ class TorchVinecop(
 
     Returns
     -------
-    BatchedVine
-        The memoized batched state.
+    dict
+        The memoized stacks.
     """
     signature = self._grad_signature()
     revisions = self._pair_revisions()
@@ -1007,7 +1020,7 @@ class TorchVinecop(
       # A compiled cascade was traced against the grids the stale state holds.
       object.__setattr__(self, "_compiled", {})  # noqa: PLC2801
     fresh = self._batched is None
-    out = cast("BatchedVine", super()._ensure_batched())
+    out = super()._ensure_batched()
     if fresh:
       # `object.__setattr__` on purpose: a torch subclass installs
       # `nn.Module.__setattr__`, which refuses a plain attribute.
@@ -1056,36 +1069,3 @@ class TorchVinecop(
         A ``torch.no_grad()`` context manager.
     """
     return torch.no_grad()
-
-  # ====================================================================== #
-  # Batched fast path (`batched=True`)                                       #
-  # ====================================================================== #
-  #
-  # The cascade loops live on `VinecopBase`; this hook supplies the grid state
-  # they run on -- a lazily-built `BatchedVine`.
-
-  def _build_batched(self) -> BatchedVine:
-    """Precompute the grid-batched state from this vine's ``TorchTllBicop`` pairs.
-
-    Returns
-    -------
-    BatchedVine
-        Stacked per-tree-level grids and caches for the batched cascades.
-
-    Raises
-    ------
-    NotBatchable
-        If any pair lacks the grid internals the batched path reads (it
-        declares no ``supports_batched``). The dispatch layer catches it and
-        falls back to the non-batched cascade.
-    """
-    if not all(
-      getattr(self._pair_module(t, e), "supports_batched", False)
-      for t in range(self.trunc_lvl)
-      for e in range(self.d - t - 1)
-    ):
-      raise NotBatchable(
-        "batched path requires every pair to expose grid/cache internals "
-        "(supports_batched=True); this vine has a non-grid pair copula."
-      )
-    return BatchedVine.from_torch_vinecop(self)

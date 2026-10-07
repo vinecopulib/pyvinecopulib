@@ -225,14 +225,14 @@ def test_a_margin_with_an_integer_parameter_can_still_be_sampled() -> None:
 # --- the pipeline steps as a surface an extension can reach ------------------ #
 
 
-def test_the_extension_surface_is_exactly_the_six_names() -> None:
+def test_the_extension_surface_is_exactly_the_five_names() -> None:
   """`core.extend` is pinned in **both** directions, and the count is the point.
 
   An export is a promise kept from 1.0.0 on, so the test that matters is the
   one that fails when the surface *grows*: a name earns a place by being
   needed to implement a documented hook correctly, and neither an internal
-  caller nor a private hook's docstring is that. Listing the six here is what
-  makes adding a seventh a decision rather than an import.
+  caller nor a private hook's docstring is that. Listing the five here is what
+  makes adding a sixth a decision rather than an import.
   """
   from pyvinecopulib import core
 
@@ -254,17 +254,13 @@ def test_the_extension_surface_is_exactly_the_six_names() -> None:
   for name in sorted(callables):
     assert name in exported, name
     assert callable(getattr(extend, name)), name
-  # The one name that is not a callable, and the only one required by
-  # mechanism rather than by convenience: the dispatch layer catches this
-  # exact class, so an override declining the batched cascade must raise it.
-  assert "NotBatchable" in exported
-  assert issubclass(extend.NotBatchable, Exception)
   # The closed direction. Everything else is private again -- the validators,
   # `trim`, the vine's layout step, the pair unwrapper, the fit-callback
   # aliases and the model codec -- and a subclass writes its own refusal or a
   # plain `def` instead.
-  assert exported == callables | {"NotBatchable"}, sorted(exported)
+  assert exported == callables, sorted(exported)
   for withdrawn in (
+    "NotBatchable",
     "FitEdge",
     "FitLevel",
     "MODEL_JSON_VERSION",
