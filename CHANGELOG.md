@@ -8,7 +8,7 @@
 
 ### Build / packaging
 
-- Build from source for the x86-64-v3 baseline too, as the wheels are: TLL fits ran about 2x slower in a source build. Set the CMake option `PYVINECOPULIB_X86_64_V3=OFF` to build for an older CPU (#NNN).
+- Build from source for the x86-64-v3 baseline too, as the wheels are: TLL fits ran about 2x slower in a source build. Set the CMake option `PYVINECOPULIB_X86_64_V3=OFF` to build for an older CPU (#373).
 
 ## 1.0.1 (2026-10-06)
 
