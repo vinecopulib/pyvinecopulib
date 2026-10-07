@@ -378,6 +378,53 @@ def test_bicop_class_fits_without_a_fit_edge_callback() -> None:
   assert isinstance(vine.get_pair_copula(0, 0), pv.Bicop)
 
 
+_TRUNCATIONS = [(5, 2), (2, None), (2, 3), (2, 2), (0, 3)]
+
+
+@pytest.mark.parametrize(("own", "asked"), _TRUNCATIONS)
+@pytest.mark.parametrize("discrete", [False, True])
+@pytest.mark.parametrize("family", ["tll", "itau"])
+def test_a_given_structure_is_fitted_to_the_controls_truncation(
+  own: int, asked: int | None, discrete: bool, family: str
+) -> None:
+  # As `Vinecop.from_data` fits a given structure: `controls.trunc_lvl` decides
+  # how many trees, truncating the structure or selecting the trees above its
+  # own level -- including under the default, untruncated controls.
+  d = 6
+  structure = pv.RVineStructure.sample(d, seeds=[3])
+  if own < d - 1:
+    structure.truncate(own)
+  u = _correlated_pseudo_obs(2, d, n=300)
+  var_types = ["d", "c", "c", "d", "c", "c"] if discrete else None
+  if var_types is not None:
+    values, limits = u.copy(), []
+    for j, t in enumerate(var_types):
+      if t == "d":
+        k = np.ceil(u[:, j] * 5)
+        values[:, j] = k / 5
+        limits.append((k - 1) / 5)
+    u = np.column_stack([values, *limits])
+  settings: dict[str, Any] = {
+    "family_set": [pv.families.tll] if family == "tll" else pv.families.itau
+  }
+  if asked is not None:
+    settings["trunc_lvl"] = asked
+  controls = pv.FitControlsVinecop(**settings)
+  ref = pv.Vinecop.from_data(
+    u, controls, structure=structure, var_types=var_types or []
+  )
+  mine = _BicopVine.from_data(
+    u, controls=controls, structure=structure, var_types=var_types
+  )
+  assert mine.structure.trunc_lvl == ref.structure.trunc_lvl
+  np.testing.assert_array_equal(
+    np.asarray(mine.structure.matrix), np.asarray(ref.structure.matrix)
+  )
+  np.testing.assert_array_equal(mine.pdf(u), ref.pdf(u))
+  # The caller's structure is left as it was.
+  assert structure.trunc_lvl == min(own, d - 1)
+
+
 def test_a_named_pair_class_that_cannot_condition_refuses_the_context() -> None:
   """An unconditional pair class must not be fitted under a conditional vine.
 

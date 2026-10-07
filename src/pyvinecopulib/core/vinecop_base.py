@@ -88,6 +88,7 @@ from ._vinecop_fit_engines import (
   FitLevel,
   fit_parts,
   select_parts,
+  truncated,
 )
 from ._vinecop_plot import (
   VINECOP_PLOT_PARAMS,
@@ -2314,7 +2315,10 @@ class VinecopBase(
     controls : ControlsLike, or None, optional
         Fit configuration; see :meth:`select`.
     structure : RVineStructure, or None, optional
-        A fixed structure. Selected from the data when ``None``.
+        A fixed structure. Selected from the data when ``None``. As with
+        ``Vinecop.from_data``, ``controls.trunc_lvl`` decides how many trees
+        are fitted: fewer truncates the structure, and more selects the trees
+        above its own truncation level.
     var_types : list of str, or None, optional
         One ``"c"`` or ``"d"`` per variable.
     x : array, shape (n, p), or None, optional
@@ -2366,19 +2370,36 @@ class VinecopBase(
       )
     else:
       options = _selection_options(controls)
-      pair_copulas = cls._fit_parts(
-        structure,
-        u,
-        resolved,
-        x=x,
-        var_types=var_types,
-        fit_level=level_fitter,
-        eval_level=level_evaluator,
-        tree_criterion=options.get("tree_criterion", "tau"),
-        threshold=options.get("threshold", 0.0),
-        weights=options.get("weights"),
-        criterion_function=options.get("criterion_function"),
-      )
+      # As `Vinecop.select` treats the structure it holds: the controls'
+      # truncation level wins, the trees above the structure's own selected.
+      depth = min(options.get("trunc_lvl", _NO_TRUNCATION), structure.dim - 1)
+      if depth > structure.trunc_lvl:
+        cls._check_selectable(fit_edge)
+        structure, pair_copulas, cond_order = cls._select_parts(
+          u,
+          resolved,
+          x=x,
+          var_types=var_types,
+          fit_level=level_fitter,
+          eval_level=level_evaluator,
+          structure=structure,
+          **options,
+        )
+      else:
+        structure = truncated(structure, depth)
+        pair_copulas = cls._fit_parts(
+          structure,
+          u,
+          resolved,
+          x=x,
+          var_types=var_types,
+          fit_level=level_fitter,
+          eval_level=level_evaluator,
+          tree_criterion=options.get("tree_criterion", "tau"),
+          threshold=options.get("threshold", 0.0),
+          weights=options.get("weights"),
+          criterion_function=options.get("criterion_function"),
+        )
     # The canonical constructor, which is the signature every `VinecopBase`
     # subclass in the package uses; one whose `__init__` differs overrides
     # `from_data` itself, as `TorchVinecop` does.

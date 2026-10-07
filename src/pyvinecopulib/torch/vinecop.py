@@ -55,6 +55,7 @@ from ..core import (
   VinecopBase,
 )
 from ..core._validation import reject_covariates
+from ..core._vinecop_fit_engines import truncated
 from ..core.bicop_independence import IndependenceBicop
 from ..core.extend import NotBatchable
 from ..core.vinecop_base import EvalLevel, FitEdge, FitLevel
@@ -575,8 +576,10 @@ class TorchVinecop(
     with the pair copulas selected along it, honoring the ``trunc_lvl`` /
     ``tree_criterion`` / ``threshold`` / ``tree_algorithm`` / ``seeds`` /
     ``conditioning_set`` settings on ``controls``. A supplied ``structure`` is
-    taken as given and only its pair copulas are fitted, ``threshold`` still
-    leaving an edge below it independent. Either way the result reproduces a
+    fitted as ``Vinecop.from_data`` fits one: ``trunc_lvl`` decides how many
+    trees, truncating the structure or selecting the trees above its own
+    truncation level, and ``threshold`` still leaves an edge below it
+    independent. Either way the result reproduces a
     ``Vinecop`` TLL fit **run with the same controls**: the selected structure
     down to its matrix encoding, the density to floating-point tolerance. The
     defaults now agree too -- both leave the vine untruncated -- where
@@ -687,18 +690,39 @@ class TorchVinecop(
         raise ValueError(
           f"structure.dim={structure.dim} does not match the vine dimension {d}"
         )
-      # Fixed structure: fit the pairs tree by tree along it
-      # (SimplifiedContext -> x_e=None).
-      pairs = cls._fit_parts(
-        structure,
-        u_t,
-        pair_fitter,
-        var_types=list(var_types or []) or None,
-        fit_level=level_hook,
-        eval_level=eval_hook,
-        tree_criterion=resolved.tree_criterion,
-        threshold=resolved.threshold,
-      )
+      # As `Vinecop.from_data`: the controls' truncation level wins, and the
+      # trees above the structure's own are selected.
+      depth = d - 1 if resolved.trunc_lvl is None else resolved.trunc_lvl
+      depth = min(depth, d - 1)
+      if depth > structure.trunc_lvl:
+        structure, pairs, cond_order = cls._select_parts(
+          u_t,
+          pair_fitter,
+          fit_level=level_hook,
+          eval_level=eval_hook,
+          trunc_lvl=depth,
+          tree_criterion=resolved.tree_criterion,
+          threshold=resolved.threshold,
+          tree_algorithm=resolved.tree_algorithm,
+          seeds=list(resolved.seeds),
+          var_types=list(var_types or []) or None,
+          conditioning_set=list(resolved.conditioning_set) or None,
+          structure=structure,
+        )
+      else:
+        # Fixed structure: fit the pairs tree by tree along it
+        # (SimplifiedContext -> x_e=None).
+        structure = truncated(structure, depth)
+        pairs = cls._fit_parts(
+          structure,
+          u_t,
+          pair_fitter,
+          var_types=list(var_types or []) or None,
+          fit_level=level_hook,
+          eval_level=eval_hook,
+          tree_criterion=resolved.tree_criterion,
+          threshold=resolved.threshold,
+        )
     # Only real `nn.Module`s go in the ModuleList. A thresholded edge arrives
     # as a `core.IndependenceBicop`, which is not one; the no-argument
     # `TorchTllBicop` is independence exactly, so it stands in.

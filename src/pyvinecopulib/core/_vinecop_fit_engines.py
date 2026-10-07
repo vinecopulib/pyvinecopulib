@@ -20,6 +20,7 @@ call helpers.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Sequence
 from typing import Any, cast
 
@@ -43,7 +44,14 @@ from .bicop_independence import IndependenceBicop
 from .protocols import ArrayT, BicopLike, Namespace, array_namespace
 from .vinecop_context import ConditioningContext, SimplifiedContext
 
-__all__ = ["EvalLevel", "FitEdge", "FitLevel", "fit_parts", "select_parts"]
+__all__ = [
+  "EvalLevel",
+  "FitEdge",
+  "FitLevel",
+  "fit_parts",
+  "select_parts",
+  "truncated",
+]
 
 
 def _make_criterion(
@@ -487,6 +495,28 @@ def fit_parts(
   return pairs
 
 
+def truncated(structure: RVineStructure, trunc_lvl: int) -> RVineStructure:
+  """``structure`` cut at ``trunc_lvl`` trees, as a copy when that cuts it.
+
+  Parameters
+  ----------
+  structure : RVineStructure
+      The structure to cut.
+  trunc_lvl : int
+      The number of trees to keep.
+
+  Returns
+  -------
+  RVineStructure
+      ``structure`` itself when it has no more trees than that, else a copy.
+  """
+  if trunc_lvl >= int(structure.trunc_lvl):
+    return structure
+  out = copy.deepcopy(structure)
+  out.truncate(trunc_lvl)
+  return out
+
+
 def select_parts(
   u: ArrayT,
   fit_edge: FitEdge,
@@ -504,6 +534,7 @@ def select_parts(
   conditioning_set: list[int] | None = None,
   weights: ArrayT | None = None,
   criterion_function: Callable[[Any], float] | None = None,
+  structure: RVineStructure | None = None,
 ) -> tuple[
   RVineStructure,
   list[list[BicopLike[ArrayT]]],
@@ -575,6 +606,10 @@ def select_parts(
       See ``fit_parts``. Edge weights read the unconditional
       pseudo-observations even under a non-simplified selection, so a
       ``tree_criterion`` that conditions is supplied through this.
+  structure : RVineStructure, or None, optional
+      A structure whose trees up to its own ``trunc_lvl`` are kept rather than
+      selected; the trees above it are selected as usual. As
+      ``Vinecop.select`` treats the vine's current structure.
 
   Returns
   -------
@@ -672,6 +707,14 @@ def select_parts(
   # A node is one edge of the previous tree, or a single variable in the base
   # tree. ``prev`` holds the two vertex ids it joined; a shared one is the
   # proximity condition and picks which h-function feeds the next tree.
+  # With a structure given, vertex `j` is the variable at natural position `j`,
+  # as `make_base_tree` numbers it, so its trees can be read off `min_array`.
+  base = (
+    list(range(d))
+    if structure is None
+    else [int(v) - 1 for v in structure.order]
+  )
+  kept = 0 if structure is None else int(structure.trunc_lvl)
   nodes: list[dict[str, Any]] = [
     {
       "all_indices": (i,),
@@ -680,14 +723,14 @@ def select_parts(
       "h1_sub": u[:, d + offsets[i]] if types[i] == "d" else None,
       "h2_sub": None,
       "types": ("d", "d") if types[i] == "d" else ("c", "c"),
-      "prev": (root, i),
+      "prev": (root, j),
       # Per endpoint: the conditioning chain an edge built on this node
       # inherits when that endpoint is its diagonal, extended by the
       # variable this node conditioned away. A base-tree node conditions on
       # nothing, so a first-tree edge starts from an empty chain.
       "ext": {i: ()},
     }
-    for i in range(d)
+    for j, i in enumerate(base)
   ]
 
   trees: list[list[tuple[int, int, list[int]]]] = []
@@ -704,66 +747,80 @@ def select_parts(
     cand_types: list[tuple[str, str]] = []
     cand_crits: list[float] = []
     edge_costs: list[float] = []
-    # Candidate enumeration mirrors the C++ selector exactly
-    # (tools_select.ipp add_allowed_edges_proximity): the outer loop runs
-    # over v0 and the inner over v1 < v0, so an edge's *first* endpoint v0 —
-    # which contributes pc_data column 0 and the first conditioned variable —
-    # is the larger vertex index, and candidate insertion order is preserved.
-    for v0 in range(m):
+
+    tree = len(trees)
+    endpoints: list[tuple[int, int]]
+    if structure is not None and tree < kept:
+      # A kept tree: its edges in the structure's own order, as
+      # `add_allowed_edges` lays them down for a known structure.
+      endpoints = [
+        (v0, int(structure.min_array(tree, v0)) - 1) for v0 in range(m - 1)
+      ]
+    else:
+      # Candidate enumeration mirrors the C++ selector exactly
+      # (tools_select.ipp add_allowed_edges_proximity): the outer loop runs
+      # over v0 and the inner over v1 < v0, so an edge's *first* endpoint v0 —
+      # which contributes pc_data column 0 and the first conditioned variable —
+      # is the larger vertex index, and candidate insertion order is preserved.
+      endpoints = [(v0, v1) for v0 in range(m) for v1 in range(v0)]
+    for v0, v1 in endpoints:
       prev0 = nodes[v0]["prev"]
-      for v1 in range(v0):
-        prev1 = nodes[v1]["prev"]
-        shared = set(prev0) & set(prev1)
-        if not shared:
-          continue
-        common = min(shared)
-        pos0, pos1 = prev0.index(common), prev1.index(common)
-        col0 = nodes[v0]["h1"] if pos0 == 0 else nodes[v0]["h2"]
-        col1 = nodes[v1]["h1"] if pos1 == 0 else nodes[v1]["h2"]
-        # The h-function comes from slot `pos`, the type from the *other*
-        # slot: an h-function integrates out its conditioning variable and
-        # keeps the other one (`add_pc_info`).
-        edge_types = (
-          nodes[v0]["types"][1 - pos0],
-          nodes[v1]["types"][1 - pos1],
+      prev1 = nodes[v1]["prev"]
+      shared = set(prev0) & set(prev1)
+      if not shared:
+        continue
+      common = min(shared)
+      pos0, pos1 = prev0.index(common), prev1.index(common)
+      col0 = nodes[v0]["h1"] if pos0 == 0 else nodes[v0]["h2"]
+      col1 = nodes[v1]["h1"] if pos1 == 0 else nodes[v1]["h2"]
+      # The h-function comes from slot `pos`, the type from the *other*
+      # slot: an h-function integrates out its conditioning variable and
+      # keeps the other one (`add_pc_info`).
+      edge_types = (
+        nodes[v0]["types"][1 - pos0],
+        nodes[v1]["types"][1 - pos1],
+      )
+      subs: tuple[Any, Any] | None = None
+      if "d" in edge_types:
+        # A slot without a left limit is continuous, and its own value is
+        # its left limit (`get_hfunc_sub`).
+        sub0 = nodes[v0]["h1_sub" if pos0 == 0 else "h2_sub"]
+        sub1 = nodes[v1]["h1_sub" if pos1 == 0 else "h2_sub"]
+        subs = (
+          col0 if sub0 is None else sub0,
+          col1 if sub1 is None else sub1,
         )
-        subs: tuple[Any, Any] | None = None
-        if "d" in edge_types:
-          # A slot without a left limit is continuous, and its own value is
-          # its left limit (`get_hfunc_sub`).
-          sub0 = nodes[v0]["h1_sub" if pos0 == 0 else "h2_sub"]
-          sub1 = nodes[v1]["h1_sub" if pos1 == 0 else "h2_sub"]
-          subs = (
-            col0 if sub0 is None else sub0,
-            col1 if sub1 is None else sub1,
-          )
-        # The edge weight reads the value columns only, so the spanning tree
-        # a discrete vine selects is the one it would select continuous.
-        tau = criterion(col0, col1)
-        weight = 1.0 - (tau >= threshold) * tau
-        if cond:
-          # Base weights lie in [0, 1], so adding `d` keeps them non-negative
-          # (Prim requires it) while making every all-conditioning edge
-          # strictly cheaper: the minimum spanning tree lays down the
-          # conditioning set's own optimal sub-vine first at every tree, which
-          # is what makes it a block the relabeling can move to the tail
-          # (tools_select.ipp add_allowed_edges_proximity).
-          all_cond = all(in_cond[i] for i in nodes[v0]["all_indices"]) and all(
-            in_cond[i] for i in nodes[v1]["all_indices"]
-          )
-          if not all_cond:
-            weight += float(d)
-        cand.append((v0, v1))
-        cand_cols.append((col0, col1))
-        cand_subs.append(subs)
-        cand_types.append(edge_types)
-        cand_crits.append(float(tau))
-        edge_costs.append(weight)
+      # The edge weight reads the value columns only, so the spanning tree
+      # a discrete vine selects is the one it would select continuous.
+      tau = criterion(col0, col1)
+      weight = 1.0 - (tau >= threshold) * tau
+      if cond:
+        # Base weights lie in [0, 1], so adding `d` keeps them non-negative
+        # (Prim requires it) while making every all-conditioning edge
+        # strictly cheaper: the minimum spanning tree lays down the
+        # conditioning set's own optimal sub-vine first at every tree, which
+        # is what makes it a block the relabeling can move to the tail
+        # (tools_select.ipp add_allowed_edges_proximity).
+        all_cond = all(in_cond[i] for i in nodes[v0]["all_indices"]) and all(
+          in_cond[i] for i in nodes[v1]["all_indices"]
+        )
+        if not all_cond:
+          weight += float(d)
+      cand.append((v0, v1))
+      cand_cols.append((col0, col1))
+      cand_subs.append(subs)
+      cand_types.append(edge_types)
+      cand_crits.append(float(tau))
+      edge_costs.append(weight)
 
     # Ascending candidate index = boost's edge-list (insertion) order, which
     # is the order the C++ selector iterates surviving edges in.
-    selected = sorted(
-      _select_spanning_tree(m, cand, edge_costs, tree_algorithm, seed_list)
+    selected = (
+      list(range(len(cand)))
+      if tree < kept
+      else sorted(
+        _select_spanning_tree(m, cand, edge_costs, tree_algorithm, seed_list)
+      )
     )
 
     tree_edges: list[tuple[int, int, list[int]]] = []
