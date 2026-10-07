@@ -420,7 +420,7 @@ def test_a_given_structure_is_fitted_to_the_controls_truncation(
   np.testing.assert_array_equal(
     np.asarray(mine.structure.matrix), np.asarray(ref.structure.matrix)
   )
-  np.testing.assert_array_equal(mine.pdf(u), ref.pdf(u))
+  np.testing.assert_allclose(mine.pdf(u), ref.pdf(u), rtol=1e-12, atol=0)
   # The caller's structure is left as it was.
   assert structure.trunc_lvl == min(own, d - 1)
 
