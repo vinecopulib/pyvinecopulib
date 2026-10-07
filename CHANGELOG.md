@@ -2,6 +2,10 @@
 
 ## 1.1.0 (unreleased)
 
+### New features in `pyvinecopulib`
+
+- Fit a `VinecopBase` subclass a tree level at a time whatever pair class it hosts: one whose pair class fits a stack in one call, as `TorchTllBicop.from_data_batched` does, batches under `batched_fit`, and one hosting `Bicop` fits each level's pairs on a thread pool when `controls.num_threads` exceeds one, bit for bit the serial fit (#PRNUM).
+
 ## 1.0.1 (2026-10-06)
 
 ### Breaking API changes in `pyvinecopulib`

@@ -378,6 +378,59 @@ def test_bicop_class_fits_without_a_fit_edge_callback() -> None:
   assert isinstance(vine.get_pair_copula(0, 0), pv.Bicop)
 
 
+def _with_atoms(
+  u: np.ndarray, var_types: list[str], levels: int = 5
+) -> np.ndarray:
+  """``u`` with the ``"d"`` columns on a grid, plus their left limits."""
+  values, limits = u.copy(), []
+  for j, t in enumerate(var_types):
+    if t == "d":
+      k = np.ceil(u[:, j] * levels)
+      values[:, j] = k / levels
+      limits.append((k - 1) / levels)
+  return np.column_stack([values, *limits])
+
+
+@pytest.mark.parametrize("discrete", [False, True])
+@pytest.mark.parametrize("given_structure", [True, False])
+def test_a_pooled_level_fit_equals_the_serial_one(
+  discrete: bool, given_structure: bool
+) -> None:
+  # `num_threads > 1` fits each level's pairs on a thread pool. The pairs are
+  # independent fits, so the vine is the serial one, bit for bit.
+  d = 5
+  var_types = ["d", "c", "c", "d", "c"] if discrete else None
+  u = _correlated_pseudo_obs(3, d, n=300)
+  if var_types is not None:
+    u = _with_atoms(u, var_types)
+  structure = (
+    pv.RVineStructure.from_order(list(range(1, d + 1)))
+    if given_structure
+    else None
+  )
+
+  def fit(threads: int) -> _BicopVine:
+    controls = pv.FitControlsVinecop(
+      family_set=[pv.families.tll], num_threads=threads
+    )
+    return _BicopVine.from_data(
+      u, controls=controls, structure=structure, var_types=var_types
+    )
+
+  pooled_controls = pv.FitControlsVinecop(num_threads=4)
+  assert _BicopVine._resolve_fit_level(None, None, pooled_controls, u)
+  # A caller's `fit_edge` keeps the pool out, or it would never be called.
+  assert (
+    _BicopVine._resolve_fit_level(None, _tll_fit_edge, pooled_controls, u)
+    is None
+  )
+  serial, pooled = fit(1), fit(4)
+  np.testing.assert_array_equal(
+    np.asarray(pooled.structure.matrix), np.asarray(serial.structure.matrix)
+  )
+  np.testing.assert_array_equal(pooled.pdf(u), serial.pdf(u))
+
+
 def test_a_named_pair_class_that_cannot_condition_refuses_the_context() -> None:
   """An unconditional pair class must not be fitted under a conditional vine.
 

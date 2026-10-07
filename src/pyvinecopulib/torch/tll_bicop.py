@@ -34,13 +34,14 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from ..core import BicopBase, ControlsLike
+from ..core import BicopBase, BicopLike, ControlsLike
 from ..core._trim import trim
 from ..core._validation import reject_covariates
 from ..pyvinecopulib_ext import Bicop
 from ..pyvinecopulib_ext import tll as _TLL_FAMILY
 from ._bicop_interp import InterpolationGrid2D, prefix_tables
 from ._placement import TENSOR_NS
+from ._vinecop_batched import BatchedTreeLevel
 from .controls import FitControlsTorchBicop
 
 
@@ -432,6 +433,82 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       device=device,
       dtype=dtype,
     )
+
+  @staticmethod
+  def _stacked_level_hfuncs(
+    pairs: Sequence[BicopLike[Tensor]],
+    u: Tensor,
+    types: list[tuple[str, str]],
+  ) -> tuple[Tensor, Tensor, Tensor, Tensor] | None:
+    """A fitted level's h-functions at its own inputs, in stacked calls.
+
+    What the fit engines evaluate one edge at a time -- ``hfunc1`` and
+    ``hfunc2``, and on a discrete edge each with the other argument at its left
+    limit -- through the level the batched cascades evaluate. Only
+    ``TorchTllBicop`` pairs holding their prefix tables on one shared grid
+    stack; anything else is declined and evaluated edge by edge.
+
+    Parameters
+    ----------
+    pairs : sequence of BicopLike
+        The level's fitted pairs.
+    u : Tensor, shape (P, n, 2) or (P, n, 4), dtype float
+        Their inputs, laid out as a level fitter receives them.
+    types : list of tuple of str
+        Each pair's variable types.
+
+    Returns
+    -------
+    tuple of Tensor, or None
+        ``(h1, h2, h1_sub, h2_sub)``, each ``(P, n)``, or ``None`` when the
+        pairs do not stack.
+    """
+    # The exact class, since a subclass may evaluate differently.
+    grids = [
+      p
+      for p in pairs
+      if type(p) is TorchTllBicop and not p.is_indep and p._sy is not None
+    ]
+    if len(grids) != len(pairs):
+      return None
+    ref = grids[0].interp_grid
+    if any(
+      p.interp_grid.values.shape != ref.values.shape
+      or p.interp_grid._is_linear != ref._is_linear
+      for p in grids
+    ):
+      return None
+    gp = ref.grid_points
+    if not bool(
+      torch.stack([p.interp_grid.grid_points for p in grids]).eq(gp).all()
+    ):
+      return None
+    tables = [p._tables() for p in grids]
+    # Built on the host, where locating each quotient's pairs needs no device
+    # sync, and moved over with the level.
+    disc1 = torch.tensor([t[0] == "d" for t in types])
+    disc2 = torch.tensor([t[1] == "d" for t in types])
+    every = torch.ones(len(grids), dtype=torch.bool)
+    first = torch.zeros(len(grids), dtype=torch.long)
+    level = BatchedTreeLevel(
+      values=torch.stack([p.interp_grid.values for p in grids]),
+      sy=torch.stack([t[0] for t in tables]),
+      sy_t=torch.stack([t[1].t() for t in tables]),
+      is_indep=~every,
+      # Only the evaluation is used, so the wiring into a vine's scratch is a
+      # placeholder.
+      col0_src=first,
+      col1_src=first,
+      col1_use_h1=~every,
+      needs_h1=every,
+      needs_h2=every,
+      disc1=disc1,
+      disc2=disc2,
+      grid_points=gp,
+      is_linear=ref._is_linear,
+    ).to(device=u.device)
+    _, h1, h2, h1_sub, h2_sub = level.eval_discrete(gp, u, with_pdf=False)
+    return h1, h2, h1_sub, h2_sub
 
   @classmethod
   def from_data_batched(

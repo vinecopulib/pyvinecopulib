@@ -59,6 +59,7 @@ import contextlib
 import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import (
   Any,
   ClassVar,
@@ -2045,6 +2046,19 @@ class VinecopBase(
     return fit_edge_default
 
   @classmethod
+  def _batches_fit(cls, controls: ControlsLike | None, u: ArrayT) -> bool:
+    """Whether a fit works a level at a time: ``controls.batched_fit``.
+
+    ``None``, or controls without the field, resolves per device, as the
+    evaluation cascade's ``batched`` does: a level-wide call buys launch
+    amortization, which only an accelerator has.
+    """
+    batched = getattr(controls, "batched_fit", None)
+    if batched is None:
+      return bool(getattr(getattr(u, "device", None), "type", None) == "cuda")
+    return bool(batched)
+
+  @classmethod
   def _resolve_fit_level(
     cls,
     fit_level: FitLevel | None,
@@ -2054,10 +2068,12 @@ class VinecopBase(
   ) -> FitLevel | None:
     """The level fitter to use, or ``None`` to fit edge by edge.
 
-    The caller's ``fit_level`` as given. A lane with a stacked fitter of its
-    own overrides this to supply it, and must not do so when the caller
-    passed a ``fit_edge``: the engines prefer a level fitter wherever one
-    applies, so supplying one there would replace the caller's fitter.
+    The caller's ``fit_level`` wins. Otherwise ``bicop_class``'s own
+    ``from_data_batched`` where the fit batches, else its ``from_data`` on a
+    thread pool of ``controls.num_threads`` workers when that exceeds one.
+    A caller's ``fit_edge`` keeps both out: the engines prefer a level fitter
+    wherever one applies, so supplying one there would replace the caller's
+    fitter.
 
     Parameters
     ----------
@@ -2075,8 +2091,38 @@ class VinecopBase(
     callable, or None
         The level fitter.
     """
-    del fit_edge, controls, u
-    return fit_level
+    if fit_level is not None or fit_edge is not None:
+      return fit_level
+    pair_cls = cls.bicop_class
+    if pair_cls is None:
+      return None
+    stacked_fit = getattr(pair_cls, "from_data_batched", None)
+    if stacked_fit is not None and cls._batches_fit(controls, u):
+
+      def fit_level_stacked(
+        tree: int, u_level: ArrayT, types: list[tuple[str, str]]
+      ) -> Sequence[BicopLike[ArrayT]]:
+        del tree  # a level reaching here is simplified
+        return stacked_fit(u_level, controls, var_types=types)
+
+      return fit_level_stacked
+    workers = int(getattr(controls, "num_threads", 1) or 1)
+    if workers <= 1:
+      return None
+    fit_pair = cls._resolve_fit_edge(None, controls)
+
+    def fit_level_pooled(
+      tree: int, u_level: ArrayT, types: list[tuple[str, str]]
+    ) -> Sequence[BicopLike[ArrayT]]:
+      def fit_one(p: int) -> BicopLike[ArrayT]:
+        # A continuous edge is stacked with its values as its own left limits.
+        u_e = u_level[p] if "d" in types[p] else u_level[p][:, :2]
+        return fit_pair(tree, p, u_e, None, types[p])
+
+      with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(fit_one, range(len(types))))
+
+    return fit_level_pooled
 
   @classmethod
   def _resolve_eval_level(
@@ -2084,8 +2130,8 @@ class VinecopBase(
   ) -> EvalLevel | None:
     """The stacked h-function evaluator a fit uses, or ``None``.
 
-    ``None`` here, so a fit evaluates each fitted pair on its own. A lane
-    that can evaluate a level's pairs together overrides this.
+    ``bicop_class``'s own ``_stacked_level_hfuncs`` where the fit batches;
+    otherwise ``None``, so a fit evaluates each fitted pair on its own.
 
     Parameters
     ----------
@@ -2099,8 +2145,10 @@ class VinecopBase(
     callable, or None
         The level evaluator.
     """
-    del controls, u
-    return None
+    evaluate = getattr(cls.bicop_class, "_stacked_level_hfuncs", None)
+    if evaluate is None or not cls._batches_fit(controls, u):
+      return None
+    return cast("EvalLevel", evaluate)
 
   #: The two fit engines, module functions in ``_vinecop_fit_engines`` --
   #: neither
@@ -2181,8 +2229,10 @@ class VinecopBase(
         where a continuous edge's left limits are its own values; ``types``
         says which edge is which. A level whose pairs see a conditioning
         context is fitted edge by edge. ``None`` leaves the choice to the
-        class, which fits edge by edge unless it has a level fitter of its
-        own and no ``fit_edge`` was given.
+        class, which fits edge by edge unless no ``fit_edge`` was given and
+        either ``bicop_class`` fits a stack in one call or
+        ``controls.num_threads`` exceeds one, which fits a level's pairs on a
+        thread pool.
 
     Returns
     -------
