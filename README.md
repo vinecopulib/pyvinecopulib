@@ -222,9 +222,10 @@ send a mail to <info@vinecopulib.org>.
 
 ## Installation
 
-On x86-64, the distributed wheels require the x86-64-v3 ISA baseline (AVX2 and
-FMA). The package checks this before loading its native extension and explains
-how to use a source build when a CPU or VM masks those features.
+On x86-64, the distributed wheels and source builds require the x86-64-v3 ISA
+baseline (AVX2 and FMA). The package checks this before loading its native
+extension and explains how to build for the plain baseline when a CPU or VM
+masks those features.
 
 ### With pip
 

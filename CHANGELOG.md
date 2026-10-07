@@ -6,6 +6,10 @@
 
 - Fit a given structure to `controls.trunc_lvl` in `VinecopBase.from_data` and `TorchVinecop.from_data`, as `Vinecop.from_data` does: fewer trees truncate it, and more are selected above its own truncation level, which the default untruncated controls ask for. Both fitted the structure as given, so a lane disagreed with `Vinecop` on the same call (#372).
 
+### Build / packaging
+
+- Build from source for the x86-64-v3 baseline too, as the wheels are: TLL fits ran about 2x slower in a source build. Set the CMake option `PYVINECOPULIB_X86_64_V3=OFF` to build for an older CPU (#NNN).
+
 ## 1.0.1 (2026-10-06)
 
 ### Breaking API changes in `pyvinecopulib`

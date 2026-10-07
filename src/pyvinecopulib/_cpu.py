@@ -111,8 +111,8 @@ def require_x86_64_v3() -> None:
     # worse than letting the loader report an unsupported instruction.
     return
   raise ImportError(
-    "This pyvinecopulib x86-64 wheel is compiled for the x86-64-v3 "
-    "instruction set, and this CPU does not report AVX2 and FMA. Build from "
-    "source instead -- `pip install --no-binary pyvinecopulib pyvinecopulib` "
-    "-- which targets the x86-64 baseline."
+    "This pyvinecopulib build is compiled for the x86-64-v3 instruction "
+    "set, and this CPU does not report AVX2 and FMA. Build from source for "
+    "the x86-64 baseline instead: `pip install --no-binary pyvinecopulib "
+    "-C cmake.define.PYVINECOPULIB_X86_64_V3=OFF pyvinecopulib`."
   )
