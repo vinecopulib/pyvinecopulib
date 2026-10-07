@@ -4,7 +4,7 @@
 
 ### Bug fixes in `pyvinecopulib`
 
-- Fit a given structure to `controls.trunc_lvl` in `VinecopBase.from_data` and `TorchVinecop.from_data`, as `Vinecop.from_data` does: fewer trees truncate it, and more are selected above its own truncation level, which the default untruncated controls ask for. Both fitted the structure as given, so a lane disagreed with `Vinecop` on the same call (#PRNUM).
+- Fit a given structure to `controls.trunc_lvl` in `VinecopBase.from_data` and `TorchVinecop.from_data`, as `Vinecop.from_data` does: fewer trees truncate it, and more are selected above its own truncation level, which the default untruncated controls ask for. Both fitted the structure as given, so a lane disagreed with `Vinecop` on the same call (#372).
 
 ## 1.0.1 (2026-10-06)
 
