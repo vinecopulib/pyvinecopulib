@@ -63,21 +63,29 @@ include(lib/vinecopulib/cmake/options.cmake REQUIRED)
 
 include(lib/vinecopulib/cmake/compilerDefOpt.cmake REQUIRED)
 
-# Distributed wheels target x86-64-v3 (AVX2 + FMA, i.e. CPUs since ~2013). macOS
-# arm64 and MSVC get nothing: the arm64 baseline is already ARMv8.4, and an
-# /arch: flag would move contraction behavior on one leg of five.
-set(PYVINECOPULIB_X86_64_V3 OFF)
-if(DEFINED ENV{CIBUILDWHEEL}
+# x86-64 builds target x86-64-v3 (AVX2 + FMA, i.e. CPUs since ~2013), the
+# distributed wheels always. macOS arm64 and MSVC get nothing: the arm64
+# baseline is already ARMv8.4, and an /arch: flag would move contraction
+# behavior on one leg of five. A native-arch build tunes for the build machine
+# instead, and a later -march would override it.
+option(PYVINECOPULIB_X86_64_V3
+       "Target the x86-64-v3 baseline (AVX2 + FMA) on x86-64" ON)
+if(DEFINED ENV{CIBUILDWHEEL})
+  set(PYVINECOPULIB_X86_64_V3 ON)
+endif()
+if(NOT PYVINECOPULIB_NATIVE_ARCH
+   AND PYVINECOPULIB_X86_64_V3
    AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
    AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
   string(APPEND CMAKE_CXX_FLAGS_RELEASE " -march=x86-64-v3")
-  set(PYVINECOPULIB_X86_64_V3 ON)
+else()
+  set(PYVINECOPULIB_X86_64_V3 OFF)
 endif()
 
 # The import-time CPU check must know whether *this* build actually needs the
-# baseline: applied only above, so an ordinary source build on a pre-AVX2 CPU is
-# correct and must not be refused. Written as Python because the check has to
-# run before the extension is loaded.
+# baseline: a build without it is correct on a pre-AVX2 CPU and must not be
+# refused. Written as Python because the check has to run before the extension
+# is loaded.
 if(PYVINECOPULIB_X86_64_V3)
   set(_pvc_requires_v3 "True")
 else()

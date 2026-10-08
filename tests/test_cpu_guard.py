@@ -23,9 +23,9 @@ def test_guard_explains_missing_features(
 def test_guard_is_silent_for_a_baseline_build(
   monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-  # `-march=x86-64-v3` is applied only to a cibuildwheel build, so an ordinary
-  # source build is correct on a pre-AVX2 CPU and must not be refused -- the
-  # message would tell the user to do what they already did.
+  # A build with `PYVINECOPULIB_X86_64_V3=OFF` is correct on a pre-AVX2 CPU and
+  # must not be refused -- the message would tell the user to do what they
+  # already did.
   monkeypatch.setattr(_cpu.platform, "machine", lambda: "x86_64")
   monkeypatch.setattr(_cpu, "_requires_x86_64_v3", lambda: False)
   monkeypatch.setattr(_cpu, "_has_x86_64_v3", lambda: False)
