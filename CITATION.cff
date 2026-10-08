@@ -23,7 +23,6 @@ keywords:
   - simulation
   - Python
 license: MIT
-version: 1.0.1
-date-released: '2026-10-06'
+version: 1.1.0
 repository-code: https://github.com/vinecopulib/pyvinecopulib
 url: https://pyvinecopulib.readthedocs.io
