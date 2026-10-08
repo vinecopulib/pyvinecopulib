@@ -1623,6 +1623,38 @@ def test_batched_fit_matches_the_per_edge_fit_on_a_discrete_vine(
   )
 
 
+@pytest.mark.parametrize(("own", "asked"), [(5, 2), (2, None), (2, 3), (0, 3)])
+def test_a_given_structure_is_fitted_to_the_controls_truncation(
+  own: int, asked: int | None
+) -> None:
+  # The truncation `Vinecop.from_data` fits a given structure to: fewer trees
+  # truncate it, more are selected above its own level.
+  d = 6
+  structure = pv.RVineStructure.sample(d, seeds=[3])
+  if own < d - 1:
+    structure.truncate(own)
+  u = banded_pseudo_obs(d=d, n=300, seed=7)
+  core_settings: dict[str, Any] = {"family_set": [pv.families.tll]}
+  torch_settings: dict[str, Any] = {}
+  if asked is not None:
+    core_settings["trunc_lvl"] = torch_settings["trunc_lvl"] = asked
+  ref = pv.Vinecop.from_data(
+    u, pv.FitControlsVinecop(**core_settings), structure=structure
+  )
+  vine = TorchVinecop.from_data(
+    torch.as_tensor(u),
+    FitControlsTorchVinecop(**torch_settings),
+    structure=structure,
+  )
+  assert vine.structure.trunc_lvl == ref.structure.trunc_lvl
+  np.testing.assert_array_equal(
+    np.asarray(vine.structure.matrix), np.asarray(ref.structure.matrix)
+  )
+  np.testing.assert_allclose(
+    vine.pdf(torch.as_tensor(u)).numpy(), ref.pdf(u), rtol=1e-10
+  )
+
+
 def test_batched_fit_defaults_to_off_on_cpu() -> None:
   """The default follows the device, as the evaluation cascade's does.
 
