@@ -260,7 +260,6 @@ _CLASS_MODULE = {
   "FitControlsTorchBicop": "pyvinecopulib.torch",
   "FitControlsTorchVinecop": "pyvinecopulib.torch",
   "ControlsLike": "pyvinecopulib.core",
-  "NotBatchable": "pyvinecopulib.core.extend",
   "IndependenceBicop": "pyvinecopulib.core",
   "VinedistLike": "pyvinecopulib.core",
   "VinedistBase": "pyvinecopulib.core",
@@ -445,7 +444,7 @@ DOCSTRING_SUBPACKAGES = {
   # because using pyvinecopulib needs none of it -- listing machinery beside
   # `to_pseudo_obs` serves the few at the cost of the many.
   "core.extend": {
-    "classes": ["NotBatchable"],
+    "classes": [],
     "functions": [
       "place",
       "reference_array",

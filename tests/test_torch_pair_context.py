@@ -234,12 +234,11 @@ def test_row_permutation_alignment() -> None:
   torch.testing.assert_close(permuted, base[perm], atol=1e-12, rtol=0)
 
 
-def test_batched_falls_back_for_non_grid_pair() -> None:
-  """batched=True on a non-grid (GaussianBicop) vine falls back cleanly.
+def test_batched_loops_over_a_non_grid_pair() -> None:
+  """batched=True on a non-grid (GaussianBicop) vine loops over its pairs.
 
-  ``HostedVinecop`` has no ``_build_batched`` override, so the base raises
-  ``NotBatchable`` and the dispatch layer transparently uses the non-batched
-  cascade.
+  ``GaussianBicop`` supplies no ``_stack_pairs``, so each level is evaluated
+  one pair at a time, as with ``batched=False``.
   """
   d, n = 4, 150
   vine = _vine(

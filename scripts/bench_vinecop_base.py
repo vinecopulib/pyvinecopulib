@@ -46,59 +46,15 @@ _GAUSSIAN_VINE = pv.FitControlsVinecop(
 )
 
 
-class _CppBicopLike:
-  """Adapt a ``Bicop`` to the ``(u, x)`` ``BicopLike`` signature."""
-
-  def __init__(self, bicop: pv.Bicop) -> None:
-    self._b = bicop
-
-  def pdf(self, u: Any, x: Any = None) -> Any:
-    return self._b.pdf(np.asarray(u))
-
-  def cdf(self, u: Any, x: Any = None) -> Any:
-    return self._b.cdf(np.asarray(u))
-
-  def hfunc1(self, u: Any, x: Any = None) -> Any:
-    return self._b.hfunc1(np.asarray(u))
-
-  def hfunc2(self, u: Any, x: Any = None) -> Any:
-    return self._b.hfunc2(np.asarray(u))
-
-  def hinv1(self, u: Any, x: Any = None) -> Any:
-    return self._b.hinv1(np.asarray(u))
-
-  def hinv2(self, u: Any, x: Any = None) -> Any:
-    return self._b.hinv2(np.asarray(u))
-
-  def sample(
-    self,
-    n: int,
-    *,
-    x: Any = None,
-    qrng: bool = False,
-    seeds: list[int] | None = None,
-  ) -> Any:
-    return self._b.sample(n, qrng=qrng, seeds=seeds or [])
-
-  def flip(self) -> _CppBicopLike:
-    return _CppBicopLike(self._b.flip())
-
-  def as_continuous(self) -> _CppBicopLike:
-    # The inverse cascade asks for this; forward what the wrapped copula has.
-    return _CppBicopLike(self._b.as_continuous())
-
-
 def _fit_edge(
   tree: int,
   edge: int,
   u_e: Any,
   x_e: Any,
   var_types: Any = ("c", "c"),
-) -> _CppBicopLike:
-  return _CppBicopLike(
-    pv.Bicop.from_data(
-      np.asarray(u_e), controls=_GAUSSIAN, var_types=list(var_types)
-    )
+) -> pv.Bicop:
+  return pv.Bicop.from_data(
+    np.asarray(u_e), controls=_GAUSSIAN, var_types=list(var_types)
   )
 
 
@@ -160,7 +116,7 @@ def _hosts(
   """One selected structure with one set of fits, hosted in both evaluators."""
   cpp = pv.Vinecop.from_data(u, var_types=var_types, controls=_GAUSSIAN_VINE)
   pairs = [
-    [_CppBicopLike(cpp.get_pair_copula(t, e)) for e in range(cpp.dim - 1 - t)]
+    [cpp.get_pair_copula(t, e) for e in range(cpp.dim - 1 - t)]
     for t in range(cpp.dim - 1)
   ]
   return _ListVinecop(pairs, cpp.structure, var_types), cpp
@@ -251,7 +207,7 @@ def _run(n: int, dims: tuple[int, ...], reps: int) -> None:
 
 def _run_reorient(dims: tuple[int, ...], reps: int) -> None:
   """Split the compiled round trip the ``conditioning_set`` views rest on."""
-  from pyvinecopulib.core._reorient import reorientation
+  from pyvinecopulib.core._vinecop_reorient import reorientation
 
   print(f"\nrelabeling breakdown, reps={reps} (best-of)")
   head = (

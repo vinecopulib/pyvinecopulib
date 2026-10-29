@@ -4,8 +4,7 @@ Everything here is public and stable, and none of it is needed to *use*
 pyvinecopulib. It is the short list an extension cannot be written without:
 the placement step and the two names that diagnose and override it, the
 covariate composite every entry point taking an ``x`` routes through, the
-single-row reading of one, the return trip to NumPy, and the sentinel a
-batched-evaluation override raises to decline.
+single-row reading of one, and the return trip to NumPy.
 
 The list is short on purpose. An export is a promise kept from 1.0.0 onward,
 so a helper earns one by being needed to implement a documented hook
@@ -37,10 +36,8 @@ from ._covariates import (
   prepare_covariates,
 )
 from ._placement import place, reference_array, to_numpy
-from .vinecop_base import NotBatchable
 
 __all__ = [
-  "NotBatchable",
   "covariate_row",
   "place",
   "prepare_covariates",

@@ -425,6 +425,65 @@ def test_a_given_structure_is_fitted_to_the_controls_truncation(
   assert structure.trunc_lvl == min(own, d - 1)
 
 
+def _with_atoms(
+  u: np.ndarray, var_types: list[str], levels: int = 5
+) -> np.ndarray:
+  """``u`` with the ``"d"`` columns on a grid, plus their left limits."""
+  values, limits = u.copy(), []
+  for j, t in enumerate(var_types):
+    if t == "d":
+      k = np.ceil(u[:, j] * levels)
+      values[:, j] = k / levels
+      limits.append((k - 1) / levels)
+  return np.column_stack([values, *limits])
+
+
+def test_a_fit_edge_keeps_the_pooled_level_fit_out() -> None:
+  # The engines prefer a level fitter wherever one applies, so supplying the
+  # pool beside a caller's `fit_edge` would mean it is never called.
+  u = _correlated_pseudo_obs(3, 4)
+  controls = pv.FitControlsVinecop(num_threads=4)
+  assert _BicopVine._resolve_fit_level(None, None, controls, u) is not None
+  assert _BicopVine._resolve_fit_level(None, _tll_fit_edge, controls, u) is None
+
+
+@pytest.mark.parametrize("threads", [1, 4])
+@pytest.mark.parametrize("given_structure", [True, False])
+@pytest.mark.parametrize("discrete", [False, True])
+@pytest.mark.parametrize("family", ["tll", "itau"])
+def test_a_vine_hosting_bicop_fits_and_evaluates_as_vinecop(
+  family: str, discrete: bool, given_structure: bool, threads: int
+) -> None:
+  # The guarantee a downstream package hosting `Bicop` in a `VinecopBase`
+  # relies on: the fit engines with the per-edge `Bicop.from_data` select and
+  # fit what `Vinecop` does, serially or with a level's pairs fitted on a
+  # thread pool, and the cascades evaluate it to rounding -- not bit for bit,
+  # since a build that contracts to FMA compiles the pair functions differently
+  # inlined into `Vinecop`'s cascade than called through the binding.
+  d = 5
+  var_types = ["d", "c", "c", "d", "c"] if discrete else None
+  u = _correlated_pseudo_obs(3, d, n=300)
+  if var_types is not None:
+    u = _with_atoms(u, var_types)
+  structure = (
+    pv.RVineStructure.from_order(list(range(1, d + 1)))
+    if given_structure
+    else None
+  )
+  families = [pv.families.tll] if family == "tll" else pv.families.itau
+  controls = pv.FitControlsVinecop(family_set=families, num_threads=threads)
+  mine = _BicopVine.from_data(
+    u, controls=controls, structure=structure, var_types=var_types
+  )
+  ref = pv.Vinecop.from_data(
+    u, controls, structure=structure, var_types=var_types or []
+  )
+  np.testing.assert_array_equal(
+    np.asarray(mine.structure.matrix), np.asarray(ref.structure.matrix)
+  )
+  np.testing.assert_allclose(mine.pdf(u), ref.pdf(u), rtol=1e-12, atol=0)
+
+
 def test_a_named_pair_class_that_cannot_condition_refuses_the_context() -> None:
   """An unconditional pair class must not be fitted under a conditional vine.
 

@@ -2,6 +2,14 @@
 
 ## 1.1.0 (unreleased)
 
+### Breaking API changes in `pyvinecopulib`
+
+- Remove `core.extend.NotBatchable`: no vine is unbatchable. `batched=` chooses, per tree level, between the pair class's own stack (`_stack_pairs`, which `TorchTllBicop` supplies) and a loop over the pairs, through one cascade in `VinecopBase` that runs conditional vines too (#369).
+
+### New features in `pyvinecopulib`
+
+- Fit a `VinecopBase` subclass a tree level at a time whatever pair class it hosts: one whose pair class fits a stack in one call, as `TorchTllBicop.from_data_batched` does, batches under `batched_fit`, and one hosting `Bicop` fits each level's pairs on a thread pool when `controls.num_threads` exceeds one, bit for bit the serial fit (#369).
+
 ### Bug fixes in `pyvinecopulib`
 
 - Fit a given structure to `controls.trunc_lvl` in `VinecopBase.from_data` and `TorchVinecop.from_data`, as `Vinecop.from_data` does: fewer trees truncate it, and more are selected above its own truncation level, which the default untruncated controls ask for. Both fitted the structure as given, so a lane disagreed with `Vinecop` on the same call (#372).

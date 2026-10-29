@@ -34,13 +34,14 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from ..core import BicopBase, ControlsLike
+from ..core import BicopBase, BicopLike, ControlsLike
 from ..core._trim import trim
 from ..core._validation import reject_covariates
 from ..pyvinecopulib_ext import Bicop
 from ..pyvinecopulib_ext import tll as _TLL_FAMILY
 from ._bicop_interp import InterpolationGrid2D, prefix_tables
 from ._placement import TENSOR_NS
+from ._vinecop_batched import TllStack, stack_tll_pairs
 from .controls import FitControlsTorchBicop
 
 
@@ -235,9 +236,6 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
   _sy: Tensor | None
   _sx: Tensor | None
   _prefix: Tensor | None
-  #: Declares the grid and cache internals ``TorchVinecop``'s batched
-  #: cascades read, so a vine of these pairs can take the stacked path.
-  supports_batched: bool = True
 
   def __init__(
     self,
@@ -432,6 +430,92 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       device=device,
       dtype=dtype,
     )
+
+  @staticmethod
+  def _stack_pairs(
+    pairs: Sequence[TorchTllBicop],
+    *,
+    disc1: Sequence[bool],
+    disc2: Sequence[bool],
+    needs_h1: Sequence[bool],
+    needs_h2: Sequence[bool],
+  ) -> TllStack | None:
+    """A group of these pairs stacked on their shared grid, for a vine.
+
+    What a vine's cascades evaluate a tree level or an inverse wave through
+    in one call; ``None`` where the pairs disagree on the grid, and the vine
+    then evaluates them one at a time.
+
+    Parameters
+    ----------
+    pairs : sequence of TorchTllBicop
+        The group's pairs.
+    disc1, disc2 : sequence of bool
+        Whether each pair's first / second argument is discrete.
+    needs_h1, needs_h2 : sequence of bool
+        Whether the next tree reads each pair's h-functions.
+
+    Returns
+    -------
+    TllStack, or None
+        The stack, or ``None``.
+    """
+    return stack_tll_pairs(
+      pairs, disc1=disc1, disc2=disc2, needs_h1=needs_h1, needs_h2=needs_h2
+    )
+
+  @staticmethod
+  def _stacked_level_hfuncs(
+    pairs: Sequence[BicopLike[Tensor]],
+    u: Tensor,
+    types: list[tuple[str, str]],
+  ) -> tuple[Tensor, Tensor, Tensor, Tensor] | None:
+    """A fitted level's h-functions at its own inputs, in stacked calls.
+
+    What the fit engines evaluate one edge at a time -- ``hfunc1`` and
+    ``hfunc2``, and on a discrete edge each with the other argument at its left
+    limit -- through the stack a vine's cascades evaluate. Only pairs holding
+    their prefix tables on one shared grid stack; anything else is declined
+    and evaluated edge by edge.
+
+    Parameters
+    ----------
+    pairs : sequence of BicopLike
+        The level's fitted pairs.
+    u : Tensor, shape (P, n, 2) or (P, n, 4), dtype float
+        Their inputs, laid out as a level fitter receives them.
+    types : list of tuple of str
+        Each pair's variable types.
+
+    Returns
+    -------
+    tuple of Tensor, or None
+        ``(h1, h2, h1_sub, h2_sub)``, each ``(P, n)``, or ``None`` when the
+        pairs do not stack.
+    """
+    # The exact class, since a subclass may evaluate differently.
+    grids = [
+      p
+      for p in pairs
+      if type(p) is TorchTllBicop and not p.is_indep and p._sy is not None
+    ]
+    if len(grids) != len(pairs):
+      return None
+    every = [True] * len(grids)
+    stack = stack_tll_pairs(
+      grids,
+      disc1=[t[0] == "d" for t in types],
+      disc2=[t[1] == "d" for t in types],
+      needs_h1=every,
+      needs_h2=every,
+    )
+    if stack is None:
+      return None
+    # Clamped as each pair's dispatchers clamp their input.
+    _, h1, h2, h1_sub, h2_sub = stack.to(device=u.device).evaluate(
+      trim(u, TENSOR_NS), with_pdf=False, every_h2=False
+    )
+    return h1, h2, h1_sub, h2_sub
 
   @classmethod
   def from_data_batched(
