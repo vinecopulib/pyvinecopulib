@@ -200,8 +200,9 @@ class TorchVinedist(
     margins: object,
   ) -> None:
     # Initialize nn.Module explicitly, then hand over to the Vinedist hook:
-    # TorchVinedist also subclasses Vinedist, whose __init__ chain would
-    # otherwise shadow nn.Module's under super(). Same shape as TorchVinecop.
+    # TorchVinedist subclasses TensorPlacementMixin, VinedistBase[Tensor] and
+    # torch.nn.Module, whose __init__ chain would otherwise shadow nn.Module's
+    # under super(). Same shape as TorchVinecop.
     torch.nn.Module.__init__(self)
     self._bind_dist(vinecop, margins)
 
