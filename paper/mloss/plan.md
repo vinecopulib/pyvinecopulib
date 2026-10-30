@@ -11,6 +11,11 @@ Each of its sections holds the plan from §3 in place of prose.
 One question is open: whether the GPU methods paper is the JSS "companion"
 paper. §10 plans for both cases.
 
+The library work this plan identifies is filed as pyvinecopulib issues #381 to
+#392, alongside the open items of #348. The paper assumes each is fixed by
+the release §11 assigns it to. §11 and §13 list them by issue number; the
+pull request that adds this file tracks the paper's own work.
+
 ## 1. Executive recommendation
 
 **Venue: MLOSS remains right.** What pyvinecopulib adds over the shared C++
@@ -36,10 +41,10 @@ listing what pyvinecopulib adds (MLOSS asks for exactly that; Appendix C).
 
 **Fixable gaps:**
 
-- CI does not publish the coverage figure.
-- No source file carries a license notice.
-- CUDA and the declared dependency floors are untested in CI.
-- conda-forge lags behind PyPI.
+- CI does not publish the coverage figure (#382).
+- No source file carries a license notice (#381).
+- CUDA and the declared dependency floors are untested in CI (#389, #390).
+- conda-forge lags behind PyPI (#388).
 
 **Framing: composable vine distributions.** The thesis is Candidate B: four
 array-agnostic contracts plus algorithms written once against them. Candidate
@@ -286,7 +291,7 @@ one accent color per implementation family.
   out.
 - The caption is three lines at most and states the reading order.
 - Draw it in TikZ (as the JSS figures are), or as SVG exported to PDF.
-- Reuse the same figure on a docs architecture page (§13).
+- Reuse the same figure on a docs architecture page (#387).
 
 ---
 
@@ -332,7 +337,7 @@ The API names were checked against the source: `VinedistBase.from_data(y, contro
 the `.vinecop` and `.margins` properties, `TorchVinedist(vinecop, margins)`,
 `TorchVinecop(pair_copulas, structure)` registering the pairs as nested
 `ModuleList`s, and `log_prob`. The full listing must still be executed
-before submission (§13).
+before submission, as a cell of notebook 10 (#386).
 
 **What the listing shows:**
 
@@ -493,7 +498,7 @@ in one sentence and leaves the analysis to the methods paper.
 **Software-quality numbers** (for §4 and the cover letter):
 
 - the coverage figure for the release, as published by the CI coverage job
-  (§11). The CUDA host adds its branches;
+  (#382). The CUDA host adds its branches;
 - collected test count;
 - counts of CUDA- and `compile`-marked tests run on the release;
 - notebook wall time.
@@ -517,21 +522,21 @@ needs evidence, needs work.
 | --- | --- | --- | --- |
 | Impact: novelty, breadth, significance | ready | The only Python package combining general R-vines, TLL, exact discrete data, sklearn, torch and hostable user pairs (Table 1) | Sharpen the claim in the paper |
 | Community: an active user community, shown in the cover letter | ready | Downloads lead every Python vine package; ~55 dependent repositories; 38 external issue authors; external contributors to both repositories (§12) | Take a dated snapshot and verify the named dependents (§12) |
-| Openness: repository, tracker, forum | ready, small gap | GitHub repo and issues; email to info@vinecopulib.org; no forum | Enable GitHub Discussions |
+| Openness: repository, tracker, forum | ready, small gap | GitHub repo and issues; email to info@vinecopulib.org; no forum | Enable GitHub Discussions (#392) |
 | Comparison with previous implementations (run time, memory, features) | needs work | Features verified (Table 1); timings exist only in PR bodies | Tables 1–2; optional Appendix B runtime comparison |
-| Installation instructions | ready, with gaps | README covers pip, conda and source; wheels for 5 platforms. conda-forge stops at **1.0.0** and has **no osx-arm64** | conda-forge 1.1.0 with osx-arm64 |
-| Tutorials | ready | Ten notebooks, executed in CI | Fix notebook 09's stale text; remove the network fetch in 08/09 |
+| Installation instructions | ready, with gaps | README covers pip, conda and source; wheels for 5 platforms. conda-forge stops at **1.0.0** and has **no osx-arm64** | conda-forge 1.1.0 with osx-arm64 (#388) |
+| Tutorials | ready | Ten notebooks, executed in CI | Fix notebook 09's stale text (#384); remove the network fetch in 08/09 (#383) |
 | Non-trivial examples | ready | Notebooks 03, 08, 10 | — |
 | API documentation as a website | ready | Read the Docs; autosummary; numpydoc-validated; nitpicky `-W` | — |
-| Ease of contribution | mostly ready | CONTRIBUTING is clear; 8 external contributors have landed code across pyvinecopulib and vinecopulib. The design spec is a 150 KB `AGENTS.md` | A short human-oriented architecture page in front of it; optionally labels and Discussions |
-| Clarity of software design | ready | Four layers pinned by `test_import_surface.py`; four contracts | Architecture page reusing Figure 1 |
-| Developer documentation | mostly ready | CONTRIBUTING, AGENTS.md, notebook 10, the "Extending" part of concepts | Architecture page; fix the "each of each of" typo in CONTRIBUTING.md:8 |
+| Ease of contribution | mostly ready | CONTRIBUTING is clear; 8 external contributors have landed code across pyvinecopulib and vinecopulib. The design spec is a 150 KB `AGENTS.md` | A short human-oriented architecture page in front of it (#387); optionally Discussions (#392) |
+| Clarity of software design | ready | Four layers pinned by `test_import_surface.py`; four contracts | Architecture page reusing Figure 1 (#387) |
+| Developer documentation | mostly ready | CONTRIBUTING, AGENTS.md, notebook 10, the "Extending" part of concepts | Architecture page (#387); fix the "each of each of" typo in CONTRIBUTING.md (#384) |
 | Unit and integration tests | ready | 1,070 test functions in 44 modules; parity suites; `check_estimator`; pickling; notebooks; docstring examples; import-surface and prose tests | — |
-| Coverage "close to 100%" | ready, needs reporting | Close to 100% in the maintainers' runs, but CI publishes no figure: every leg passes `--no-cov`, and nothing is uploaded | Add a CI coverage job with a Codecov badge (rvinecopulib already uses Codecov); quote the release figure in the cover letter |
-| CI on all platforms, several dependency versions | mostly ready, needs work | 5 platforms; Python 3.11–3.14; Eigen 3.4 and 5.0.1; sdist install. Dependency floors are never resolved; CUDA never runs in CI | Add a `--resolution lowest-direct` leg; attach CUDA logs to each release (or add a self-hosted GPU runner) |
-| Platform breadth, including an open-source OS | ready | Linux glibc and musl, macOS x86-64 and arm64, Windows | Linux aarch64 wheels are optional |
+| Coverage "close to 100%" | ready, needs reporting | Close to 100% in the maintainers' runs, but CI publishes no figure: every leg passes `--no-cov`, and nothing is uploaded | Add a CI coverage job with a Codecov badge, as rvinecopulib has (#382); quote the release figure in the cover letter |
+| CI on all platforms, several dependency versions | mostly ready, needs work | 5 platforms; Python 3.11–3.14; Eigen 3.4 and 5.0.1; sdist install. Dependency floors are never resolved; CUDA never runs in CI | Add a `--resolution lowest-direct` leg (#390); attach the CUDA run to each release, or add a self-hosted GPU runner (#389) |
+| Platform breadth, including an open-source OS | ready | Linux glibc and musl, macOS x86-64 and arm64, Windows | Linux aarch64 wheels are optional (#391) |
 | Freedom of the code | ready | MIT; open-source dependencies; CUDA optional through PyTorch | — |
-| Checklist: license stated in the source package **and in each source file** | **needs work** | 0 of 65 files in `src/` carry a notice (the vinecopulib headers do) | SPDX/MIT header in every source file; a third-party notice for Eigen (MPL-2.0), Boost (BSL-1.0), nanobind (BSD-3) |
+| Checklist: license stated in the source package **and in each source file** | **needs work** | 0 of 65 files in `src/` carry a notice (the vinecopulib headers do) | SPDX/MIT header in every source file; third-party notices in the wheels for the submodules, nanobind, Eigen and Boost (#381) |
 | Checklist: compiles and runs on every supported platform | ready | CI | — |
 | Checklist: no extra files in the source package | ready | Allowlisted sdist plus a CI assertion | — |
 | Exact version to review | needs work | 1.1.0 not tagged | §11 |
@@ -682,32 +687,35 @@ The bit-exact claims that do hold:
 - the array-agnostic `sample_conditional` / `reorient` = their compiled
   versions.
 
-**Before tagging 1.1.0 (P0):**
+**Before tagging 1.1.0 (P0).** Each item is a pyvinecopulib issue, and the
+paper assumes it is fixed:
 
-1. License headers in all 65 source files, plus a third-party notice.
-2. Notebook 09: delete "the device / dtype targets" (removed in #339).
-3. Notebooks 08 and 09: stop downloading the UCI Concrete data at run time
-   (vendor it, CC BY 4.0, or cache it).
-4. A coverage job in CI that publishes the figure (a Codecov badge), so
-   reviewers can see it without running the suite.
-5. `docs/citing.rst` (Appendix C) and an architecture page.
-6. From issue #348:
-   - trusted publishing;
-   - Read the Docs badges pointing at `stable`;
-   - the `find_libclang.py` pattern, if it is still missing.
-7. The mandatory CUDA rehearsal from `docs/releasing.md` step 5, with its raw
-   JSON attached to the release. It doubles as the paper's GPU evidence.
-8. Small fixes:
-   - the comment at `torch/vinedist.py:202-204` (it says `Vinedist`; the base
-     is `VinedistBase`);
-   - CONTRIBUTING.md:8, "each of each of".
+1. License notices in every source file, and third-party notices in the
+   wheels (#381).
+2. A coverage job in CI that publishes the figure (a Codecov badge), so
+   reviewers can see it without running the suite (#382).
+3. Notebooks 08 and 09 read the UCI Concrete data from a committed file
+   rather than the network (#383).
+4. Small text fixes (#384):
+   - notebook 09's "device / dtype targets" (removed in #339);
+   - the comment in `TorchVinedist.__init__`, which names `Vinedist` as a
+     base;
+   - CONTRIBUTING.md's "each of each of".
+5. `docs/citing.rst` (Appendix C), with aligned citation metadata (#385).
+6. Listing 1's full version as an executed cell of notebook 10 (#386).
+7. From #348: trusted publishing, and Read the Docs badges pointing at
+   `stable`. Its `find_libclang.py` item already shipped, in #352.
+8. The mandatory CUDA rehearsal from `docs/releasing.md` step 5, with its
+   test run and raw JSON attached to the release (#389). It doubles as the
+   paper's GPU evidence.
 
-**Before submission, in 1.1.0 or 1.1.1 (P1):**
+**Before submission, in 1.1.0 or a 1.1.x release (P1):**
 
-- the dependency-floor CI leg;
-- conda-forge 1.1.0 including osx-arm64.
+- an architecture page (#387);
+- conda-forge at 1.1.0, including osx-arm64 (#388);
+- the dependency-floor CI leg (#390).
 
-Optional: GitHub Discussions and "good first issue" labels.
+Optional: Linux aarch64 wheels (#391) and GitHub Discussions (#392).
 
 **Freeze rule.** The cover letter names 1.1.0 and its version DOI. 1.1.x patch
 releases are fine during review. No 1.2 feature is cited, even if it lands
@@ -734,8 +742,8 @@ before the paper is accepted.
   - 3–5 action editors;
   - 3–5 reviewers (not co-authors of 2506.13318);
   - keywords.
-- **Point to `docs/citing.rst`** as the repository document "listing the
-  software package's improvements and extensions".
+- **Point to `docs/citing.rst`** (#385) as the repository document "listing
+  the software package's improvements and extensions".
 
 **Evidence collected 2026-10-29, robust first:**
 
@@ -780,31 +788,27 @@ Two core maintainers lead development; say so alongside the contributor list.
 
 **1. Code and release**
 
-- P0: Everything in §11, then tag v1.1.0 and confirm PyPI, Read the Docs
-  `stable`, the GitHub release and the Zenodo DOI.
-- P0: Turn Listing 1's full version into a tested notebook cell or test.
-- P1: Dependency-floor leg (`uv sync --resolution lowest-direct` plus the
-  extras on one Linux leg), or raise the floors to what is tested.
-- P1: CUDA evidence per release: logs as release assets, or a self-hosted GPU
-  runner.
-- P1: conda-forge feedstock at 1.1.0 with osx-arm64 (and linux-aarch64).
-- P2: Linux aarch64 wheels.
+- P0: Everything in §11 (#381 to #386, #389, and #348's open items), then
+  tag v1.1.0 and confirm PyPI, Read the Docs `stable`, the GitHub release and
+  the Zenodo DOI.
+- P1: The dependency-floor leg (#390).
+- P1: The CUDA run kept with each release; later, a self-hosted GPU runner
+  (#389).
+- P1: The conda-forge feedstock at 1.1.0, with osx-arm64 (#388).
+- P2: Linux aarch64 wheels (#391).
 - Cross-repository, P0: fix JSS Table 6 and the bib title in
   rvinecopulib#348 (§9.3).
 
 **2. Documentation and repository**
 
-- P0: `docs/citing.rst` plus a "Citing" section in the README (Appendix C).
-- P1: Align the author order of `CITATION.cff` (Vatter, Nagler) and
-  `.zenodo.json` (Nagler, Vatter), which the Zenodo record follows, with the
-  paper's; and replace `.zenodo.json`'s link to
-  `vinecopulib.github.io/pyvinecopulib`, which returns 404, with the Read the
-  Docs URL.
+- P0: `docs/citing.rst` plus a "Citing" section in the README (Appendix C),
+  and one author order in `CITATION.cff` and `.zenodo.json`, matching the
+  paper's (#385).
 - P1: An architecture page (Figure 1, the four contracts, level-wise
-  execution) as the human entry point ahead of AGENTS.md.
-- P2: GitHub Discussions; "good first issue" labels.
-- P2: A performance guidance page ("which lane when"), linking to the
+  execution) as the human entry point ahead of AGENTS.md (#387). A
+  performance guidance section ("which lane when") can follow, linking to the
   archived benchmarks.
+- P2: GitHub Discussions (#392).
 
 **3. Measurements and data**
 
@@ -1011,7 +1015,7 @@ reused):
 **Why a "Citing" page rather than `docs/publication-scope.md`.** It renders on
 Read the Docs, the `-W` docs build checks it, it answers users (issue #128),
 and it is the document MLOSS asks the cover letter to point to. Add a short
-"Citing" section to the README that links to it.
+"Citing" section to the README that links to it. Filed as #385.
 
 Outline:
 
