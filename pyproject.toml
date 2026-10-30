@@ -163,6 +163,8 @@ sdist.exclude = [
   # resolves `[build-system].requires` itself and never reads it, so shipping
   # it would add 0.6 MB to every sdist for nothing.
   "uv.lock",
+  # The manuscript sources; no build reads them.
+  "paper/**",
 ]
 
 [tool.cibuildwheel]
