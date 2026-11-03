@@ -1,0 +1,12 @@
+# Fetched by build.sh, which says why it is not committed.
+jmlr2e.sty
+
+# latexmk outputs.
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.pdf
