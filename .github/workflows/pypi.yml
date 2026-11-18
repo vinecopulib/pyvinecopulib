@@ -164,7 +164,7 @@ jobs:
         run: |
           rm -rf build wheelhouse
       - name: Build and test wheels
-        uses: pypa/cibuildwheel@v4.2.1
+        uses: pypa/cibuildwheel@v4.3.5
         env:
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           # Eigen is built from source into root_install_dir on every OS, so its
@@ -256,7 +256,7 @@ jobs:
           lcov: "false"
           update_compilers_ubuntu: "false"
       - name: Build and test the wheel
-        uses: pypa/cibuildwheel@v4.2.1
+        uses: pypa/cibuildwheel@v4.3.5
         env:
           CIBW_BUILD: cp312-${{ matrix.cfg.cibw_id }}
           CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='${{matrix.cfg.root_install_dir}}include\eigen3'
