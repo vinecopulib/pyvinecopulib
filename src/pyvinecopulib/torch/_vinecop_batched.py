@@ -1514,9 +1514,9 @@ def _shared_grid(
   tables, because none of its own evaluations read either -- every method
   short-circuits on ``is_indep``. A stack does read them: ``torch.stack`` needs
   one shape across the group, and one pair without tables drops the whole group
-  to the on-the-fly path. So the stack substitutes an independence density
-  built on the shared grid, which is a real ``InterpolationGrid2D`` rather than
-  a hand-derived table, so it cannot drift from what the pairs beside it do.
+  to the on-the-fly path. So the stack substitutes an independence density on
+  the shared grid, with tables from the same ``prefix_tables`` the pairs beside
+  it are cached with, so the two cannot drift.
 
   Parameters
   ----------
@@ -1532,39 +1532,37 @@ def _shared_grid(
   """
   # Deferred: `_interp` imports the kernels in this module, so the dependency
   # only goes the other way at call time.
-  from ._bicop_interp import InterpolationGrid2D
+  from ._bicop_interp import prefix_tables
 
   ref = None
+  others: list[Tensor] = []
   for bc in pairs:
     if bc.is_indep:
       continue
     if ref is None:
       ref = bc
       continue
-    # Every stacked pair is read against `ref`'s knots, so agreeing on the
-    # shape is not enough: two grids of one size and different spacing
-    # interpolate to different functions, and the group would be evaluated on
-    # the wrong one without anything raising.
-    if (
-      bc.interp_grid.values.shape != ref.interp_grid.values.shape
-      or bool(bc.interp_grid._is_linear) != bool(ref.interp_grid._is_linear)
-      or not torch.equal(
-        bc.interp_grid.grid_points, ref.interp_grid.grid_points
-      )
-    ):
+    grid, first = bc.interp_grid, ref.interp_grid
+    linear = bool(grid._is_linear) == bool(first._is_linear)
+    if grid.values.shape != first.values.shape or not linear:
       return None
+    others.append(grid.grid_points)
   if ref is None:
     ref = pairs[0]
   gp = ref.interp_grid.grid_points
+  # Every stacked pair is read against `ref`'s knots, so agreeing on the
+  # shape is not enough: two grids of one size and different spacing
+  # interpolate to different functions, and the group would be evaluated on
+  # the wrong one without anything raising. Compared in one call, so the
+  # group reads the device once rather than once per pair.
+  if others and not torch.equal(
+    torch.stack(others), gp.expand(len(others), -1)
+  ):
+    return None
   m = int(gp.shape[0])
-  flat = InterpolationGrid2D(
-    grid_points=gp,
-    values=torch.ones((m, m), dtype=gp.dtype, device=gp.device),
-    norm_maxiter=0,
-    is_linear=ref.interp_grid._is_linear,
-  )
-  sy, sx, _ = flat.build_caches()
-  return gp, bool(ref.interp_grid._is_linear), flat.values, sy, sx
+  ones = torch.ones((m, m), dtype=gp.dtype, device=gp.device)
+  sy, sx, _ = prefix_tables(ones, gp[1:] - gp[:-1])
+  return gp, bool(ref.interp_grid._is_linear), ones, sy, sx
 
 
 def stack_tll_pairs(

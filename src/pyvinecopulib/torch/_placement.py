@@ -78,14 +78,15 @@ def reference_tensor(module: object) -> Tensor | None:
     method = getattr(module, name, None)
     if not callable(method):
       continue
+    # Read lazily: the first floating tensor answers, and a vine holds
+    # hundreds that a list would visit first.
     try:
-      tensors = list(method())
+      for value in method():
+        if isinstance(value, Tensor) and value.is_floating_point():
+          return value
     except TypeError:
       # Not the `nn.Module` member of that name; try the next.
       continue
-    for value in tensors:
-      if isinstance(value, Tensor) and value.is_floating_point():
-        return value
   return None
 
 
