@@ -514,6 +514,27 @@ def test_a_discrete_response_margin_is_refused(
     VineRegressor(distribution=_Discrete, use_grid=False).fit(X, counts)
 
 
+def test_a_conditional_response_margin_is_refused(
+  regression_data: tuple[np.ndarray, np.ndarray, np.ndarray, float],
+) -> None:
+  """A response margin that reads covariates is refused before any fit.
+
+  The prediction quadrature inverts one probability grid shared by every test
+  row, and a response whose quantiles move with the covariates needs one per
+  row.
+  """
+  X, y, _, _ = regression_data
+
+  class _ConditionalMargin(FlatMargin):
+    supports_covariates = True
+
+  class _Conditional(Vinedist):
+    margin_class = _ConditionalMargin
+
+  with pytest.raises(ValueError, match="conditional response margin"):
+    VineRegressor(distribution=_Conditional).fit(X, y)
+
+
 def test_a_failing_margin_names_its_column(cat_df: pd.DataFrame) -> None:
   """A margin sees one array and cannot say which; the estimator can.
 

@@ -790,8 +790,11 @@ class VineBase(BaseEstimator):
     ----------
     cls : type
         The distribution class about to be fitted.
-    per_variable : list
-        One controls object per variable, response first where there is one.
+    var_types : list of str or None
+        One declared variable type per variable, response first where there
+        is one; ``None`` leaves it to the margin.
+    supports : list
+        One declared support per variable, in the same order.
     response : bool
         Whether the response leads the variable order.
 
@@ -817,7 +820,6 @@ class VineBase(BaseEstimator):
         "from data. Name one on the distribution passed as `distribution=`."
       )
     # One column at a time, so a refusal names the column it belongs to.
-    specs = [margin_class() for _ in range(len(var_types))]
     for j, (var_type, support) in enumerate(
       zip(var_types, supports, strict=False)
     ):
@@ -827,11 +829,12 @@ class VineBase(BaseEstimator):
         raise _named_for(self._name_at(j, response), exc) from exc
     if not response:
       return
-    self._check_response_is_continuous(specs[0])
-    if getattr(specs[0], "supports_covariates", False):
+    spec = margin_class()
+    self._check_response_is_continuous(spec)
+    if getattr(spec, "supports_covariates", False):
       raise ValueError(
         "VineRegressor cannot use a conditional response margin "
-        f"({type(specs[0]).__name__} declares supports_covariates): the "
+        f"({type(spec).__name__} declares supports_covariates): the "
         "quadrature inverts one shared probability grid, which a margin whose "
         "quantiles move with the covariates turns into one grid per test row."
       )
