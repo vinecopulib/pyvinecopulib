@@ -1,0 +1,382 @@
+% JMLR MLOSS manuscript for pyvinecopulib.
+%
+% A skeleton: each section holds a plan box -- the argument, the evidence, the
+% displays and what the section leaves out -- where its prose will go.
+% Table 1 and Listing 1 are final; Figure 1 and Table 2 are placeholders of
+% their target size, so the PDF already shows where the floats put page 4.
+% plan.md, beside this file, holds the reasoning. Build with ./build.sh.
+\documentclass[twoside,11pt]{article}
+
+\usepackage{jmlr2e}
+
+% Packages are loaded after jmlr2e, which already loads amssymb, natbib and
+% graphicx.
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{tcolorbox}
+\usepackage{lastpage}
+
+% A plan box stands in for a section's prose until it is written.
+\newtcolorbox{plan}[1]{%
+  colback=black!3, colframe=black!40, coltitle=white,
+  fonttitle=\bfseries\small, fontupper=\small,
+  left=4pt, right=4pt, top=2pt, bottom=2pt,
+  title={Plan: #1}}
+
+\lstset{%
+  language=Python, basicstyle=\ttfamily\footnotesize, columns=fullflexible,
+  keepspaces=true, upquote=true, numbers=left, numberstyle=\tiny,
+  xleftmargin=1.5em, frame=tb, captionpos=b}
+
+\newcommand{\pkg}[1]{\textsf{#1}}
+
+% {volume}{year}{pages}{date submitted}{date published}{paper id}{authors};
+% JMLR fills in the rest on acceptance.
+\jmlrheading{}{2026}{1-\pageref{LastPage}}{}{}{}{Thibault Vatter and Thomas
+Nagler}
+
+\ShortHeadings{Composable Vine Copula Distributions}{Vatter and Nagler}
+\firstpageno{1}
+
+\begin{document}
+
+\title{pyvinecopulib: Composable Vine Copula Distributions for Scientific
+Python and Machine Learning}
+
+\author{\name Thibault Vatter \email thibault.vatter@hesge.ch \\
+       \addr Geneva School of Business Administration\\
+       HES-SO University of Applied Sciences and Arts Western Switzerland\\
+       1227 Carouge, Switzerland
+       \AND
+       \name Thomas Nagler \email thomas.nagler@stat.uni-muenchen.de \\
+       \addr Department of Statistics\\
+       Ludwig-Maximilians-Universit\"at M\"unchen\\
+       80539 M\"unchen, Germany}
+
+\editor{TBD}
+
+\maketitle
+
+\begin{abstract}%
+Vine copulas build flexible multivariate distributions from bivariate
+building blocks, and the C++ library vinecopulib provides mature estimation
+for them. \pkg{pyvinecopulib} turns these models into components of Python
+machine-learning workflows. Its core is four array-agnostic contracts---for
+pair copulas, vines, univariate margins and joint distributions on the data
+scale---with base classes that implement structure selection, the evaluation
+and simulation cascades and two-step estimation once, against those
+contracts. Compiled vinecopulib objects, NumPy and PyTorch implementations and
+user-defined parts all satisfy the same contracts, so each inherits the same
+algorithms, while the pair copulas hosted in a vine decide how each tree level
+executes: as compiled calls, on a thread pool, or as one stacked GPU
+operation. On this foundation the library provides scikit-learn estimators and
+differentiable PyTorch modules, validated against the compiled engine.
+\end{abstract}
+
+\begin{keywords}
+  vine copulas, density estimation, PyTorch, scikit-learn, open-source
+  software
+\end{keywords}
+
+\section{Introduction}
+
+\begin{plan}{about 0.7 page, plus Table~\ref{tab:related}}
+\textbf{Argument.} Vine copulas \citep{bedford2002vines,aas2009pair} are
+flexible density models used in machine learning for tabular density
+estimation, synthetic data, conditional simulation and learned dependence.
+Python offers narrow vine packages and differentiable libraries without vines
+(Table~\ref{tab:related}). A binding to the C++ engine alone cannot host
+user-defined or learnable parts, run on accelerators, or sit in scikit-learn
+and PyTorch pipelines. State the central phrase once: \emph{the vine
+algorithms are written once, against four contracts; every implementation of
+a part---compiled, NumPy, PyTorch or the user's own---inherits them, and
+decides how its tree levels execute.} Then the contribution paragraph and
+three bullets (plan.md, section 2.4).
+
+\textbf{Evidence.} Table~\ref{tab:related}; dependents named in the cover
+letter.
+
+\textbf{Citations.} Methods, engine and R interface:
+\citet{nagler2026rvinecopulib}; statistical algorithms:
+\citet{nagler2026algorithms}; the earlier computational-graph formulation of
+the PyTorch lane: \citet{cheng2025vine}.
+
+\textbf{Left out.} Vine theory beyond three sentences; pair-copula families;
+selection algorithms.
+\end{plan}
+
+\begin{figure}[t]
+\centering
+\fbox{\begin{minipage}[c][0.3\textheight][c]{0.95\textwidth}
+\centering\footnotesize
+\textbf{Placeholder for Figure~\ref{fig:architecture}: full width, about 0.4
+page with its caption.}\\[6pt]
+\begin{minipage}{0.92\textwidth}
+\raggedright
+\textbf{Consumers:} scikit-learn (\texttt{VineDensity},
+\texttt{VineRegressor}); PyTorch (\texttt{nn.Module} composition,
+\texttt{.to(device)}, autograd, optimizers); NumPy/SciPy code.\\[3pt]
+\textbf{Waist, the four contracts (stable since 1.0):} \texttt{MarginLike}
+and \texttt{VinecopLike} feed \texttt{VinedistLike}; \texttt{BicopLike} is
+hosted at each (tree, edge) of \texttt{VinecopLike}.\\[3pt]
+\textbf{Implementations, one column each:} compiled from vinecopulib
+(\texttt{Bicop}, \texttt{Vinecop}, \texttt{Kde1d}); generic bases
+(\texttt{BicopBase}, \texttt{VinecopBase}, \texttt{MarginBase},
+\texttt{VinedistBase} $\to$ \texttt{Vinedist}); PyTorch lane
+(\texttt{TorchTllBicop}, \texttt{TorchVinecop}, \texttt{TorchKde1d},
+\texttt{TorchVinedist}); adapters and user parts (dashed).\\[3pt]
+\textbf{Inset beside \texttt{VinecopBase}:} tree levels, and dependency waves
+for the inverse; a level runs as one stacked call when its pairs' class
+supplies one, otherwise pair by pair, and is fitted on a thread pool when the
+pair releases the GIL.\\[3pt]
+\textbf{Foundation:} vinecopulib, kde1d, wdm (C++17, Eigen), shared with
+rvinecopulib.
+\end{minipage}
+\end{minipage}}
+\caption{Architecture of \pkg{pyvinecopulib}. Consumers depend only on four
+contracts; each contract has compiled, generic, PyTorch and user-defined
+implementations, and one vine cascade runs over all of them, a tree level at a
+time.}
+\label{fig:architecture}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+ & \pkg{pyvinecopulib} & \pkg{VineCopulas} & \pkg{torchvinecopulib}
+ & \pkg{mixedvines} & \pkg{Copulas} \\
+ & 1.1 & 2.0.3 & 1.1.2 & 1.3.5 & 0.14.1 \\
+\midrule
+R-vines with selection & \checkmark & \checkmark & \checkmark & C-vine
+ & partial\textsuperscript{a} \\
+Pair copulas (param.\ / nonpar.) & 11 / TLL & 6 / -- & -- / TLL, KDE
+ & 3 / -- & 3 / -- \\
+Discrete and mixed data & exact & jittered & -- & exact\textsuperscript{b}
+ & -- \\
+Joint density and sampling & \checkmark & -- & \checkmark & \checkmark
+ & sampling \\
+scikit-learn estimators & \checkmark & -- & -- & -- & -- \\
+Autograd and GPU & \checkmark & -- & \checkmark & -- & -- \\
+User pair copulas in a vine & \checkmark\textsuperscript{c} & -- & --
+ & \checkmark & -- \\
+License & MIT & GPL-3.0 & MIT & GPL-3.0 & BUSL-1.1 \\
+\bottomrule
+\end{tabular}
+\caption{Python packages implementing vine copulas, as of October 2026
+\citep{claassen2024vinecopulas,torchvinecopulib,onken2016mixed,copulas}.
+\textsuperscript{a}Three trees by default; its constructor warns that it is
+not fully tested. \textsuperscript{b}C-vines only. \textsuperscript{c}Including
+learnable and non-simplified pair copulas. Statistical capabilities shared
+with the R interface are compared in \citet{nagler2026rvinecopulib}.}
+\label{tab:related}
+\end{table}
+
+\section{Design}
+\label{sec:design}
+
+\begin{plan}{about 1.15 pages in total, one subsection per box of
+Figure~\ref{fig:architecture}}
+\textbf{Left out.} The internals of the engine's computation index; the wave
+algorithm; the kernels. These belong to \citet{nagler2026rvinecopulib} and to
+the methods paper.
+\end{plan}
+
+\subsection{Four contracts}
+
+\begin{plan}{about 0.4 page}
+\textbf{Argument.} Each contract is a protocol plus a base. The compiled
+classes satisfy the protocols structurally, because a nanobind class cannot
+inherit a Python ABC; the bases derive everything else from a few primitives;
+a member a part cannot serve has a default that raises by name. Fitting is
+declared rather than hooked: \texttt{bicop\_class}, \texttt{vinecop\_class},
+\texttt{margin\_class} and \texttt{controls\_class} name the parts, so
+\texttt{from\_data} needs no callback.
+
+\textbf{Evidence.} The protocol and contract test suites; the import-surface
+test that pins the layers.
+\end{plan}
+
+\subsection{Algorithms written once}
+
+\begin{plan}{about 0.4 page}
+\textbf{Argument.} \texttt{VinecopBase} implements the evaluation and
+simulation cascades, conditional sampling and structure selection, which
+reproduces the engine's selected matrix \citep{dissmann2013selecting};
+\texttt{VinedistBase} implements two-step estimation and serialization.
+Discrete edges reach a pair through its declared variable types, conditional
+vines through a context. Arrays are placed by inference, so a part written for
+NumPy or PyTorch, on any device and dtype, needs no conversion code.
+
+\textbf{Evidence.} A vine hosting \texttt{Bicop} selects the same structure
+as \texttt{Vinecop} and agrees on densities to $10^{-12}$
+(Table~\ref{tab:fidelity}).
+\end{plan}
+
+\subsection{Execution by tree level}
+
+\begin{plan}{about 0.35 page}
+\textbf{Argument.} The engine's computation index
+\citep[Section~3.1]{nagler2026rvinecopulib} wires whole tree levels; the
+inverse Rosenblatt transform runs in dependency waves. A level runs as one
+stacked call when its pairs' class supplies one, otherwise pair by pair, with
+results identical to edge-by-edge evaluation. A fit is stacked, threaded, or
+edge by edge, as the pair class allows. One sentence: an earlier version of the
+PyTorch lane followed the computational-graph formulation of
+\citet{cheng2025vine}, and execution by level replaced it for efficiency.
+
+\textbf{Evidence.} Table~\ref{tab:fidelity}: the stacked and pair-by-pair rows, and the threaded fit in its caption.
+\end{plan}
+
+\section{Vine Distributions in Machine-Learning Workflows}
+
+\begin{plan}{about 0.55 page, including Listing~\ref{lst:learnable}}
+\textbf{Argument.} scikit-learn \citep{pedregosa2011scikit}:
+\texttt{VineDensity} and \texttt{VineRegressor} take
+\texttt{distribution=} a class, accept mixed DataFrames, and pass
+\texttt{check\_estimator}. PyTorch \citep{paszke2019pytorch}: every part is an
+\texttt{nn.Module}, so \texttt{.to}, \texttt{state\_dict} and autograd reach
+the whole distribution, discrete and trainable margins included. Margins from
+SciPy, \texttt{torch.distributions} or user code arrive through adapters.
+Listing~\ref{lst:learnable} composes a user-defined pair, the stock vine and
+fitted kernel margins into one trainable module. Two sentences follow it: a
+network of covariates in place of the constant correlation gives a
+non-simplified vine, and naming \texttt{bicop\_class} and
+\texttt{vinecop\_class} on subclasses lets \texttt{from\_data} and
+\texttt{VineDensity} fit such a model.
+
+\textbf{Left out.} API enumeration; controls.
+\end{plan}
+
+\begin{lstlisting}[float=t, caption={A learnable pair copula, hosted by the
+stock vine and composed with fitted kernel margins into a data-scale PyTorch
+module (\texttt{data} is an $n \times d$ array; the pair's formulas are in
+Appendix~\ref{app:code}).}, label={lst:learnable}]
+import torch
+from pyvinecopulib.core import BicopBase
+from pyvinecopulib.torch import TorchVinecop, TorchVinedist
+
+
+class Gaussian(BicopBase[torch.Tensor], torch.nn.Module):  # learnable pair
+  def _pdf_raw(self, u): ...  # density and the two conditional
+  def _hfunc1_raw(self, u): ...  # distribution functions; parameter
+  def _hfunc2_raw(self, u): ...  # and constructor in Appendix C
+
+
+y = torch.as_tensor(data, device="cuda")  # raw data, on the GPU
+fit = TorchVinedist.from_data(y)  # kernel margins + vine
+pairs = [[Gaussian() for _ in range(d - 1 - t)] for t in range(d - 1)]
+copula = TorchVinecop(pairs, fit.vinecop.structure)  # stock vine, user pairs
+dist = TorchVinedist(copula, fit.margins)  # an nn.Module
+opt = torch.optim.Adam(dist.parameters(), lr=0.05)
+for _ in range(200):  # copula MLE, data scale
+  opt.zero_grad()
+  (-dist.log_prob(y).mean()).backward()
+  opt.step()
+\end{lstlisting}
+
+\section{Fidelity and Execution}
+
+\begin{plan}{about 0.4 page, including Table~\ref{tab:fidelity}}
+\textbf{Argument.} Implementations of the same contract agree, and each
+execution strategy wins somewhere: threads at small $n$, the GPU once levels
+are wide and $n$ is large. One sentence on tests, coverage, CI on five
+platforms, static typing and documentation.
+
+\textbf{Evidence.} Table~\ref{tab:fidelity}, measured on the 1.1.0 wheels in
+float64 with paired repetitions.
+
+\textbf{Left out.} Comparisons with R packages; the GPU analysis.
+\end{plan}
+
+\begin{table}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+ & Max.\ rel.\ error & \multicolumn{2}{c}{\texttt{logpdf} (ms)}
+ & \texttt{sample} (ms) & \texttt{from\_data} (s) \\
+\cmidrule(lr){3-4}
+Implementation & vs \texttt{Vinecop} & $n = 10^3$ & $n = 2 \cdot 10^4$
+ & $n = 2 \cdot 10^4$ & $n = 2 \cdot 10^4$ \\
+\midrule
+\texttt{Vinecop}, 1 thread & reference & -- & -- & -- & -- \\
+\texttt{Vinecop}, all cores & -- & -- & -- & -- & -- \\
+\texttt{VinecopBase} + \texttt{Bicop}, all cores & -- & -- & -- & -- & --
+ \\
+\texttt{TorchVinecop}, CPU & -- & -- & -- & -- & -- \\
+\texttt{TorchVinecop}, CUDA, pair by pair & -- & -- & -- & -- & -- \\
+\texttt{TorchVinecop}, CUDA, stacked & -- & -- & -- & -- & -- \\
+\quad and compiled & -- & -- & -- & -- & n/a \\
+\bottomrule
+\end{tabular}
+\caption{One \texttt{tll} vine ($d = 10$), seven implementations: agreement
+with \texttt{Vinecop} on held-out points, and time. Stacked and pair-by-pair
+levels agree to rounding, and their inverse transforms exactly; a threaded fit
+equals the serial one. Placeholder: to be measured on the 1.1.0 release.}
+\label{tab:fidelity}
+\end{table}
+
+\section{Related Software and Availability}
+
+\begin{plan}{about 0.25 page}
+\textbf{Argument.} How to read Table~\ref{tab:related}; complementary
+libraries without vines (normalizing flows, NumPyro's Gaussian copula,
+scikit-learn's kernel density and Gaussian mixture estimators).
+\pkg{torchvinecopulib} accompanies \citet{cheng2025vine}, which the authors
+co-wrote, and installs \pkg{pyvinecopulib}. Availability: MIT license;
+PyPI and conda-forge; documentation at
+\url{https://pyvinecopulib.readthedocs.io}; the reviewed version 1.1.0 and its
+DOI \citep{pyvinecopulib}; pointers to \citet{nagler2026rvinecopulib} and the
+methods paper.
+
+\textbf{Left out.} Roadmap promises.
+\end{plan}
+
+\acks{To be written, including the disclosure of funding.}
+
+\newpage
+
+\appendix
+
+\section{Extended Comparison with Python Software}
+\label{app:comparison}
+
+\begin{plan}{about 0.75 page}
+The full verified matrix behind Table~\ref{tab:related}, with a pinned source
+for every cell (plan.md, section 6).
+\end{plan}
+
+\section{Fidelity and Timing Setup}
+\label{app:setup}
+
+\begin{plan}{about 0.75 page}
+Hosts, library versions, repetitions and confidence intervals, and the full
+tables behind Table~\ref{tab:fidelity}, including peak memory (plan.md,
+section 7).
+\end{plan}
+
+\section{Complete Code for Listing~\ref{lst:learnable}}
+\label{app:code}
+
+\begin{plan}{about 0.75 page}
+The \texttt{Gaussian} pair with its parameter, constructor and formulas, as
+executed in notebook 10; and a vine hosting \texttt{Bicop} that reproduces
+\texttt{Vinecop}.
+\end{plan}
+
+\section{From the 0.x Bindings to 1.x}
+\label{app:changes}
+
+\begin{plan}{about 0.5 page}
+The improvements and extensions since the bindings, mirroring the
+repository's citing page, which MLOSS asks the cover letter to point to.
+\end{plan}
+
+\vskip 0.2in
+\bibliography{references}
+
+\end{document}
